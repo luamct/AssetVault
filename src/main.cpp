@@ -9,7 +9,6 @@
 #include <chrono>
 #include <filesystem>
 #include <iostream>
-#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -32,12 +31,14 @@
 #include "stb_image.h"
 
 // Constants
-constexpr int WINDOW_WIDTH = 1920;          // Increased from 1280
-constexpr int WINDOW_HEIGHT = 1080;         // Increased from 720
-constexpr float SEARCH_BOX_WIDTH = 375.0f;  // Increased from 250.0f
-constexpr float SEARCH_BOX_HEIGHT = 60.0f;  // Increased from 40.0f
-constexpr float THUMBNAIL_SIZE = 180.0f;    // Increased from 120.0f
-constexpr float GRID_SPACING = 30.0f;       // Increased from 20.0f
+constexpr int WINDOW_WIDTH = 1920;
+constexpr int WINDOW_HEIGHT = 1080;
+constexpr float SEARCH_BOX_WIDTH = 375.0f;
+constexpr float SEARCH_BOX_HEIGHT = 60.0f;
+constexpr float THUMBNAIL_SIZE = 180.0f;
+constexpr float GRID_SPACING = 30.0f;
+constexpr float TEXT_MARGIN = 20.0f;  // Space below thumbnail for text positioning
+constexpr float TEXT_HEIGHT = 20.0f;  // Height reserved for text
 
 // Color constants
 constexpr ImU32 BACKGROUND_COLOR = IM_COL32(242, 247, 255, 255);          // Light blue-gray background
@@ -498,13 +499,13 @@ int main() {
     filter_assets(search_buffer);
 
     ImGui::Spacing();
-    ImGui::Spacing();
 
     // Asset grid
     ImGui::BeginChild("AssetGrid", ImVec2(0, 0), true);
 
     // Calculate grid layout upfront since all items have the same size
     float available_width = ImGui::GetContentRegionAvail().x;
+    float item_height = THUMBNAIL_SIZE + TEXT_MARGIN + TEXT_HEIGHT;  // Full item height including text
     // Add GRID_SPACING to available width since we don't need spacing after the
     // last item
     int columns = static_cast<int>((available_width + GRID_SPACING) / (THUMBNAIL_SIZE + GRID_SPACING));
@@ -518,7 +519,7 @@ int main() {
 
       // Calculate absolute position for this grid item
       float x_pos = col * (THUMBNAIL_SIZE + GRID_SPACING);
-      float y_pos = row * (THUMBNAIL_SIZE + GRID_SPACING);
+      float y_pos = row * (item_height + GRID_SPACING);
 
       // Set cursor to the calculated position
       ImGui::SetCursorPos(ImVec2(x_pos, y_pos));
@@ -540,7 +541,7 @@ int main() {
 
       // Create a fixed-size container for consistent layout
       ImVec2 container_size(THUMBNAIL_SIZE,
-                            THUMBNAIL_SIZE + 40.0f);  // Extra space for text
+                            THUMBNAIL_SIZE + TEXT_MARGIN + TEXT_HEIGHT);  // Thumbnail + text area
       ImVec2 container_pos = ImGui::GetCursorScreenPos();
 
       // Draw background for the container (same as app background)
@@ -548,8 +549,8 @@ int main() {
           container_pos, ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
           BACKGROUND_COLOR);
 
-      // Calculate position to center the image vertically in the container
-      float image_y_offset = (container_size.y - display_size.y) * 0.5f;
+      // Position the image at the top of the container, but center it within the thumbnail area
+      float image_y_offset = (THUMBNAIL_SIZE - display_size.y) * 0.5f;
       ImVec2 image_pos(container_pos.x, container_pos.y + image_y_offset);
 
       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.f, 0.f, 0.f, 0.f));
@@ -580,7 +581,7 @@ int main() {
       ImGui::PopStyleColor(3);
 
       // Position text at the bottom of the container
-      ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + THUMBNAIL_SIZE + 5.0f));
+      ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + THUMBNAIL_SIZE + TEXT_MARGIN));
 
       // Asset name below thumbnail
       std::string truncated_name = truncate_filename(g_filtered_assets[i].name);
