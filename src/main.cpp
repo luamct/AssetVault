@@ -39,6 +39,7 @@ constexpr float THUMBNAIL_SIZE = 180.0f;
 constexpr float GRID_SPACING = 30.0f;
 constexpr float TEXT_MARGIN = 20.0f;  // Space below thumbnail for text positioning
 constexpr float TEXT_HEIGHT = 20.0f;  // Height reserved for text
+constexpr float ICON_SCALE = 0.5f;    // Icon occupies 50% of the thumbnail area
 
 // Color constants
 constexpr ImU32 BACKGROUND_COLOR = IM_COL32(242, 247, 255, 255);          // Light blue-gray background
@@ -67,6 +68,9 @@ std::atomic<bool> g_assets_updated(false);
 AssetDatabase g_database;
 FileWatcher g_file_watcher;
 unsigned int g_default_texture = 0;
+
+// Type-specific textures
+unsigned int g_texture_icons[9] = {0};  // One for each AssetType
 
 // Texture cache
 std::unordered_map<std::string, TextureCacheEntry> g_texture_cache;
@@ -124,23 +128,68 @@ unsigned int load_texture(const char *filename) {
   return texture_id;
 }
 
-// Function to calculate aspect-ratio-preserving dimensions
+// Function to load type-specific textures
+void load_type_textures() {
+  const char *texture_paths[] = {
+      "images/texture.png",   // AssetType::Texture
+      "images/model.png",     // AssetType::Model
+      "images/sound.png",     // AssetType::Sound
+      "images/font.png",      // AssetType::Font
+      "images/document.png",  // AssetType::Shader (using document icon)
+      "images/document.png",  // AssetType::Document
+      "images/document.png",  // AssetType::Archive (using document icon)
+      "images/folder.png",    // AssetType::Directory
+      "images/document.png"   // AssetType::Unknown (using document icon)
+  };
+
+  for (int i = 0; i < 9; i++) {
+    g_texture_icons[i] = load_texture(texture_paths[i]);
+    if (g_texture_icons[i] == 0) {
+      std::cerr << "Failed to load type texture: " << texture_paths[i] << '\n';
+    }
+  }
+}
+
+// Function to calculate aspect-ratio-preserving dimensions with upscaling limit
 ImVec2 calculate_thumbnail_size(int original_width, int original_height, float max_size) {
   float aspect_ratio = static_cast<float>(original_width) / static_cast<float>(original_height);
 
+  // Calculate the size that would fit within max_size while preserving aspect ratio
+  float calculated_width, calculated_height;
+
   if (aspect_ratio > 1.0f) {
     // Landscape image
-    return ImVec2(max_size, max_size / aspect_ratio);
+    calculated_width = max_size;
+    calculated_height = max_size / aspect_ratio;
   } else {
     // Portrait or square image
-    return ImVec2(max_size * aspect_ratio, max_size);
+    calculated_width = max_size * aspect_ratio;
+    calculated_height = max_size;
   }
+
+  // Limit upscaling to 3x the original size
+  float max_upscale_factor = 3.0f;
+  float width_scale = calculated_width / original_width;
+  float height_scale = calculated_height / original_height;
+
+  // If either dimension would be upscaled more than 3x, scale down proportionally
+  if (width_scale > max_upscale_factor || height_scale > max_upscale_factor) {
+    float scale_factor = std::min(max_upscale_factor, std::min(width_scale, height_scale));
+    calculated_width = original_width * scale_factor;
+    calculated_height = original_height * scale_factor;
+  }
+
+  return ImVec2(calculated_width, calculated_height);
 }
 
 // Function to get or load texture for an asset
 unsigned int get_asset_texture(const FileInfo &asset) {
-  // For non-texture assets, return default texture
+  // For non-texture assets, return type-specific icon
   if (asset.type != AssetType::Texture) {
+    int type_index = static_cast<int>(asset.type);
+    if (type_index >= 0 && type_index < 9) {
+      return g_texture_icons[type_index];
+    }
     return g_default_texture;
   }
 
@@ -432,6 +481,9 @@ int main() {
     std::cerr << "Warning: Could not load default texture\n";
   }
 
+  // Load type-specific textures
+  load_type_textures();
+
   // Main loop
   double last_time = glfwGetTime();
   while (!glfwWindowShouldClose(window)) {
@@ -499,6 +551,7 @@ int main() {
     filter_assets(search_buffer);
 
     ImGui::Spacing();
+    ImGui::Spacing();
 
     // Asset grid
     ImGui::BeginChild("AssetGrid", ImVec2(0, 0), true);
@@ -531,12 +584,16 @@ int main() {
 
       // Calculate display size based on asset type
       ImVec2 display_size(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
-      if (g_filtered_assets[i].type == AssetType::Texture && asset_texture != 0) {
+      bool is_texture = (g_filtered_assets[i].type == AssetType::Texture && asset_texture != 0);
+      if (is_texture) {
         // Get texture dimensions and calculate aspect-ratio-preserving size
         int width, height;
         if (get_texture_dimensions(g_filtered_assets[i].full_path, width, height)) {
           display_size = calculate_thumbnail_size(width, height, THUMBNAIL_SIZE);
         }
+      } else {
+        // For type icons, use a fixed fraction of the thumbnail size
+        display_size = ImVec2(THUMBNAIL_SIZE * ICON_SCALE, THUMBNAIL_SIZE * ICON_SCALE);
       }
 
       // Create a fixed-size container for consistent layout
@@ -549,9 +606,10 @@ int main() {
           container_pos, ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
           BACKGROUND_COLOR);
 
-      // Position the image at the top of the container, but center it within the thumbnail area
+      // Center the image/icon in the thumbnail area
+      float image_x_offset = (THUMBNAIL_SIZE - display_size.x) * 0.5f;
       float image_y_offset = (THUMBNAIL_SIZE - display_size.y) * 0.5f;
-      ImVec2 image_pos(container_pos.x, container_pos.y + image_y_offset);
+      ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
 
       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.f, 0.f, 0.f, 0.f));
       ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.f, 0.f, 0.f, 0.f));
@@ -627,6 +685,13 @@ int main() {
 
   if (g_default_texture != 0) {
     glDeleteTextures(1, &g_default_texture);
+  }
+
+  // Cleanup type-specific textures
+  for (int i = 0; i < 9; i++) {
+    if (g_texture_icons[i] != 0) {
+      glDeleteTextures(1, &g_texture_icons[i]);
+    }
   }
 
   // Cleanup
