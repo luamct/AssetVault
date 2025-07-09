@@ -2,8 +2,8 @@
 #include <iomanip>
 #include <iostream>
 
-#include "../src/asset_database.h"
-#include "../src/asset_index.h"
+#include "../src/database.h"
+#include "../src/index.h"
 
 void print_asset_info(const FileInfo& file) {
   std::cout << std::left << std::setw(20) << file.name;
@@ -45,8 +45,7 @@ void test_database_operations() {
     return;
   }
 
-  std::cout << "Found " << files.size() << " files and directories"
-            << std::endl;
+  std::cout << "Found " << files.size() << " files and directories" << std::endl;
 
   // Clear existing data and insert new data
   std::cout << "\nClearing existing data..." << std::endl;
@@ -58,10 +57,8 @@ void test_database_operations() {
 
   if (db.insert_assets_batch(files)) {
     auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        end_time - start_time);
-    std::cout << "Successfully inserted " << files.size() << " files in "
-              << duration.count() << "ms" << std::endl;
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "Successfully inserted " << files.size() << " files in " << duration.count() << "ms" << std::endl;
   } else {
     std::cerr << "Failed to insert files!" << std::endl;
     return;
@@ -74,17 +71,15 @@ void test_database_operations() {
 
   // Count by type
   std::cout << "\nAssets by type:" << std::endl;
-  std::vector<AssetType> types = {
-      AssetType::Texture, AssetType::Model,     AssetType::Sound,
-      AssetType::Font,    AssetType::Shader,    AssetType::Document,
-      AssetType::Archive, AssetType::Directory, AssetType::Unknown};
+  std::vector<AssetType> types = {AssetType::Texture, AssetType::Model,     AssetType::Sound,
+                                  AssetType::Font,    AssetType::Shader,    AssetType::Document,
+                                  AssetType::Archive, AssetType::Directory, AssetType::Unknown};
 
   for (auto type : types) {
     int count = db.get_asset_count_by_type(type);
     uint64_t size = db.get_size_by_type(type);
     if (count > 0) {
-      std::cout << "  " << std::left << std::setw(12)
-                << get_asset_type_string(type) << ": " << count << " files, "
+      std::cout << "  " << std::left << std::setw(12) << get_asset_type_string(type) << ": " << count << " files, "
                 << size << " bytes" << std::endl;
     }
   }
@@ -97,8 +92,7 @@ void test_database_operations() {
   int count = 0;
   for (const auto& asset : all_assets) {
     if (count++ >= 20) {  // Limit to first 20 for display
-      std::cout << "... and " << (all_assets.size() - 20) << " more files"
-                << std::endl;
+      std::cout << "... and " << (all_assets.size() - 20) << " more files" << std::endl;
       break;
     }
     print_asset_info(asset);
@@ -147,8 +141,7 @@ void test_database_operations() {
     FileInfo found_asset = db.get_asset_by_path(test_path);
 
     if (!found_asset.full_path.empty()) {
-      std::cout << "Found asset: " << found_asset.name << " ("
-                << found_asset.full_path << ")" << std::endl;
+      std::cout << "Found asset: " << found_asset.name << " (" << found_asset.full_path << ")" << std::endl;
     } else {
       std::cout << "Asset not found: " << test_path << std::endl;
     }
@@ -192,12 +185,10 @@ int main() {
   auto start_time = std::chrono::high_resolution_clock::now();
   bool success = db.insert_assets_batch(files);
   auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-      end_time - start_time);
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
   if (success) {
-    std::cout << "Successfully inserted " << files.size() << " files in "
-              << duration.count() << "ms\n";
+    std::cout << "Successfully inserted " << files.size() << " files in " << duration.count() << "ms\n";
   } else {
     std::cerr << "Failed to insert files!\n";
     return 1;

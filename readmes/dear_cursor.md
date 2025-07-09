@@ -40,6 +40,12 @@
 
 ### File Organization
 - Source files are in `src/`
+  - `main.cpp` - Main application entry point and UI logic
+  - `utils.cpp/h` - Utility functions for string formatting, file operations
+  - `database.cpp/h` - Database operations and asset storage
+  - `index.cpp/h` - Asset indexing and file type detection
+  - `file_watcher*.cpp/h` - File system monitoring
+  - `theme.h` - UI theming configuration
 - External dependencies are in `external/`
 - Assets are in `assets/`
 - Database files are in `db/`

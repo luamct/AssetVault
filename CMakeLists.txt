@@ -125,8 +125,9 @@ add_definitions(
 # Add executable
 add_executable(AssetInventory
     src/main.cpp
-    src/asset_index.cpp
-    src/asset_database.cpp
+    src/index.cpp
+    src/database.cpp
+    src/utils.cpp
     ${FILE_WATCHER_SOURCES}
 )
 
@@ -138,8 +139,8 @@ endif()
 # Add database test executable
 add_executable(DatabaseTest
     tests/test_database.cpp
-    src/asset_index.cpp
-    src/asset_database.cpp
+    src/index.cpp
+    src/database.cpp
 )
 
 if(MSVC)

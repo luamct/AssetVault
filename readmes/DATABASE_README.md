@@ -47,8 +47,8 @@ The following indexes are created for optimal query performance:
 ### Basic Database Operations
 
 ```cpp
-#include "asset_database.h"
-#include "asset_index.h"
+#include "database.h"
+#include "index.h"
 
 // Initialize database
 AssetDatabase db;

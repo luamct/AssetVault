@@ -33,6 +33,12 @@ cmake --build build --config Debug
 
 ```
 src/           # Source files
+├── main.cpp   # Main application and UI logic
+├── database.cpp/h  # Database operations
+├── index.cpp/h     # Asset indexing and file type detection
+├── utils.cpp/h     # Utility functions
+├── file_watcher*.cpp/h  # File system monitoring
+└── theme.h    # UI theming
 tests/         # Test files
 external/      # Dependencies (ImGui, GLFW, SQLite)
 assets/        # Game assets

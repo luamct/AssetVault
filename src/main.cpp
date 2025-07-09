@@ -23,9 +23,10 @@
 #define GL_CLAMP_TO_EDGE 0x812F
 #endif
 
-#include "asset_database.h"
-#include "asset_index.h"
+#include "database.h"
 #include "file_watcher.h"
+#include "index.h"
+#include "utils.h"
 
 // Include stb_image for PNG loading
 #define STB_IMAGE_IMPLEMENTATION
@@ -59,11 +60,10 @@ static char search_buffer[256] = "";
 struct TextureCacheEntry {
   unsigned int texture_id;
   std::string file_path;
-  bool is_loaded;
   int width;
   int height;
 
-  TextureCacheEntry() : texture_id(0), is_loaded(false), width(0), height(0) {}
+  TextureCacheEntry() : texture_id(0), width(0), height(0) {}
 };
 
 // Global variables
@@ -78,35 +78,21 @@ unsigned int g_default_texture = 0;
 int g_selected_asset_index = -1;  // -1 means no selection
 
 // Type-specific textures
-unsigned int g_texture_icons[9] = {0};  // One for each AssetType
+std::unordered_map<AssetType, unsigned int> g_texture_icons;
 
 // Texture cache
 std::unordered_map<std::string, TextureCacheEntry> g_texture_cache;
 
 bool load_roboto_font(ImGuiIO &io) {
   // Load embedded Roboto font from external/fonts directory
-  ImFont *font = io.Fonts->AddFontFromFileTTF("external/fonts/Roboto-Regular.ttf",
-                                              24.0f);  // Increased from 16.0f
+  ImFont *font = io.Fonts->AddFontFromFileTTF("external/fonts/Roboto-Regular.ttf", 24.0f);
   if (font) {
     std::cout << "Roboto font loaded successfully!\n";
     return true;
   }
 
-  // Fallback: try system fonts if embedded font not found
-  // FIXME: Remove this, since we're using embedded font now
-  const char *font_paths[] = {"C:/Windows/Fonts/Roboto-Regular.ttf", "C:/Windows/Fonts/roboto.ttf",
-                              "C:/Windows/Fonts/Roboto-Medium.ttf"};
-
-  for (const char *path : font_paths) {
-    font = io.Fonts->AddFontFromFileTTF(path, 24.0f);  // Increased from 16.0f
-    if (font) {
-      std::cout << "Roboto font loaded from system: " << path << '\n';
-      return true;
-    }
-  }
-
-  // If Roboto is not found, use default font
-  std::cout << "Roboto font not found, using default font\n";
+  // If embedded font fails to load, log error and use default font
+  std::cerr << "Failed to load embedded Roboto font. Check that external/fonts/Roboto-Regular.ttf exists.\n";
   return false;
 }
 
@@ -138,22 +124,18 @@ unsigned int load_texture(const char *filename) {
 
 // Function to load type-specific textures
 void load_type_textures() {
-  const char *texture_paths[] = {
-      "images/texture.png",   // AssetType::Texture
-      "images/model.png",     // AssetType::Model
-      "images/sound.png",     // AssetType::Sound
-      "images/font.png",      // AssetType::Font
-      "images/document.png",  // AssetType::Shader (using document icon)
-      "images/document.png",  // AssetType::Document
-      "images/document.png",  // AssetType::Archive (using document icon)
-      "images/folder.png",    // AssetType::Directory
-      "images/document.png"   // AssetType::Unknown (using document icon)
-  };
+  const std::unordered_map<AssetType, const char *> texture_paths = {
+      {AssetType::Texture, "images/texture.png"},  {AssetType::Model, "images/model.png"},
+      {AssetType::Sound, "images/sound.png"},      {AssetType::Font, "images/font.png"},
+      {AssetType::Shader, "images/document.png"},  {AssetType::Document, "images/document.png"},
+      {AssetType::Archive, "images/document.png"}, {AssetType::Directory, "images/folder.png"},
+      {AssetType::Unknown, "images/document.png"}};
 
-  for (int i = 0; i < 9; i++) {
-    g_texture_icons[i] = load_texture(texture_paths[i]);
-    if (g_texture_icons[i] == 0) {
-      std::cerr << "Failed to load type texture: " << texture_paths[i] << '\n';
+  for (const auto &[type, path] : texture_paths) {
+    unsigned int texture_id = load_texture(path);
+    g_texture_icons[type] = texture_id;
+    if (texture_id == 0) {
+      std::cerr << "Failed to load type texture: " << path << '\n';
     }
   }
 }
@@ -186,9 +168,9 @@ ImVec2 calculate_thumbnail_size(int original_width, int original_height, float m
 unsigned int get_asset_texture(const FileInfo &asset) {
   // For non-texture assets, return type-specific icon
   if (asset.type != AssetType::Texture) {
-    int type_index = static_cast<int>(asset.type);
-    if (type_index >= 0 && type_index < 9) {
-      return g_texture_icons[type_index];
+    auto it = g_texture_icons.find(asset.type);
+    if (it != g_texture_icons.end()) {
+      return it->second;
     }
     return g_default_texture;
   }
@@ -196,22 +178,13 @@ unsigned int get_asset_texture(const FileInfo &asset) {
   // Check if texture is already cached
   auto it = g_texture_cache.find(asset.full_path);
   if (it != g_texture_cache.end()) {
-    if (it->second.is_loaded) {
-      return it->second.texture_id;
-    }
+    return it->second.texture_id;
   }
 
   // Load the texture using the shared function
   unsigned int texture_id = load_texture(asset.full_path.c_str());
   if (texture_id == 0) {
     std::cerr << "Failed to load texture: " << asset.full_path << '\n';
-    // Cache the failure
-    TextureCacheEntry &entry = g_texture_cache[asset.full_path];
-    entry.texture_id = 0;
-    entry.file_path = asset.full_path;
-    entry.is_loaded = false;
-    entry.width = 0;
-    entry.height = 0;
     return 0;
   }
 
@@ -229,7 +202,6 @@ unsigned int get_asset_texture(const FileInfo &asset) {
   TextureCacheEntry &entry = g_texture_cache[asset.full_path];
   entry.texture_id = texture_id;
   entry.file_path = asset.full_path;
-  entry.is_loaded = true;
   entry.width = width;
   entry.height = height;
 
@@ -239,63 +211,12 @@ unsigned int get_asset_texture(const FileInfo &asset) {
 // Function to get cached texture dimensions
 bool get_texture_dimensions(const std::string &file_path, int &width, int &height) {
   auto it = g_texture_cache.find(file_path);
-  if (it != g_texture_cache.end() && it->second.is_loaded) {
+  if (it != g_texture_cache.end()) {
     width = it->second.width;
     height = it->second.height;
     return true;
   }
   return false;
-}
-
-// Function to truncate filename to specified length with ellipsis
-std::string truncate_filename(const std::string &filename, size_t max_length = 20) {
-  if (filename.length() <= max_length) {
-    return filename;
-  }
-  return filename.substr(0, max_length - 3) + "...";
-}
-
-// Function to convert string to lowercase for case-insensitive search
-std::string to_lowercase(const std::string &str) {
-  std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(), ::tolower);
-  return result;
-}
-
-// Function to format path for display (remove everything before first / and convert backslashes)
-std::string format_display_path(const std::string &full_path) {
-  std::string result = full_path;
-
-  // Replace backslashes with forward slashes
-  std::replace(result.begin(), result.end(), '\\', '/');
-
-  // Find the first forward slash and remove everything before and including it
-  size_t first_slash = result.find('/');
-  if (first_slash != std::string::npos) {
-    result = result.substr(first_slash + 1);
-  }
-
-  return result;
-}
-
-// Function to format file size for display
-std::string format_file_size(uint64_t size_bytes) {
-  if (size_bytes >= 1024 * 1024) {
-    // Convert to MB
-    double size_mb = static_cast<double>(size_bytes) / (1024.0 * 1024.0);
-    char buffer[32];
-    snprintf(buffer, sizeof(buffer), "%.1f MB", size_mb);
-    return std::string(buffer);
-  } else if (size_bytes >= 1024) {
-    // Convert to KB
-    double size_kb = static_cast<double>(size_bytes) / 1024.0;
-    char buffer[32];
-    snprintf(buffer, sizeof(buffer), "%.1f KB", size_kb);
-    return std::string(buffer);
-  } else {
-    // Keep as bytes
-    return std::to_string(size_bytes) + " bytes";
-  }
 }
 
 // Function to check if asset matches search terms
@@ -355,7 +276,7 @@ void on_file_event(const FileEvent &event) {
         auto cache_it = g_texture_cache.find(event.path);
         if (cache_it != g_texture_cache.end()) {
           // If there's an existing texture, delete it from OpenGL
-          if (cache_it->second.is_loaded && cache_it->second.texture_id != 0) {
+          if (cache_it->second.texture_id != 0) {
             glDeleteTextures(1, &cache_it->second.texture_id);
           }
           // Remove from cache
@@ -389,7 +310,7 @@ void on_file_event(const FileEvent &event) {
       // Clear texture cache entry for deleted file
       auto cache_it = g_texture_cache.find(event.path);
       if (cache_it != g_texture_cache.end()) {
-        if (cache_it->second.is_loaded && cache_it->second.texture_id != 0) {
+        if (cache_it->second.texture_id != 0) {
           glDeleteTextures(1, &cache_it->second.texture_id);
         }
         g_texture_cache.erase(cache_it);
@@ -403,7 +324,7 @@ void on_file_event(const FileEvent &event) {
       // Clear texture cache entry for old path
       auto cache_it = g_texture_cache.find(event.old_path);
       if (cache_it != g_texture_cache.end()) {
-        if (cache_it->second.is_loaded && cache_it->second.texture_id != 0) {
+        if (cache_it->second.texture_id != 0) {
           glDeleteTextures(1, &cache_it->second.texture_id);
         }
         g_texture_cache.erase(cache_it);
@@ -811,7 +732,7 @@ int main() {
 
   // Cleanup textures
   for (auto &entry : g_texture_cache) {
-    if (entry.second.is_loaded && entry.second.texture_id != 0) {
+    if (entry.second.texture_id != 0) {
       glDeleteTextures(1, &entry.second.texture_id);
     }
   }
@@ -822,9 +743,9 @@ int main() {
   }
 
   // Cleanup type-specific textures
-  for (int i = 0; i < 9; i++) {
-    if (g_texture_icons[i] != 0) {
-      glDeleteTextures(1, &g_texture_icons[i]);
+  for (auto &[type, texture_id] : g_texture_icons) {
+    if (texture_id != 0) {
+      glDeleteTextures(1, &texture_id);
     }
   }
 
