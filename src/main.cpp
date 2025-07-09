@@ -42,6 +42,10 @@ constexpr float TEXT_MARGIN = 20.0f;  // Space below thumbnail for text position
 constexpr float TEXT_HEIGHT = 20.0f;  // Height reserved for text
 constexpr float ICON_SCALE = 0.5f;    // Icon occupies 50% of the thumbnail area
 
+// Preview panel layout constants
+constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;      // Margin from window right edge
+constexpr float PREVIEW_INTERNAL_PADDING = 30.0f;  // Internal padding within preview panel
+
 // Color constants
 constexpr ImU32 BACKGROUND_COLOR = IM_COL32(242, 247, 255, 255);          // Light blue-gray background
 constexpr ImU32 FALLBACK_THUMBNAIL_COLOR = IM_COL32(242, 247, 255, 255);  // Same as background
@@ -256,6 +260,42 @@ std::string to_lowercase(const std::string &str) {
   std::string result = str;
   std::transform(result.begin(), result.end(), result.begin(), ::tolower);
   return result;
+}
+
+// Function to format path for display (remove everything before first / and convert backslashes)
+std::string format_display_path(const std::string &full_path) {
+  std::string result = full_path;
+
+  // Replace backslashes with forward slashes
+  std::replace(result.begin(), result.end(), '\\', '/');
+
+  // Find the first forward slash and remove everything before and including it
+  size_t first_slash = result.find('/');
+  if (first_slash != std::string::npos) {
+    result = result.substr(first_slash + 1);
+  }
+
+  return result;
+}
+
+// Function to format file size for display
+std::string format_file_size(uint64_t size_bytes) {
+  if (size_bytes >= 1024 * 1024) {
+    // Convert to MB
+    double size_mb = static_cast<double>(size_bytes) / (1024.0 * 1024.0);
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "%.1f MB", size_mb);
+    return std::string(buffer);
+  } else if (size_bytes >= 1024) {
+    // Convert to KB
+    double size_kb = static_cast<double>(size_bytes) / 1024.0;
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "%.1f KB", size_kb);
+    return std::string(buffer);
+  } else {
+    // Keep as bytes
+    return std::to_string(size_bytes) + " bytes";
+  }
 }
 
 // Function to check if asset matches search terms
@@ -501,10 +541,10 @@ int main() {
     ImGui::Begin("Asset Inventory", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 
-    // Calculate panel sizes (75% for grid, 25% for preview)
+    // Calculate panel sizes (75% for grid, 25% for preview with margin)
     float window_width = ImGui::GetWindowSize().x;
     float grid_width = window_width * 0.75f;
-    float preview_width = window_width * 0.25f;
+    float preview_width = window_width * 0.25f - PREVIEW_RIGHT_MARGIN;  // Add right margin
 
     // Header
     ImGui::PushFont(io.Fonts->Fonts[0]);
@@ -663,8 +703,8 @@ int main() {
     ImGui::BeginChild("AssetPreview", ImVec2(preview_width, 0), true);
 
     // Use fixed panel dimensions for stable calculations
-    float avail_width = preview_width - 55.0f;  // Account for ImGui padding and margins
-    float avail_height = avail_width;           // Square aspect ratio for preview area
+    float avail_width = preview_width - PREVIEW_INTERNAL_PADDING;  // Account for ImGui padding and margins
+    float avail_height = avail_width;                              // Square aspect ratio for preview area
 
     if (g_selected_asset_index >= 0 && g_selected_asset_index < static_cast<int>(g_filtered_assets.size())) {
       const FileInfo &selected_asset = g_filtered_assets[g_selected_asset_index];
@@ -709,11 +749,35 @@ int main() {
       ImGui::Spacing();
 
       // Asset information
-      ImGui::Text("Name: %s", selected_asset.name.c_str());
-      ImGui::Text("Type: %s", get_asset_type_string(selected_asset.type).c_str());
-      ImGui::Text("Size: %llu bytes", selected_asset.size);
-      ImGui::Text("Extension: %s", selected_asset.extension.c_str());
-      ImGui::Text("Path: %s", selected_asset.full_path.c_str());
+      ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Name: ");
+      ImGui::SameLine();
+      ImGui::Text("%s", selected_asset.name.c_str());
+
+      ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Type: ");
+      ImGui::SameLine();
+      ImGui::Text("%s", get_asset_type_string(selected_asset.type).c_str());
+
+      ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Size: ");
+      ImGui::SameLine();
+      ImGui::Text("%s", format_file_size(selected_asset.size).c_str());
+
+      ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Extension: ");
+      ImGui::SameLine();
+      ImGui::Text("%s", selected_asset.extension.c_str());
+
+      // Display dimensions for texture assets
+      if (selected_asset.type == AssetType::Texture) {
+        int width, height;
+        if (get_texture_dimensions(selected_asset.full_path, width, height)) {
+          ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Dimensions: ");
+          ImGui::SameLine();
+          ImGui::Text("%dx%d", width, height);
+        }
+      }
+
+      ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Path: ");
+      ImGui::SameLine();
+      ImGui::Text("%s", format_display_path(selected_asset.full_path).c_str());
 
       // Format and display last modified time
       auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
@@ -721,7 +785,9 @@ int main() {
       localtime_s(&tm_buf, &time_t);
       std::stringstream ss;
       ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
-      ImGui::Text("Modified: %s", ss.str().c_str());
+      ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Modified: ");
+      ImGui::SameLine();
+      ImGui::Text("%s", ss.str().c_str());
     } else {
       ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No asset selected");
       ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Click on an asset to preview");
