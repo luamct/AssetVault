@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -69,6 +70,9 @@ AssetDatabase g_database;
 FileWatcher g_file_watcher;
 unsigned int g_default_texture = 0;
 
+// Selection state
+int g_selected_asset_index = -1;  // -1 means no selection
+
 // Type-specific textures
 unsigned int g_texture_icons[9] = {0};  // One for each AssetType
 
@@ -115,11 +119,11 @@ unsigned int load_texture(const char *filename) {
   glGenTextures(1, &texture_id);
   glBindTexture(GL_TEXTURE_2D, texture_id);
 
-  // Set texture parameters
+  // Set texture parameters for pixel art (nearest neighbor filtering)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
   // Upload texture data
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
@@ -151,28 +155,20 @@ void load_type_textures() {
 }
 
 // Function to calculate aspect-ratio-preserving dimensions with upscaling limit
-ImVec2 calculate_thumbnail_size(int original_width, int original_height, float max_size) {
+ImVec2 calculate_thumbnail_size(int original_width, int original_height, float max_width, float max_height,
+                                float max_upscale_factor = 3.0f) {
   float aspect_ratio = static_cast<float>(original_width) / static_cast<float>(original_height);
 
-  // Calculate the size that would fit within max_size while preserving aspect ratio
-  float calculated_width, calculated_height;
-
-  if (aspect_ratio > 1.0f) {
-    // Landscape image
-    calculated_width = max_size;
-    calculated_height = max_size / aspect_ratio;
-  } else {
-    // Portrait or square image
-    calculated_width = max_size * aspect_ratio;
-    calculated_height = max_size;
+  float calculated_width = max_width;
+  float calculated_height = max_width / aspect_ratio;
+  if (calculated_height > max_height) {
+    calculated_height = max_height;
+    calculated_width = max_height * aspect_ratio;
   }
 
-  // Limit upscaling to 3x the original size
-  float max_upscale_factor = 3.0f;
+  // Limit upscaling to the specified factor
   float width_scale = calculated_width / original_width;
   float height_scale = calculated_height / original_height;
-
-  // If either dimension would be upscaled more than 3x, scale down proportionally
   if (width_scale > max_upscale_factor || height_scale > max_upscale_factor) {
     float scale_factor = std::min(max_upscale_factor, std::min(width_scale, height_scale));
     calculated_width = original_width * scale_factor;
@@ -201,10 +197,9 @@ unsigned int get_asset_texture(const FileInfo &asset) {
     }
   }
 
-  // Load the texture and get dimensions
-  int width, height, channels;
-  unsigned char *data = stbi_load(asset.full_path.c_str(), &width, &height, &channels, 4);
-  if (!data) {
+  // Load the texture using the shared function
+  unsigned int texture_id = load_texture(asset.full_path.c_str());
+  if (texture_id == 0) {
     std::cerr << "Failed to load texture: " << asset.full_path << '\n';
     // Cache the failure
     TextureCacheEntry &entry = g_texture_cache[asset.full_path];
@@ -216,20 +211,15 @@ unsigned int get_asset_texture(const FileInfo &asset) {
     return 0;
   }
 
-  unsigned int texture_id;
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-  // Upload texture data
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-
-  stbi_image_free(data);
+  // Get texture dimensions
+  int width, height, channels;
+  unsigned char *data = stbi_load(asset.full_path.c_str(), &width, &height, &channels, 4);
+  if (data) {
+    stbi_image_free(data);
+  } else {
+    width = 0;
+    height = 0;
+  }
 
   // Cache the result
   TextureCacheEntry &entry = g_texture_cache[asset.full_path];
@@ -511,6 +501,11 @@ int main() {
     ImGui::Begin("Asset Inventory", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 
+    // Calculate panel sizes (75% for grid, 25% for preview)
+    float window_width = ImGui::GetWindowSize().x;
+    float grid_width = window_width * 0.75f;
+    float preview_width = window_width * 0.25f;
+
     // Header
     ImGui::PushFont(io.Fonts->Fonts[0]);
     ImGui::TextColored(ImVec4(0.20f, 0.70f, 0.90f, 1.0f), "Asset Inventory");
@@ -553,11 +548,11 @@ int main() {
     ImGui::Spacing();
     ImGui::Spacing();
 
-    // Asset grid
-    ImGui::BeginChild("AssetGrid", ImVec2(0, 0), true);
+    // Left panel - Asset grid
+    ImGui::BeginChild("AssetGrid", ImVec2(grid_width, 0), true);
 
     // Calculate grid layout upfront since all items have the same size
-    float available_width = ImGui::GetContentRegionAvail().x;
+    float available_width = grid_width - 20.0f;                      // Account for padding
     float item_height = THUMBNAIL_SIZE + TEXT_MARGIN + TEXT_HEIGHT;  // Full item height including text
     // Add GRID_SPACING to available width since we don't need spacing after the
     // last item
@@ -586,10 +581,10 @@ int main() {
       ImVec2 display_size(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
       bool is_texture = (g_filtered_assets[i].type == AssetType::Texture && asset_texture != 0);
       if (is_texture) {
-        // Get texture dimensions and calculate aspect-ratio-preserving size
         int width, height;
         if (get_texture_dimensions(g_filtered_assets[i].full_path, width, height)) {
-          display_size = calculate_thumbnail_size(width, height, THUMBNAIL_SIZE);
+          display_size =
+              calculate_thumbnail_size(width, height, THUMBNAIL_SIZE, THUMBNAIL_SIZE, 3.0f);  // 3x upscaling for grid
         }
       } else {
         // For type icons, use a fixed fraction of the thumbnail size
@@ -620,6 +615,7 @@ int main() {
         ImGui::SetCursorScreenPos(image_pos);
         if (ImGui::ImageButton(("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID)(intptr_t)asset_texture,
                                display_size)) {
+          g_selected_asset_index = static_cast<int>(i);
           std::cout << "Selected: " << g_filtered_assets[i].name << '\n';
         }
       } else {
@@ -627,6 +623,7 @@ int main() {
         ImGui::SetCursorScreenPos(image_pos);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
         if (ImGui::Button(("##Thumbnail" + std::to_string(i)).c_str(), display_size)) {
+          g_selected_asset_index = static_cast<int>(i);
           std::cout << "Selected: " << g_filtered_assets[i].name << '\n';
         }
         ImGui::PopStyleVar();
@@ -657,6 +654,77 @@ int main() {
       } else {
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No assets match your search.");
       }
+    }
+
+    ImGui::EndChild();
+
+    // Right panel - Asset preview
+    ImGui::SameLine();
+    ImGui::BeginChild("AssetPreview", ImVec2(preview_width, 0), true);
+
+    // Use fixed panel dimensions for stable calculations
+    float avail_width = preview_width - 55.0f;  // Account for ImGui padding and margins
+    float avail_height = avail_width;           // Square aspect ratio for preview area
+
+    if (g_selected_asset_index >= 0 && g_selected_asset_index < static_cast<int>(g_filtered_assets.size())) {
+      const FileInfo &selected_asset = g_filtered_assets[g_selected_asset_index];
+
+      // Preview image
+      unsigned int preview_texture = get_asset_texture(selected_asset);
+      if (preview_texture != 0) {
+        ImVec2 preview_size(avail_width, avail_height);
+
+        if (selected_asset.type == AssetType::Texture) {
+          int width, height;
+          if (get_texture_dimensions(selected_asset.full_path, width, height)) {
+            preview_size =
+                calculate_thumbnail_size(width, height, avail_width, avail_height,
+                                         std::numeric_limits<float>::max());  // No upscaling limit for preview
+          }
+        } else {
+          // For type icons, use ICON_SCALE * min(available_width, available_height)
+          float icon_dim = ICON_SCALE * std::min(avail_width, avail_height);
+          preview_size = ImVec2(icon_dim, icon_dim);
+        }
+        // Center the preview image in the panel (same logic as grid)
+        ImVec2 container_pos = ImGui::GetCursorScreenPos();
+        float image_x_offset = (avail_width - preview_size.x) * 0.5f;
+        float image_y_offset = (avail_height - preview_size.y) * 0.5f;
+        ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+        ImGui::SetCursorScreenPos(image_pos);
+
+        // Draw border around the image
+        ImVec2 border_min = image_pos;
+        ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
+        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, IM_COL32(150, 150, 150, 255), 8.0f, 0, 1.0f);
+
+        ImGui::Image((ImTextureID)(intptr_t)preview_texture, preview_size);
+        // Restore cursor for info below
+        ImGui::SetCursorScreenPos(container_pos);
+        ImGui::Dummy(ImVec2(0, avail_height + 10));
+      }
+
+      ImGui::Spacing();
+      ImGui::Separator();
+      ImGui::Spacing();
+
+      // Asset information
+      ImGui::Text("Name: %s", selected_asset.name.c_str());
+      ImGui::Text("Type: %s", get_asset_type_string(selected_asset.type).c_str());
+      ImGui::Text("Size: %llu bytes", selected_asset.size);
+      ImGui::Text("Extension: %s", selected_asset.extension.c_str());
+      ImGui::Text("Path: %s", selected_asset.full_path.c_str());
+
+      // Format and display last modified time
+      auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
+      std::tm tm_buf;
+      localtime_s(&tm_buf, &time_t);
+      std::stringstream ss;
+      ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
+      ImGui::Text("Modified: %s", ss.str().c_str());
+    } else {
+      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No asset selected");
+      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Click on an asset to preview");
     }
 
     ImGui::EndChild();
