@@ -69,6 +69,28 @@ target_compile_definitions(sqlite3 PRIVATE
 set(GLFW_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/include")
 set(GLFW_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib-vc2022/glfw3.lib")
 
+# Use precompiled Assimp binaries
+set(ASSIMP_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/include")
+set(ASSIMP_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/lib/x64/assimp-vc143-mt.lib")
+
+# Create Assimp imported target (static library)
+add_library(assimp STATIC IMPORTED)
+set_target_properties(assimp PROPERTIES
+    IMPORTED_LOCATION ${ASSIMP_LIBRARY}
+    INTERFACE_INCLUDE_DIRECTORIES ${ASSIMP_INCLUDE_DIR}
+)
+
+message(STATUS "Using precompiled Assimp: include at ${ASSIMP_INCLUDE_DIR}, lib at ${ASSIMP_LIBRARY}")
+
+# Set Assimp runtime library to match main application
+if(MSVC)
+    set_property(TARGET assimp PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
+# GLM (header-only library)
+set(GLM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external")
+message(STATUS "Using GLM: include at ${GLM_INCLUDE_DIR}")
+
 # Create GLFW imported target (static library)
 add_library(glfw STATIC IMPORTED)
 set_target_properties(glfw PROPERTIES
@@ -81,6 +103,19 @@ message(STATUS "Using precompiled GLFW: include at ${GLFW_INCLUDE_DIR}, lib at $
 # Set GLFW runtime library to match main application
 if(MSVC)
     set_property(TARGET glfw PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
+# Add GLAD (OpenGL Loading Library)
+set(GLAD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/glad)
+set(GLAD_SOURCES ${GLAD_DIR}/src/glad.c)
+
+# Create GLAD library target
+add_library(glad STATIC ${GLAD_SOURCES})
+target_include_directories(glad PUBLIC ${GLAD_DIR}/include)
+
+# Set GLAD runtime library to match main application
+if(MSVC)
+    set_property(TARGET glad PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
 # Add Dear ImGui
@@ -120,6 +155,7 @@ add_definitions(
     -DUNICODE
     -D_WIN32_WINNT=0x0601
     -DNOMINMAX
+    -DIMGUI_IMPL_OPENGL_LOADER_GLAD
 )
 
 # Add executable
@@ -128,6 +164,7 @@ add_executable(AssetInventory
     src/index.cpp
     src/database.cpp
     src/utils.cpp
+    src/3d.cpp
     ${FILE_WATCHER_SOURCES}
 )
 
@@ -146,6 +183,32 @@ add_executable(DatabaseTest
 if(MSVC)
     set_property(TARGET DatabaseTest PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
+
+# Add OpenGL rendering test executable
+add_executable(RenderingTest
+    tests/test_rendering.cpp
+)
+
+if(MSVC)
+    set_property(TARGET RenderingTest PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
+# Include directories for rendering test
+target_include_directories(RenderingTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+    ${GLFW_INCLUDE_DIR}
+    ${GLAD_DIR}/include
+)
+
+# Link libraries for rendering test
+target_link_libraries(RenderingTest PRIVATE
+    glfw
+    OpenGL::GL
+    glad
+    imgui
+)
 
 # Set compiler flags for our own code
 if(MSVC)
@@ -166,6 +229,9 @@ target_include_directories(AssetInventory PRIVATE
     ${IMGUI_DIR}/backends
     ${SQLITE_DIR}
     ${GLFW_INCLUDE_DIR}
+    ${ASSIMP_INCLUDE_DIR}
+    ${GLM_INCLUDE_DIR}
+    ${GLAD_DIR}/include
 )
 
 target_include_directories(DatabaseTest PRIVATE
@@ -182,6 +248,8 @@ target_link_libraries(AssetInventory PRIVATE
     OpenGL::GL
     sqlite3
     imgui
+    assimp
+    glad
 )
 
 # Add filesystem library for MSVC
@@ -200,3 +268,20 @@ add_custom_command(TARGET AssetInventory POST_BUILD
     ${CMAKE_BINARY_DIR}/external/fonts/Roboto-Regular.ttf
     COMMENT "Copying Roboto font to build directory"
 )
+
+# Copy required DLLs to executable directory for self-contained distribution
+add_custom_command(TARGET AssetInventory POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/bin/x64/assimp-vc143-mt.dll
+    ${CMAKE_BINARY_DIR}/Debug/assimp-vc143-mt.dll
+    COMMENT "Copying Assimp DLL to executable directory"
+)
+
+add_custom_command(TARGET AssetInventory POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib-vc2022/glfw3.dll
+    ${CMAKE_BINARY_DIR}/Debug/glfw3.dll
+    COMMENT "Copying GLFW DLL to executable directory"
+)
+
+

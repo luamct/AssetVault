@@ -104,3 +104,5 @@ Thumbs.db
 
 # Asset files (user content)
 assets/
+/db
+jgl_demos/

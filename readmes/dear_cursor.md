@@ -30,8 +30,9 @@
 
 ### Dependencies
 - Use `download_deps.bat` to automate dependency setup
+- Use `download_3d_deps.bat` to download 3D dependencies (GLM, Assimp)
 - Don't manually download dependencies unless necessary
-- The batch file handles downloading GLFW, ImGui, and SQLite
+- The batch files handle downloading GLFW, ImGui, SQLite, and 3D libraries
 
 ### Build Process
 - Use CMake for building the project
@@ -44,6 +45,7 @@
   - `utils.cpp/h` - Utility functions for string formatting, file operations
   - `database.cpp/h` - Database operations and asset storage
   - `index.cpp/h` - Asset indexing and file type detection
+  - `3d.cpp/h` - 3D model rendering and viewport functionality
   - `file_watcher*.cpp/h` - File system monitoring
   - `theme.h` - UI theming configuration
 - External dependencies are in `external/`

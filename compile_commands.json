@@ -1,37 +1,37 @@
 [
   {
     "directory": "D:/GameDev/AssetInventory",
-    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/main.cpp",
+    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/external/glad/include -I D:/GameDev/AssetInventory/external/assimp/include -I D:/GameDev/AssetInventory/external -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/main.cpp",
     "file": "src/main.cpp"
   },
   {
     "directory": "D:/GameDev/AssetInventory",
-    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/asset_index.cpp",
+    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/external/glad/include -I D:/GameDev/AssetInventory/external/assimp/include -I D:/GameDev/AssetInventory/external -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/asset_index.cpp",
     "file": "src/asset_index.cpp"
   },
   {
     "directory": "D:/GameDev/AssetInventory",
-    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/asset_database.cpp",
+    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/external/glad/include -I D:/GameDev/AssetInventory/external/assimp/include -I D:/GameDev/AssetInventory/external -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/asset_database.cpp",
     "file": "src/asset_database.cpp"
   },
   {
     "directory": "D:/GameDev/AssetInventory",
-    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/file_watcher.cpp",
+    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/external/glad/include -I D:/GameDev/AssetInventory/external/assimp/include -I D:/GameDev/AssetInventory/external -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/file_watcher.cpp",
     "file": "src/file_watcher.cpp"
   },
   {
     "directory": "D:/GameDev/AssetInventory",
-    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/file_watcher_polling.cpp",
+    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/external/glad/include -I D:/GameDev/AssetInventory/external/assimp/include -I D:/GameDev/AssetInventory/external -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/file_watcher_polling.cpp",
     "file": "src/file_watcher_polling.cpp"
   },
   {
     "directory": "D:/GameDev/AssetInventory",
-    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/file_watcher_windows.cpp",
+    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/external/glad/include -I D:/GameDev/AssetInventory/external/assimp/include -I D:/GameDev/AssetInventory/external -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/file_watcher_windows.cpp",
     "file": "src/file_watcher_windows.cpp"
   },
   {
     "directory": "D:/GameDev/AssetInventory",
-    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/inspect_db.cpp",
+    "command": "\"C:/Program Files/LLVM/bin/clang++.exe\" -I D:/GameDev/AssetInventory/external/glad/include -I D:/GameDev/AssetInventory/external/assimp/include -I D:/GameDev/AssetInventory/external -I D:/GameDev/AssetInventory/src -I D:/GameDev/AssetInventory/external/imgui -I D:/GameDev/AssetInventory/external/imgui/backends -I D:/GameDev/AssetInventory/external/glfw/include -I D:/GameDev/AssetInventory/external/sqlite -I D:/GameDev/AssetInventory/external/fonts -std=c++17 -Wall -Wextra -Wpedantic -D _DEBUG -D UNICODE -D _UNICODE -D WIN32_LEAN_AND_MEAN -D _WIN32_WINNT=0x0601 -D NOMINMAX -c src/inspect_db.cpp",
     "file": "src/inspect_db.cpp"
   },
   {
