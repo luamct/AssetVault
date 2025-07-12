@@ -43,7 +43,7 @@ void main()
 }
 )";
 
-// Fragment shader source (updated for 3D models with texture support)
+// Fragment shader source (updated for 3D models with improved lighting)
 const char* fragment_shader_source = R"(
 #version 330 core
 in vec3 FragPos;
@@ -63,24 +63,35 @@ void main()
     // Sample texture color or use default white
     vec3 objectColor = useTexture ? texture(diffuseTexture, TexCoord).rgb : vec3(0.7, 0.7, 0.7);
 
-    // Ambient
-    float ambientStrength = 0.1;
+    vec3 norm = normalize(Normal);
+    vec3 viewDir = normalize(viewPos - FragPos);
+
+        // Moderate ambient lighting to allow for some shadows
+    float ambientStrength = 0.25;
     vec3 ambient = ambientStrength * lightColor;
 
-    // Diffuse
-    vec3 norm = normalize(Normal);
+    // Main key light (from camera direction)
     vec3 lightDir = normalize(lightPos - FragPos);
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * lightColor;
+    vec3 diffuse = diff * lightColor * 0.7; // Slightly stronger main light
 
-    // Specular
-    float specularStrength = 0.5;
-    vec3 viewDir = normalize(viewPos - FragPos);
+    // Add subtle fill light from opposite direction to soften shadows
+    vec3 fillLightDir = normalize(-lightPos); // Opposite direction
+    float fillDiff = max(dot(norm, fillLightDir), 0.0);
+    vec3 fillLight = fillDiff * lightColor * 0.15; // Gentler fill light
+
+    // Softer specular highlights
+    float specularStrength = 0.2; // Reduced from 0.5
     vec3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64); // Higher for softer highlights
     vec3 specular = specularStrength * spec * lightColor;
 
-    vec3 result = (ambient + diffuse + specular) * objectColor;
+    // Add subtle rim lighting for better shape definition
+    float rimStrength = 0.3;
+    float rimFactor = 1.0 - max(dot(viewDir, norm), 0.0);
+    vec3 rimLight = rimStrength * pow(rimFactor, 3.0) * lightColor;
+
+    vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor;
     FragColor = vec4(result, 1.0);
 }
 )";
@@ -207,6 +218,105 @@ unsigned int load_texture_for_model(const std::string& filepath) {
   return texture_id;
 }
 
+// Forward declarations
+void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 parent_transform);
+void process_mesh(aiMesh* mesh, const aiScene* scene, Model& model, glm::mat4 transform);
+
+// Helper function to convert aiMatrix4x4 to glm::mat4
+glm::mat4 ai_to_glm_mat4(const aiMatrix4x4& from) {
+  glm::mat4 to;
+  to[0][0] = from.a1;
+  to[1][0] = from.a2;
+  to[2][0] = from.a3;
+  to[3][0] = from.a4;
+  to[0][1] = from.b1;
+  to[1][1] = from.b2;
+  to[2][1] = from.b3;
+  to[3][1] = from.b4;
+  to[0][2] = from.c1;
+  to[1][2] = from.c2;
+  to[2][2] = from.c3;
+  to[3][2] = from.c4;
+  to[0][3] = from.d1;
+  to[1][3] = from.d2;
+  to[2][3] = from.d3;
+  to[3][3] = from.d4;
+  return to;
+}
+
+// Process node recursively and apply transformations
+void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 parent_transform) {
+  // Calculate this node's transformation
+  glm::mat4 node_transform = ai_to_glm_mat4(node->mTransformation);
+  glm::mat4 final_transform = parent_transform * node_transform;
+
+  // Process all meshes in this node
+  for (unsigned int i = 0; i < node->mNumMeshes; i++) {
+    aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+    process_mesh(mesh, scene, model, final_transform);
+  }
+
+  // Process all child nodes
+  for (unsigned int i = 0; i < node->mNumChildren; i++) {
+    process_node(node->mChildren[i], scene, model, final_transform);
+  }
+}
+
+// Process a single mesh with transformation applied
+void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat4 transform) {
+  std::cout << "Processing mesh: " << mesh->mName.C_Str() << std::endl;
+  std::cout << "  Vertices: " << mesh->mNumVertices << std::endl;
+  std::cout << "  Faces: " << mesh->mNumFaces << std::endl;
+
+  // Calculate vertex offset for this mesh
+  unsigned int vertex_offset = static_cast<unsigned int>(model.vertices.size() / 8);
+
+  // Create normal matrix for proper normal transformation
+  glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(transform)));
+
+  // Process vertices with transformation applied
+  for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
+    // Transform position
+    glm::vec4 pos(mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z, 1.0f);
+    glm::vec4 transformed_pos = transform * pos;
+
+    model.vertices.push_back(transformed_pos.x);
+    model.vertices.push_back(transformed_pos.y);
+    model.vertices.push_back(transformed_pos.z);
+
+    // Transform normal
+    if (mesh->HasNormals()) {
+      glm::vec3 normal(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z);
+      glm::vec3 transformed_normal = normal_matrix * normal;
+
+      model.vertices.push_back(transformed_normal.x);
+      model.vertices.push_back(transformed_normal.y);
+      model.vertices.push_back(transformed_normal.z);
+    } else {
+      model.vertices.push_back(0.0f);
+      model.vertices.push_back(0.0f);
+      model.vertices.push_back(1.0f);
+    }
+
+    // Texture coordinates (no transformation needed)
+    if (mesh->mTextureCoords[0]) {
+      model.vertices.push_back(mesh->mTextureCoords[0][i].x);
+      model.vertices.push_back(mesh->mTextureCoords[0][i].y);
+    } else {
+      model.vertices.push_back(0.0f);
+      model.vertices.push_back(0.0f);
+    }
+  }
+
+  // Process indices with proper offset
+  for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
+    aiFace face = mesh->mFaces[i];
+    for (unsigned int j = 0; j < face.mNumIndices; j++) {
+      model.indices.push_back(face.mIndices[j] + vertex_offset);
+    }
+  }
+}
+
 bool load_model(const std::string& filepath, Model& model) {
   // Clean up previous model
   cleanup_model(model);
@@ -226,53 +336,9 @@ bool load_model(const std::string& filepath, Model& model) {
   std::cout << "Scene loaded successfully!" << std::endl;
   std::cout << "Number of meshes: " << scene->mNumMeshes << std::endl;
 
-  // Process all meshes (simple approach - load as-is without hierarchy transformations)
-  for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
-    aiMesh* mesh = scene->mMeshes[i];
-    std::cout << "Processing mesh " << i << ": " << mesh->mName.C_Str() << std::endl;
-    std::cout << "  Vertices: " << mesh->mNumVertices << std::endl;
-    std::cout << "  Faces: " << mesh->mNumFaces << std::endl;
-
-    // Calculate vertex offset for this mesh (number of vertices already added)
-    // 8 floats per vertex (3 pos + 3 normal + 2 texture coordinates)
-    unsigned int vertex_offset = static_cast<unsigned int>(model.vertices.size() / 8);
-
-    // Process vertices
-    for (unsigned int j = 0; j < mesh->mNumVertices; j++) {
-      // Position
-      model.vertices.push_back(mesh->mVertices[j].x);
-      model.vertices.push_back(mesh->mVertices[j].y);
-      model.vertices.push_back(mesh->mVertices[j].z);
-
-      // Normal
-      if (mesh->HasNormals()) {
-        model.vertices.push_back(mesh->mNormals[j].x);
-        model.vertices.push_back(mesh->mNormals[j].y);
-        model.vertices.push_back(mesh->mNormals[j].z);
-      } else {
-        model.vertices.push_back(0.0f);
-        model.vertices.push_back(0.0f);
-        model.vertices.push_back(1.0f);
-      }
-
-      // Texture coordinates
-      if (mesh->mTextureCoords[0]) {
-        model.vertices.push_back(mesh->mTextureCoords[0][j].x);
-        model.vertices.push_back(mesh->mTextureCoords[0][j].y);
-      } else {
-        model.vertices.push_back(0.0f);
-        model.vertices.push_back(0.0f);
-      }
-    }
-
-    // Process indices with proper offset
-    for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
-      aiFace face = mesh->mFaces[j];
-      for (unsigned int k = 0; k < face.mNumIndices; k++) {
-        model.indices.push_back(face.mIndices[k] + vertex_offset);
-      }
-    }
-  }
+  // Process the scene hierarchy starting from root node
+  glm::mat4 identity = glm::mat4(1.0f);
+  process_node(scene->mRootNode, scene, model, identity);
 
   // Calculate bounds
   if (!model.vertices.empty()) {
@@ -362,8 +428,8 @@ void render_model(const Model& model) {
   // Calculate camera distance based on model size
   // We want the model to fit nicely in the view, so move camera back based on size
   float camera_distance = max_size * 1.5f; // 1.5x the model size for good framing
-  if (camera_distance < 3.0f)
-    camera_distance = 3.0f; // Minimum distance
+  if (camera_distance < 150.0f)
+    camera_distance = 150.0f; // Minimum distance
 
   // Position camera at an angle for a nicer preview - looking down from above and to the side
   float camera_x = camera_distance * 0.7f; // 45 degrees horizontally
