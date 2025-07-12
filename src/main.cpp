@@ -259,6 +259,11 @@ void filter_assets(const std::string& search_query) {
   g_filtered_assets.clear();
 
   for (const auto& asset : g_assets) {
+    // Skip auxiliary files - they should never appear in search results
+    if (asset.type == AssetType::Auxiliary) {
+      continue;
+    }
+
     if (asset_matches_search(asset, search_query)) {
       g_filtered_assets.push_back(asset);
     }

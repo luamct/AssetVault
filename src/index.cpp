@@ -90,6 +90,9 @@ AssetType get_asset_type(const std::string& extension) {
       g_type_map[".tar"] = AssetType::Archive;
       g_type_map[".gz"] = AssetType::Archive;
 
+      // Auxiliary files (not shown in search results)
+      g_type_map[".mtl"] = AssetType::Auxiliary;
+
       g_type_map_initialized = true;
     }
   }
@@ -121,6 +124,8 @@ std::string get_asset_type_string(AssetType type) {
     return "Archive";
   case AssetType::Directory:
     return "Directory";
+  case AssetType::Auxiliary:
+    return "Auxiliary";
   case AssetType::Unknown:
     return "Unknown";
   default:
