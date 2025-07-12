@@ -43,6 +43,13 @@ AssetType get_asset_type(const std::string& extension) {
       g_type_map[".ma"] = AssetType::Model;
       g_type_map[".mb"] = AssetType::Model;
       g_type_map[".c4d"] = AssetType::Model;
+      g_type_map[".gltf"] = AssetType::Model;
+      g_type_map[".glb"] = AssetType::Model;
+      g_type_map[".ply"] = AssetType::Model;
+      g_type_map[".stl"] = AssetType::Model;
+      g_type_map[".x"] = AssetType::Model;
+      g_type_map[".iqm"] = AssetType::Model;
+      g_type_map[".iqe"] = AssetType::Model;
 
       // Audio
       g_type_map[".wav"] = AssetType::Sound;
@@ -98,26 +105,26 @@ AssetType get_asset_type(const std::string& extension) {
 // Convert AssetType enum to string for display
 std::string get_asset_type_string(AssetType type) {
   switch (type) {
-    case AssetType::Texture:
-      return "Texture";
-    case AssetType::Model:
-      return "Model";
-    case AssetType::Sound:
-      return "Sound";
-    case AssetType::Font:
-      return "Font";
-    case AssetType::Shader:
-      return "Shader";
-    case AssetType::Document:
-      return "Document";
-    case AssetType::Archive:
-      return "Archive";
-    case AssetType::Directory:
-      return "Directory";
-    case AssetType::Unknown:
-      return "Unknown";
-    default:
-      return "Unknown";
+  case AssetType::Texture:
+    return "Texture";
+  case AssetType::Model:
+    return "Model";
+  case AssetType::Sound:
+    return "Sound";
+  case AssetType::Font:
+    return "Font";
+  case AssetType::Shader:
+    return "Shader";
+  case AssetType::Document:
+    return "Document";
+  case AssetType::Archive:
+    return "Archive";
+  case AssetType::Directory:
+    return "Directory";
+  case AssetType::Unknown:
+    return "Unknown";
+  default:
+    return "Unknown";
   }
 }
 
@@ -210,7 +217,8 @@ void test_indexing() {
   std::cout << "\nSample files:" << '\n';
   int count = 0;
   for (const auto& file : files) {
-    if (count++ >= 10) break;
+    if (count++ >= 10)
+      break;
     print_file_info(file);
   }
 
