@@ -23,6 +23,8 @@ endif()
 
 # MSVC-specific settings
 if(MSVC)
+    # Suppress warning C4201 from GLM library (nameless struct/union)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4201")
     # Enable optimizations in release builds
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG")

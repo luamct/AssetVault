@@ -27,6 +27,7 @@
 #include "file_watcher.h"
 #include "index.h"
 #include "utils.h"
+#include "3d.h"
 
 // Include stb_image for PNG loading
 #define STB_IMAGE_IMPLEMENTATION
@@ -82,143 +83,6 @@ std::unordered_map<AssetType, unsigned int> g_texture_icons;
 
 // Texture cache
 std::unordered_map<std::string, TextureCacheEntry> g_texture_cache;
-
-// 3D preview viewport variables
-unsigned int g_preview_shader = 0;
-unsigned int g_preview_vao = 0;
-unsigned int g_preview_vbo = 0;
-unsigned int g_preview_framebuffer = 0;
-unsigned int g_preview_texture = 0;
-unsigned int g_preview_depth_texture = 0;
-bool g_preview_initialized = false;
-
-// Shader sources for 3D preview
-const char* preview_vertex_shader_source = R"(
-#version 330 core
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aColor;
-out vec3 ourColor;
-void main()
-{
-    gl_Position = vec4(aPos, 1.0);
-    ourColor = aColor;
-}
-)";
-
-const char* preview_fragment_shader_source = R"(
-#version 330 core
-out vec4 FragColor;
-in vec3 ourColor;
-void main()
-{
-    FragColor = vec4(ourColor, 1.0);
-}
-)";
-
-// Initialize 3D preview viewport
-bool initialize_3d_preview() {
-  if (g_preview_initialized)
-    return true;
-
-  // Build and compile shader program
-  unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-  glShaderSource(vertexShader, 1, &preview_vertex_shader_source, NULL);
-  glCompileShader(vertexShader);
-
-  // Check for shader compile errors
-  int success;
-  char infoLog[512];
-  glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-  if (!success) {
-    glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-    std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
-    return false;
-  }
-
-  unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-  glShaderSource(fragmentShader, 1, &preview_fragment_shader_source, NULL);
-  glCompileShader(fragmentShader);
-
-  glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-  if (!success) {
-    glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-    std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
-    return false;
-  }
-
-  // Link shaders
-  g_preview_shader = glCreateProgram();
-  glAttachShader(g_preview_shader, vertexShader);
-  glAttachShader(g_preview_shader, fragmentShader);
-  glLinkProgram(g_preview_shader);
-
-  glGetProgramiv(g_preview_shader, GL_LINK_STATUS, &success);
-  if (!success) {
-    glGetProgramInfoLog(g_preview_shader, 512, NULL, infoLog);
-    std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
-    return false;
-  }
-
-  glDeleteShader(vertexShader);
-  glDeleteShader(fragmentShader);
-
-  // Set up vertex data and configure vertex attributes
-  float vertices[] = {
-      // positions        // colors
-      -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f, // Red
-      0.5f,  -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, // Green
-      0.0f,  0.5f,  0.0f, 0.0f, 0.0f, 1.0f  // Blue
-  };
-
-  glGenVertexArrays(1, &g_preview_vao);
-  glGenBuffers(1, &g_preview_vbo);
-
-  glBindVertexArray(g_preview_vao);
-  glBindBuffer(GL_ARRAY_BUFFER, g_preview_vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-  // Position attribute
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-  glEnableVertexAttribArray(0);
-  // Color attribute
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-  glEnableVertexAttribArray(1);
-
-  // Create framebuffer
-  glGenFramebuffers(1, &g_preview_framebuffer);
-  glGenTextures(1, &g_preview_texture);
-  glGenTextures(1, &g_preview_depth_texture);
-
-  // Set up framebuffer
-  glBindFramebuffer(GL_FRAMEBUFFER, g_preview_framebuffer);
-
-  // Color texture
-  glBindTexture(GL_TEXTURE_2D, g_preview_texture);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 800, 800, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_preview_texture, 0);
-
-  // Depth texture
-  glBindTexture(GL_TEXTURE_2D, g_preview_depth_texture);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, 800, 800, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, g_preview_depth_texture, 0);
-
-  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-    std::cout << "Preview framebuffer is not complete!" << std::endl;
-    return false;
-  }
-
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  g_preview_initialized = true;
-  return true;
-}
 
 bool load_roboto_font(ImGuiIO& io) {
   // Load embedded Roboto font from external/fonts directory
@@ -602,35 +466,11 @@ int main() {
       float avail_width = preview_width - PREVIEW_INTERNAL_PADDING;
       float avail_height = avail_width; // Square aspect ratio
 
-      // Update framebuffer size if needed
-      static int last_fb_width = 0, last_fb_height = 0;
       int fb_width = static_cast<int>(avail_width);
       int fb_height = static_cast<int>(avail_height);
 
-      if (fb_width != last_fb_width || fb_height != last_fb_height) {
-        // Recreate framebuffer with new size
-        glBindTexture(GL_TEXTURE_2D, g_preview_texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, fb_width, fb_height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-        glBindTexture(GL_TEXTURE_2D, g_preview_depth_texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, fb_width, fb_height, 0, GL_DEPTH_STENCIL,
-                     GL_UNSIGNED_INT_24_8, nullptr);
-        last_fb_width = fb_width;
-        last_fb_height = fb_height;
-      }
-
-      // Render triangle to framebuffer
-      glBindFramebuffer(GL_FRAMEBUFFER, g_preview_framebuffer);
-      glViewport(0, 0, fb_width, fb_height);
-      glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-      // Draw the triangle
-      glUseProgram(g_preview_shader);
-      glBindVertexArray(g_preview_vao);
-      glDrawArrays(GL_TRIANGLES, 0, 3);
-
-      // Unbind framebuffer
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      // Render the 3D preview
+      render_3d_preview(fb_width, fb_height);
     }
 
     // Start the Dear ImGui frame
@@ -822,6 +662,23 @@ int main() {
 
       // Check if selected asset is a model
       if (selected_asset.type == AssetType::Model && g_preview_initialized) {
+        // Load the model if it's different from the currently loaded one
+        static std::string last_loaded_model = "";
+        if (selected_asset.full_path != last_loaded_model) {
+          std::cout << "=== Loading Model in Main ===" << std::endl;
+          std::cout << "Selected asset: " << selected_asset.name << std::endl;
+          std::cout << "Full path: " << selected_asset.full_path << std::endl;
+          Model model;
+          if (load_model(selected_asset.full_path, model)) {
+            set_current_model(model);
+            last_loaded_model = selected_asset.full_path;
+            std::cout << "Model loaded successfully in main" << std::endl;
+          } else {
+            std::cout << "Failed to load model in main" << std::endl;
+          }
+          std::cout << "===========================" << std::endl;
+        }
+
         // 3D Preview Viewport for models
         ImVec2 viewport_size(avail_width, avail_height);
 
@@ -850,7 +707,7 @@ int main() {
 
         // 3D Viewport Info
         ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "3D Model Preview");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Colored triangle rendered with OpenGL");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Model: %s", selected_asset.name.c_str());
       } else {
         // 2D Preview for non-model assets
         unsigned int preview_texture = get_asset_texture(selected_asset);
@@ -860,9 +717,7 @@ int main() {
           if (selected_asset.type == AssetType::Texture) {
             int width, height;
             if (get_texture_dimensions(selected_asset.full_path, width, height)) {
-              preview_size =
-                  calculate_thumbnail_size(width, height, avail_width, avail_height,
-                                           std::numeric_limits<float>::max()); // No upscaling limit for preview
+              preview_size = calculate_thumbnail_size(width, height, avail_width, avail_height, 100.0);
             }
           } else {
             // For type icons, use ICON_SCALE * min(available_width, available_height)
@@ -975,14 +830,7 @@ int main() {
   }
 
   // Cleanup 3D preview resources
-  if (g_preview_initialized) {
-    glDeleteVertexArrays(1, &g_preview_vao);
-    glDeleteBuffers(1, &g_preview_vbo);
-    glDeleteProgram(g_preview_shader);
-    glDeleteTextures(1, &g_preview_texture);
-    glDeleteTextures(1, &g_preview_depth_texture);
-    glDeleteFramebuffers(1, &g_preview_framebuffer);
-  }
+  cleanup_3d_preview();
 
   // Cleanup
   ImGui_ImplOpenGL3_Shutdown();
