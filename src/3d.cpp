@@ -428,8 +428,8 @@ void render_model(const Model& model) {
   // Calculate camera distance based on model size
   // We want the model to fit nicely in the view, so move camera back based on size
   float camera_distance = max_size * 1.5f; // 1.5x the model size for good framing
-  if (camera_distance < 150.0f)
-    camera_distance = 150.0f; // Minimum distance
+  // if (camera_distance < 150.0f)
+  //   camera_distance = 150.0f; // Minimum distance
 
   // Position camera at an angle for a nicer preview - looking down from above and to the side
   float camera_x = camera_distance * 0.7f; // 45 degrees horizontally

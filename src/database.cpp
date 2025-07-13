@@ -8,7 +8,9 @@
 
 AssetDatabase::AssetDatabase() : db_(nullptr), is_open_(false) {}
 
-AssetDatabase::~AssetDatabase() { close(); }
+AssetDatabase::~AssetDatabase() {
+  close();
+}
 
 bool AssetDatabase::initialize(const std::string& db_path) {
   if (is_open_) {
@@ -43,7 +45,9 @@ void AssetDatabase::close() {
   is_open_ = false;
 }
 
-bool AssetDatabase::is_open() const { return is_open_; }
+bool AssetDatabase::is_open() const {
+  return is_open_;
+}
 
 bool AssetDatabase::create_tables() {
   const std::string create_table_sql = R"(
@@ -207,9 +211,8 @@ std::vector<FileInfo> AssetDatabase::get_assets_by_type(AssetType type) {
 }
 
 std::vector<FileInfo> AssetDatabase::get_assets_by_directory(const std::string& directory_path) {
-  const std::string sql =
-      "SELECT * FROM assets WHERE relative_path LIKE ? || '%' ORDER BY "
-      "relative_path";
+  const std::string sql = "SELECT * FROM assets WHERE relative_path LIKE ? || '%' ORDER BY "
+                          "relative_path";
   std::vector<FileInfo> assets;
 
   sqlite3_stmt* stmt;
@@ -367,7 +370,9 @@ bool AssetDatabase::insert_assets_batch(const std::vector<FileInfo>& files) {
   return success;
 }
 
-bool AssetDatabase::clear_all_assets() { return execute_sql("DELETE FROM assets"); }
+bool AssetDatabase::clear_all_assets() {
+  return execute_sql("DELETE FROM assets");
+}
 
 // Private helper methods
 
@@ -451,26 +456,9 @@ FileInfo AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
   file.is_directory = sqlite3_column_int(stmt, 7) != 0;
 
   std::string type_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-  // Convert string back to AssetType (simplified - you might want to add a
-  // reverse mapping)
-  if (type_str == "Texture")
-    file.type = AssetType::Texture;
-  else if (type_str == "Model")
-    file.type = AssetType::Model;
-  else if (type_str == "Sound")
-    file.type = AssetType::Sound;
-  else if (type_str == "Font")
-    file.type = AssetType::Font;
-  else if (type_str == "Shader")
-    file.type = AssetType::Shader;
-  else if (type_str == "Document")
-    file.type = AssetType::Document;
-  else if (type_str == "Archive")
-    file.type = AssetType::Archive;
-  else if (type_str == "Directory")
-    file.type = AssetType::Directory;
-  else
-    file.type = AssetType::Unknown;
+
+  // Use centralized conversion function
+  file.type = get_asset_type_from_string(type_str);
 
   return file;
 }

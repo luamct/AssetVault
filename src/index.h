@@ -25,6 +25,7 @@ struct FileInfo {
 // Function declarations
 AssetType get_asset_type(const std::string& extension);
 std::string get_asset_type_string(AssetType type);
+AssetType get_asset_type_from_string(const std::string& type_string);
 std::vector<FileInfo> scan_directory(const std::string& root_path);
 void print_file_info(const FileInfo& file);
 void test_indexing();

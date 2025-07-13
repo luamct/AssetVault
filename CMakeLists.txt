@@ -268,7 +268,7 @@ add_custom_command(TARGET AssetInventory POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Roboto-Regular.ttf
     ${CMAKE_BINARY_DIR}/external/fonts/Roboto-Regular.ttf
-    COMMENT "Copying Roboto font to build directory"
+    COMMENT "Copying Roboto font to build directory\n"
 )
 
 # Copy required DLLs to executable directory for self-contained distribution
@@ -276,14 +276,14 @@ add_custom_command(TARGET AssetInventory POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/bin/x64/assimp-vc143-mt.dll
     ${CMAKE_BINARY_DIR}/Debug/assimp-vc143-mt.dll
-    COMMENT "Copying Assimp DLL to executable directory"
+    COMMENT "Copying Assimp DLL to executable directory\n"
 )
 
 add_custom_command(TARGET AssetInventory POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib-vc2022/glfw3.dll
     ${CMAKE_BINARY_DIR}/Debug/glfw3.dll
-    COMMENT "Copying GLFW DLL to executable directory"
+    COMMENT "Copying GLFW DLL to executable directory\n"
 )
 
 

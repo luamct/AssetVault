@@ -129,8 +129,34 @@ std::string get_asset_type_string(AssetType type) {
   case AssetType::Unknown:
     return "Unknown";
   default:
-    return "Unknown";
+    return "NotFound";
   }
+}
+
+// Convert string back to AssetType enum (reverse of get_asset_type_string)
+AssetType get_asset_type_from_string(const std::string& type_string) {
+  if (type_string == "Texture")
+    return AssetType::Texture;
+  else if (type_string == "Model")
+    return AssetType::Model;
+  else if (type_string == "Sound")
+    return AssetType::Sound;
+  else if (type_string == "Font")
+    return AssetType::Font;
+  else if (type_string == "Shader")
+    return AssetType::Shader;
+  else if (type_string == "Document")
+    return AssetType::Document;
+  else if (type_string == "Archive")
+    return AssetType::Archive;
+  else if (type_string == "Directory")
+    return AssetType::Directory;
+  else if (type_string == "Auxiliary")
+    return AssetType::Auxiliary;
+  else if (type_string == "Unknown")
+    return AssetType::Unknown;
+  else
+    return AssetType::Unknown; // Default fallback
 }
 
 // Recursively scan directory and collect file information

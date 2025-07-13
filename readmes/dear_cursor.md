@@ -53,6 +53,16 @@
 - Database files are in `db/`
 - Documentation is in `readmes/`
 
+### Asset Type System
+- **AssetType enum** is defined in `src/index.h`
+- **Adding new asset types**: When adding a new AssetType enum value:
+  1. Add to enum in `index.h`
+  2. Add case to `get_asset_type_string()` in `index.cpp`
+  3. Add case to `get_asset_type_from_string()` in `index.cpp`
+  4. Add texture icon mapping in `load_type_textures()` in `main.cpp`
+  5. Add file extension mapping in `get_asset_type()` in `index.cpp` if needed
+- **Never** manually convert strings to enums elsewhere - always use `get_asset_type_from_string()`
+
 ### Database
 - SQLite database is located at `db/assets.db`
 - The application performs initial scans and watches for file changes

@@ -126,11 +126,11 @@ unsigned int load_texture(const char* filename) {
 // Function to load type-specific textures
 void load_type_textures() {
   const std::unordered_map<AssetType, const char*> texture_paths = {
-      {AssetType::Texture, "images/texture.png"},  {AssetType::Model, "images/model.png"},
-      {AssetType::Sound, "images/sound.png"},      {AssetType::Font, "images/font.png"},
-      {AssetType::Shader, "images/document.png"},  {AssetType::Document, "images/document.png"},
-      {AssetType::Archive, "images/document.png"}, {AssetType::Directory, "images/folder.png"},
-      {AssetType::Unknown, "images/document.png"}};
+      {AssetType::Texture, "images/texture.png"},   {AssetType::Model, "images/model.png"},
+      {AssetType::Sound, "images/sound.png"},       {AssetType::Font, "images/font.png"},
+      {AssetType::Shader, "images/document.png"},   {AssetType::Document, "images/document.png"},
+      {AssetType::Archive, "images/document.png"},  {AssetType::Directory, "images/folder.png"},
+      {AssetType::Auxiliary, "images/unknown.png"}, {AssetType::Unknown, "images/unknown.png"}};
 
   for (const auto& [type, path] : texture_paths) {
     unsigned int texture_id = load_texture(path);
