@@ -259,18 +259,25 @@ bool asset_matches_search(const FileInfo& asset, const std::string& search_query
 
 // Function to filter assets based on search query
 void filter_assets(const std::string& search_query) {
+  auto start_time = std::chrono::high_resolution_clock::now();
+
   g_filtered_assets.clear();
 
-  constexpr size_t MAX_RESULTS = 500; // Limit results to prevent UI blocking
+  constexpr size_t MAX_RESULTS = 1000; // Limit results to prevent UI blocking
+  size_t total_assets = g_assets.size();
+  size_t auxiliary_skipped = 0;
+  size_t filtered_count = 0;
 
   for (const auto& asset : g_assets) {
     // Skip auxiliary files - they should never appear in search results
     if (asset.type == AssetType::Auxiliary) {
+      auxiliary_skipped++;
       continue;
     }
 
     if (asset_matches_search(asset, search_query)) {
       g_filtered_assets.push_back(asset);
+      filtered_count++;
 
       // Stop at maximum results to prevent UI blocking
       if (g_filtered_assets.size() >= MAX_RESULTS) {
@@ -278,6 +285,15 @@ void filter_assets(const std::string& search_query) {
       }
     }
   }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+
+  // Debug output
+  std::cout << "DEBUG SEARCH: \"" << search_query << "\" | "
+            << "Results: " << filtered_count << "/" << (total_assets - auxiliary_skipped)
+            << " | Auxiliary skipped: " << auxiliary_skipped << " | Time: " << duration.count() << "μs"
+            << (filtered_count >= MAX_RESULTS ? " [TRUNCATED]" : "") << std::endl;
 }
 
 // Background initial scan function
