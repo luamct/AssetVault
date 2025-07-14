@@ -37,19 +37,10 @@ AssetType get_asset_type(const std::string& extension) {
       g_type_map[".fbx"] = AssetType::Model;
       g_type_map[".obj"] = AssetType::Model;
       g_type_map[".dae"] = AssetType::Model;
-      g_type_map[".3ds"] = AssetType::Model;
-      g_type_map[".blend"] = AssetType::Model;
-      g_type_map[".max"] = AssetType::Model;
-      g_type_map[".ma"] = AssetType::Model;
-      g_type_map[".mb"] = AssetType::Model;
-      g_type_map[".c4d"] = AssetType::Model;
       g_type_map[".gltf"] = AssetType::Model;
       g_type_map[".glb"] = AssetType::Model;
       g_type_map[".ply"] = AssetType::Model;
       g_type_map[".stl"] = AssetType::Model;
-      g_type_map[".x"] = AssetType::Model;
-      g_type_map[".iqm"] = AssetType::Model;
-      g_type_map[".iqe"] = AssetType::Model;
 
       // Audio
       g_type_map[".wav"] = AssetType::Sound;

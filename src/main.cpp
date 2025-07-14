@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 #include "imgui.h"
@@ -71,6 +72,8 @@ struct TextureCacheEntry {
 std::vector<FileInfo> g_assets;
 std::vector<FileInfo> g_filtered_assets;
 std::atomic<bool> g_assets_updated(false);
+std::atomic<bool> g_initial_scan_complete(false);
+std::atomic<bool> g_initial_scan_in_progress(false);
 AssetDatabase g_database;
 FileWatcher g_file_watcher;
 unsigned int g_default_texture = 0;
@@ -258,6 +261,8 @@ bool asset_matches_search(const FileInfo& asset, const std::string& search_query
 void filter_assets(const std::string& search_query) {
   g_filtered_assets.clear();
 
+  constexpr size_t MAX_RESULTS = 500; // Limit results to prevent UI blocking
+
   for (const auto& asset : g_assets) {
     // Skip auxiliary files - they should never appear in search results
     if (asset.type == AssetType::Auxiliary) {
@@ -266,8 +271,30 @@ void filter_assets(const std::string& search_query) {
 
     if (asset_matches_search(asset, search_query)) {
       g_filtered_assets.push_back(asset);
+
+      // Stop at maximum results to prevent UI blocking
+      if (g_filtered_assets.size() >= MAX_RESULTS) {
+        break;
+      }
     }
   }
+}
+
+// Background initial scan function
+void perform_initial_scan() {
+  std::cout << "Starting background asset scan...\n";
+  g_initial_scan_in_progress = true;
+
+  std::vector<FileInfo> initial_assets = scan_directory("assets");
+  if (!initial_assets.empty()) {
+    g_database.insert_assets_batch(initial_assets);
+    g_assets = g_database.get_all_assets();
+    g_assets_updated = true; // Trigger UI update - main thread will handle filtering
+  }
+
+  g_initial_scan_complete = true;
+  g_initial_scan_in_progress = false;
+  std::cout << "Background asset scan completed\n";
 }
 
 // File event callback function
@@ -374,23 +401,9 @@ int main() {
   std::cout << "Cleaning database...\n";
   g_database.clear_all_assets();
 
-  // Create initial scan of assets directory
-  std::cout << "Performing initial asset scan...\n";
-  std::vector<FileInfo> initial_assets = scan_directory("assets");
-  if (!initial_assets.empty()) {
-    g_database.insert_assets_batch(initial_assets);
-    g_assets = g_database.get_all_assets();
-    g_filtered_assets = g_assets; // Initialize filtered assets
-  }
-
-  // Start file watching
-  std::cout << "Starting file watcher...\n";
-  if (!g_file_watcher.start_watching("assets", on_file_event)) {
-    std::cerr << "Failed to start file watcher\n";
-    return -1;
-  }
-
-  std::cout << "File watcher started successfully\n";
+  // Start background initial scan (non-blocking)
+  std::thread scan_thread(perform_initial_scan);
+  scan_thread.detach(); // Let it run independently
 
   // Initialize GLFW
   if (!glfwInit()) {
@@ -457,12 +470,25 @@ int main() {
 
   // Main loop
   double last_time = glfwGetTime();
+  static bool file_watcher_started = false;
+
   while (!glfwWindowShouldClose(window)) {
     double current_time = glfwGetTime();
     io.DeltaTime = (float)(current_time - last_time);
     last_time = current_time;
 
     glfwPollEvents();
+
+    // Start file watcher after initial scan completes
+    if (g_initial_scan_complete && !file_watcher_started) {
+      std::cout << "Starting file watcher...\n";
+      if (g_file_watcher.start_watching("assets", on_file_event)) {
+        std::cout << "File watcher started successfully\n";
+        file_watcher_started = true;
+      } else {
+        std::cerr << "Failed to start file watcher\n";
+      }
+    }
 
     // Render 3D preview to framebuffer BEFORE starting ImGui frame
     if (g_preview_initialized) {
@@ -645,11 +671,18 @@ int main() {
 
     // Show message if no assets found
     if (g_filtered_assets.empty()) {
-      if (g_assets.empty()) {
+      if (g_initial_scan_in_progress) {
+        ImGui::TextColored(ImVec4(0.2f, 0.7f, 0.9f, 1.0f), "Scanning assets...");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Please wait while we index your assets directory.");
+      } else if (g_assets.empty()) {
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No assets found. Add files to the 'assets' directory.");
       } else {
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No assets match your search.");
       }
+    } else if (g_filtered_assets.size() >= 1000) {
+      // Show truncation message
+      ImGui::Spacing();
+      ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.2f, 1.0f), "Showing first 1000 results. Use search to narrow down.");
     }
 
     ImGui::EndChild();
