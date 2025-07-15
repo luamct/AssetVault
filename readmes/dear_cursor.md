@@ -117,6 +117,12 @@ wsl -d Ubuntu-22.04 --cd /home/luam/gamedev/AssetInventory -- ./build/AssetInven
 - If suggesting that changes should be committed, ask the user if they want to do so rather than doing it automatically
 - Only perform git operations when the user specifically asks for them using commands like "git commit", "commit and push", etc.
 
+### Visual Issues and UI Changes
+- **ALWAYS wait for user confirmation when working on visual/UI issues** - you cannot see the visual result
+- **Never assume a visual fix worked** - let the user verify and confirm the changes
+- When making UI positioning, layout, or appearance changes, explicitly ask the user to test and confirm the results
+- Visual bugs require user feedback to verify they are actually resolved
+
 ### Code Quality and Building
 
 ## Common Commands

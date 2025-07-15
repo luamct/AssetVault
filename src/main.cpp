@@ -525,8 +525,8 @@ int main() {
     // Render 3D preview to framebuffer BEFORE starting ImGui frame
     if (g_preview_initialized) {
       // Calculate the size for the right panel (same as 2D previews)
-      float preview_width = (ImGui::GetIO().DisplaySize.x * 0.25f) - PREVIEW_RIGHT_MARGIN;
-      float avail_width = preview_width - PREVIEW_INTERNAL_PADDING;
+      float right_panel_width = (ImGui::GetIO().DisplaySize.x * 0.25f) - PREVIEW_RIGHT_MARGIN;
+      float avail_width = right_panel_width - PREVIEW_INTERNAL_PADDING;
       float avail_height = avail_width; // Square aspect ratio
 
       int fb_width = static_cast<int>(avail_width);
@@ -566,36 +566,46 @@ int main() {
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse);
 
-    // Calculate panel sizes (75% for grid, 25% for preview with margin)
+    // Calculate panel sizes
     float window_width = ImGui::GetWindowSize().x;
-    float grid_width = window_width * 0.75f;
-    float preview_width = window_width * 0.25f - PREVIEW_RIGHT_MARGIN; // Add right margin
+    float window_height = ImGui::GetWindowSize().y;
+    float left_width = window_width * 0.75f;
+    float right_width = window_width * 0.25f - PREVIEW_RIGHT_MARGIN;
+    float top_height = window_height * 0.15f;
+    float bottom_height = window_height * 0.85f - 20.0f; // Account for some padding
 
-    // Header
-    ImGui::PushFont(io.Fonts->Fonts[0]);
-    ImGui::TextColored(ImVec4(0.20f, 0.70f, 0.90f, 1.0f), "Asset Inventory");
-    ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.60f, 0.60f, 0.60f, 1.0f), "v1.0.0");
-    ImGui::Separator();
-    ImGui::Spacing();
+    // ============ TOP LEFT: Search Box ============
+    ImGui::BeginChild("SearchRegion", ImVec2(left_width, top_height), true);
 
-    // Search box - create capsule background first
-    float search_x = (ImGui::GetWindowSize().x - SEARCH_BOX_WIDTH) * 0.5f;
-    float search_y = ImGui::GetCursorPosY();
+    // Get the actual usable content area (accounts for child window borders/padding)
+    ImVec2 content_region = ImGui::GetContentRegionAvail();
+
+    // Calculate centered position within content region
+    float content_search_x = (content_region.x - SEARCH_BOX_WIDTH) * 0.5f;
+    float content_search_y = (content_region.y - SEARCH_BOX_HEIGHT) * 0.5f;
+
+    // Ensure we have a minimum Y position
+    if (content_search_y < 5.0f) {
+      content_search_y = 5.0f;
+    }
+
+    // Get screen position for drawing (content area start + our offset)
+    ImVec2 content_start = ImGui::GetCursorScreenPos();
+    ImVec2 capsule_min(content_start.x + content_search_x, content_start.y + content_search_y);
+    ImVec2 capsule_max(capsule_min.x + SEARCH_BOX_WIDTH, capsule_min.y + SEARCH_BOX_HEIGHT);
 
     // Draw capsule background
-    ImVec2 capsule_min(search_x, search_y);
-    ImVec2 capsule_max(search_x + SEARCH_BOX_WIDTH, search_y + SEARCH_BOX_HEIGHT);
     ImGui::GetWindowDrawList()->AddRectFilled(capsule_min, capsule_max,
                                               IM_COL32(255, 255, 255, 255), // White background
                                               25.0f                         // Rounded corners
     );
 
-    // Position text input inside the capsule
-    ImGui::SetCursorPos(ImVec2(search_x + 20,
-                               search_y + (SEARCH_BOX_HEIGHT - ImGui::GetFontSize()) * 0.5f - 4)); // Move up 2 pixels
-    ImGui::PushItemWidth(SEARCH_BOX_WIDTH - 40); // Leave space for padding
+    // Position text input - ImGui text inputs are positioned by their center, not top-left
+    float text_input_x = content_search_x + 20;                       // 20px padding from left edge of capsule
+    float text_input_y = content_search_y + SEARCH_BOX_HEIGHT * 0.5f; // Center of capsule
+
+    ImGui::SetCursorPos(ImVec2(text_input_x, text_input_y));
+    ImGui::PushItemWidth(SEARCH_BOX_WIDTH - 40); // Leave 20px padding on each side
 
     // Remove borders from text input
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
@@ -613,14 +623,47 @@ int main() {
       last_search_buffer = search_buffer;
     }
 
-    ImGui::Spacing();
-    ImGui::Spacing();
+    ImGui::EndChild();
 
-    // Left panel - Asset grid
-    ImGui::BeginChild("AssetGrid", ImVec2(grid_width, 0), true);
+    // ============ TOP RIGHT: Progress and Messages ============
+    ImGui::SameLine();
+    ImGui::BeginChild("ProgressRegion", ImVec2(right_width, top_height), true);
+
+    // Progress bar for scanning (only show when actually scanning)
+    if (g_initial_scan_in_progress) {
+      ImGui::TextColored(ImVec4(0.2f, 0.7f, 0.9f, 1.0f), "Indexing Assets");
+
+      // Progress bar data
+      float progress = g_scan_progress.load();
+      size_t processed = g_files_processed.load();
+      size_t total = g_total_files_to_process.load();
+
+      // Draw progress bar without text overlay
+      ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "");
+
+      // Overlay centered text on the progress bar
+      char progress_text[64];
+      snprintf(progress_text, sizeof(progress_text), "%zu/%zu", processed, total);
+
+      ImVec2 text_size = ImGui::CalcTextSize(progress_text);
+      ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
+      ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
+
+      // Center text on progress bar
+      ImVec2 text_pos = ImVec2(progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
+                               progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
+
+      ImGui::GetWindowDrawList()->AddText(text_pos, IM_COL32(255, 255, 255, 255), progress_text);
+    }
+    // No "Ready" text - keep panel empty when not indexing
+
+    ImGui::EndChild();
+
+    // ============ BOTTOM LEFT: Search Results ============
+    ImGui::BeginChild("AssetGrid", ImVec2(left_width, bottom_height), true);
 
     // Calculate grid layout upfront since all items have the same size
-    float available_width = grid_width - 20.0f;                     // Account for padding
+    float available_width = left_width - 20.0f;                     // Account for padding
     float item_height = THUMBNAIL_SIZE + TEXT_MARGIN + TEXT_HEIGHT; // Full item height including text
     // Add GRID_SPACING to available width since we don't need spacing after the
     // last item
@@ -734,13 +777,13 @@ int main() {
 
     ImGui::EndChild();
 
-    // Right panel - Asset preview
+    // ============ BOTTOM RIGHT: Preview Panel ============
     ImGui::SameLine();
-    ImGui::BeginChild("AssetPreview", ImVec2(preview_width, 0), true);
+    ImGui::BeginChild("AssetPreview", ImVec2(right_width, bottom_height), true);
 
     // Use fixed panel dimensions for stable calculations
-    float avail_width = preview_width - PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
-    float avail_height = avail_width;                             // Square aspect ratio for preview area
+    float avail_width = right_width - PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
+    float avail_height = avail_width;                           // Square aspect ratio for preview area
 
     if (g_selected_asset_index >= 0 && g_selected_asset_index < static_cast<int>(g_filtered_assets.size())) {
       const FileInfo& selected_asset = g_filtered_assets[g_selected_asset_index];
