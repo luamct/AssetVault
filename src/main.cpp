@@ -74,6 +74,9 @@ std::vector<FileInfo> g_filtered_assets;
 std::atomic<bool> g_assets_updated(false);
 std::atomic<bool> g_initial_scan_complete(false);
 std::atomic<bool> g_initial_scan_in_progress(false);
+std::atomic<float> g_scan_progress(0.0f);
+std::atomic<size_t> g_files_processed(0);
+std::atomic<size_t> g_total_files_to_process(0);
 AssetDatabase g_database;
 FileWatcher g_file_watcher;
 unsigned int g_default_texture = 0;
@@ -265,13 +268,11 @@ void filter_assets(const std::string& search_query) {
 
   constexpr size_t MAX_RESULTS = 1000; // Limit results to prevent UI blocking
   size_t total_assets = g_assets.size();
-  size_t auxiliary_skipped = 0;
   size_t filtered_count = 0;
 
   for (const auto& asset : g_assets) {
     // Skip auxiliary files - they should never appear in search results
     if (asset.type == AssetType::Auxiliary) {
-      auxiliary_skipped++;
       continue;
     }
 
@@ -288,20 +289,33 @@ void filter_assets(const std::string& search_query) {
 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+  double duration_ms = duration.count() / 1000.0;
 
-  // Debug output
-  std::cout << "DEBUG SEARCH: \"" << search_query << "\" | "
-            << "Results: " << filtered_count << "/" << (total_assets - auxiliary_skipped)
-            << " | Auxiliary skipped: " << auxiliary_skipped << " | Time: " << duration.count() << "μs"
-            << (filtered_count >= MAX_RESULTS ? " [TRUNCATED]" : "") << std::endl;
+  std::cout << "DEBUG SEARCH: \"" << search_query << "\" | Results: " << filtered_count << "/" << total_assets;
+  if (g_filtered_assets.size() >= MAX_RESULTS) {
+    std::cout << " | Time: " << std::fixed << std::setprecision(2) << duration_ms << "ms [TRUNCATED]";
+  } else {
+    std::cout << " | Time: " << std::fixed << std::setprecision(2) << duration_ms << "ms";
+  }
+  std::cout << std::endl;
 }
 
 // Background initial scan function
 void perform_initial_scan() {
   std::cout << "Starting background asset scan...\n";
   g_initial_scan_in_progress = true;
+  g_scan_progress = 0.0f;
+  g_files_processed = 0;
+  g_total_files_to_process = 0;
 
-  std::vector<FileInfo> initial_assets = scan_directory("assets");
+  // Create progress callback to update global variables
+  auto progress_callback = [](size_t current, size_t total, float progress) {
+    g_files_processed = current;
+    g_total_files_to_process = total;
+    g_scan_progress = progress;
+  };
+
+  std::vector<FileInfo> initial_assets = scan_directory("assets", progress_callback);
   if (!initial_assets.empty()) {
     g_database.insert_assets_batch(initial_assets);
     g_assets = g_database.get_all_assets();
@@ -310,6 +324,8 @@ void perform_initial_scan() {
 
   g_initial_scan_complete = true;
   g_initial_scan_in_progress = false;
+  // Keep progress at 100% briefly, then reset
+  g_scan_progress = 1.0f;
   std::cout << "Background asset scan completed\n";
 }
 
@@ -532,11 +548,23 @@ int main() {
       filter_assets(search_buffer);
     }
 
+    // Track search buffer changes to avoid unnecessary filtering
+    static std::string last_search_buffer = "";
+    static bool initial_filter_applied = false;
+
+    // Apply initial filter when we first have assets
+    if (!initial_filter_applied && !g_assets.empty()) {
+      filter_assets(search_buffer);
+      last_search_buffer = search_buffer;
+      initial_filter_applied = true;
+    }
+
     // Create main window
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Asset Inventory", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse);
 
     // Calculate panel sizes (75% for grid, 25% for preview with margin)
     float window_width = ImGui::GetWindowSize().x;
@@ -579,8 +607,11 @@ int main() {
     ImGui::PopStyleVar();
     ImGui::PopItemWidth();
 
-    // Filter assets in real-time as user types
-    filter_assets(search_buffer);
+    // Only filter if search terms have changed
+    if (std::string(search_buffer) != last_search_buffer) {
+      filter_assets(search_buffer);
+      last_search_buffer = search_buffer;
+    }
 
     ImGui::Spacing();
     ImGui::Spacing();
@@ -846,6 +877,47 @@ int main() {
     } else {
       ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No asset selected");
       ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Click on an asset to preview");
+    }
+
+    // Progress bar for scanning (positioned at bottom of right panel)
+    if (g_initial_scan_in_progress) {
+      // Add some spacing to separate from content above, but not too much
+      float remaining_height = ImGui::GetContentRegionAvail().y;
+      if (remaining_height > 80.0f) {                      // Only add spacing if we have plenty of room
+        ImGui::Dummy(ImVec2(0, remaining_height - 70.0f)); // Leave 70px for progress bar area
+      } else {
+        ImGui::Spacing();
+        ImGui::Spacing();
+      }
+
+      ImGui::Separator();
+      ImGui::Spacing();
+
+      // Progress bar data
+      float progress = g_scan_progress.load();
+      size_t processed = g_files_processed.load();
+      size_t total = g_total_files_to_process.load();
+
+      ImGui::TextColored(ImVec4(0.2f, 0.7f, 0.9f, 1.0f), "Indexing Assets");
+
+      // Draw progress bar without text overlay
+      ImVec2 progress_bar_size(-1.0f, 0.0f);
+      ImVec2 cursor_pos = ImGui::GetCursorPos();
+      ImGui::ProgressBar(progress, progress_bar_size, "");
+
+      // Overlay centered text on the progress bar
+      char progress_text[64];
+      snprintf(progress_text, sizeof(progress_text), "Scanning... %zu/%zu", processed, total);
+
+      ImVec2 text_size = ImGui::CalcTextSize(progress_text);
+      ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
+      ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
+
+      // Center text on progress bar
+      ImVec2 text_pos = ImVec2(progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
+                               progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
+
+      ImGui::GetWindowDrawList()->AddText(text_pos, IM_COL32(255, 255, 255, 255), progress_text);
     }
 
     ImGui::EndChild();

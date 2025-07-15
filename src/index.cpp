@@ -151,7 +151,7 @@ AssetType get_asset_type_from_string(const std::string& type_string) {
 }
 
 // Recursively scan directory and collect file information
-std::vector<FileInfo> scan_directory(const std::string& root_path) {
+std::vector<FileInfo> scan_directory(const std::string& root_path, ProgressCallback progress_callback) {
   std::vector<FileInfo> files;
 
   try {
@@ -163,6 +163,16 @@ std::vector<FileInfo> scan_directory(const std::string& root_path) {
 
     std::cout << "Scanning directory: " << root_path << '\n';
 
+    // First pass: Count total files for progress tracking
+    size_t total_count = 0;
+    for (const auto& entry : fs::recursive_directory_iterator(root)) {
+      total_count++;
+    }
+
+    std::cout << "Found " << total_count << " files and directories to process\n";
+
+    // Second pass: Process files with progress updates
+    size_t processed = 0;
     for (const auto& entry : fs::recursive_directory_iterator(root)) {
       FileInfo file_info;
 
@@ -197,6 +207,13 @@ std::vector<FileInfo> scan_directory(const std::string& root_path) {
       }
 
       files.push_back(file_info);
+
+      // Update progress via callback if provided
+      processed++;
+      if (progress_callback && total_count > 0) {
+        float progress = static_cast<float>(processed) / static_cast<float>(total_count);
+        progress_callback(processed, total_count, progress);
+      }
     }
 
     std::cout << "Found " << files.size() << " files and directories\n";
@@ -227,7 +244,7 @@ void test_indexing() {
   std::cout << "Starting file indexing...\n";
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  std::vector<FileInfo> files = scan_directory(scan_path);
+  std::vector<FileInfo> files = scan_directory(scan_path); // No progress callback for test
 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);

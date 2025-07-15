@@ -109,6 +109,16 @@ wsl -d Ubuntu-22.04 --cd /home/luam/gamedev/AssetInventory -- ./build/AssetInven
 - **Build Tasks**: Use "WSL: CMake Build (Ninja)" for optimal builds
 - **C++ Configuration**: Set to "WSL-Clang" for best IntelliSense
 
+## Important Guidelines for AI Assistants
+
+### Git and Version Control
+- **NEVER perform git commands (add, commit, push, etc.) unless explicitly requested by the user**
+- **NEVER assume the user wants to commit changes** - always wait for explicit instruction
+- If suggesting that changes should be committed, ask the user if they want to do so rather than doing it automatically
+- Only perform git operations when the user specifically asks for them using commands like "git commit", "commit and push", etc.
+
+### Code Quality and Building
+
 ## Common Commands
 
 ### Windows (Legacy)
