@@ -922,47 +922,6 @@ int main() {
       ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Click on an asset to preview");
     }
 
-    // Progress bar for scanning (positioned at bottom of right panel)
-    if (g_initial_scan_in_progress) {
-      // Add some spacing to separate from content above, but not too much
-      float remaining_height = ImGui::GetContentRegionAvail().y;
-      if (remaining_height > 80.0f) {                      // Only add spacing if we have plenty of room
-        ImGui::Dummy(ImVec2(0, remaining_height - 70.0f)); // Leave 70px for progress bar area
-      } else {
-        ImGui::Spacing();
-        ImGui::Spacing();
-      }
-
-      ImGui::Separator();
-      ImGui::Spacing();
-
-      // Progress bar data
-      float progress = g_scan_progress.load();
-      size_t processed = g_files_processed.load();
-      size_t total = g_total_files_to_process.load();
-
-      ImGui::TextColored(ImVec4(0.2f, 0.7f, 0.9f, 1.0f), "Indexing Assets");
-
-      // Draw progress bar without text overlay
-      ImVec2 progress_bar_size(-1.0f, 0.0f);
-      ImVec2 cursor_pos = ImGui::GetCursorPos();
-      ImGui::ProgressBar(progress, progress_bar_size, "");
-
-      // Overlay centered text on the progress bar
-      char progress_text[64];
-      snprintf(progress_text, sizeof(progress_text), "Scanning... %zu/%zu", processed, total);
-
-      ImVec2 text_size = ImGui::CalcTextSize(progress_text);
-      ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
-      ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
-
-      // Center text on progress bar
-      ImVec2 text_pos = ImVec2(progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
-                               progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
-
-      ImGui::GetWindowDrawList()->AddText(text_pos, IM_COL32(255, 255, 255, 255), progress_text);
-    }
-
     ImGui::EndChild();
 
     ImGui::End();
