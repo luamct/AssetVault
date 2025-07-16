@@ -27,6 +27,7 @@
 - **Always try to fix warnings** - don't leave them unresolved
 - Pay attention to compiler and linker warnings
 - Address any build issues before proceeding
+- **Avoid using global variables** unless there's a reason beyond convenience, like performance or multi-threading. They are error prone and make testing way harder
 
 ### Dependencies
 - Use `download_deps.bat` to automate dependency setup

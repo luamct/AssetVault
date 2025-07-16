@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
+#include <queue>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -50,6 +52,26 @@ constexpr float PREVIEW_INTERNAL_PADDING = 30.0f; // Internal padding within pre
 constexpr ImU32 BACKGROUND_COLOR = IM_COL32(242, 247, 255, 255);         // Light blue-gray background
 constexpr ImU32 FALLBACK_THUMBNAIL_COLOR = IM_COL32(242, 247, 255, 255); // Same as background
 
+// ImVec4 UI Colors
+constexpr ImVec4 COLOR_HEADER_TEXT = ImVec4(0.2f, 0.7f, 0.9f, 1.0f);      // Light blue for headers
+constexpr ImVec4 COLOR_LABEL_TEXT = ImVec4(0.2f, 0.2f, 0.8f, 1.0f);       // Blue for labels
+constexpr ImVec4 COLOR_SECONDARY_TEXT = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);   // Medium gray for secondary text
+constexpr ImVec4 COLOR_DISABLED_TEXT = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);    // Darker gray for disabled/placeholder text
+constexpr ImVec4 COLOR_WARNING_TEXT = ImVec4(0.9f, 0.7f, 0.2f, 1.0f);     // Yellow/orange for warnings
+constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);      // Fully transparent
+constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.0f, 0.0f, 0.0f, 0.3f); // Semi-transparent black
+
+// IM_COL32 UI Colors
+constexpr ImU32 COLOR_WHITE = IM_COL32(255, 255, 255, 255);       // Pure white
+constexpr ImU32 COLOR_TRANSPARENT_32 = IM_COL32(0, 0, 0, 0);      // Transparent
+constexpr ImU32 COLOR_BORDER_GRAY = IM_COL32(150, 150, 150, 255); // Gray for borders
+
+// OpenGL Clear Color (light blue background to match ImGui theme)
+constexpr float CLEAR_COLOR_R = 0.95f;
+constexpr float CLEAR_COLOR_G = 0.97f;
+constexpr float CLEAR_COLOR_B = 1.00f;
+constexpr float CLEAR_COLOR_A = 1.00f;
+
 // Global variables for search and UI state
 static char search_buffer[256] = "";
 // static bool show_search_results = false;  // Unused variable
@@ -77,6 +99,10 @@ std::atomic<size_t> g_total_files_to_process(0);
 AssetDatabase g_database;
 FileWatcher g_file_watcher;
 unsigned int g_default_texture = 0;
+
+// Thread-safe event queue for file watcher events
+std::queue<FileEvent> g_pending_file_events;
+std::mutex g_events_mutex;
 
 // Selection state
 int g_selected_asset_index = -1; // -1 means no selection
@@ -303,95 +329,134 @@ void reindex() {
                           g_scan_progress, g_files_processed, g_total_files_to_process);
 }
 
-// File event callback function
+// Helper function to clean up texture cache entry for a specific path
+void cleanup_texture_cache(const std::string& path) {
+  auto cache_it = g_texture_cache.find(path);
+  if (cache_it != g_texture_cache.end()) {
+    if (cache_it->second.texture_id != 0) {
+      glDeleteTextures(1, &cache_it->second.texture_id);
+    }
+    g_texture_cache.erase(cache_it);
+  }
+}
+
+// File event callback function (runs on background thread)
+// Only queues events - all processing happens on main thread
 void on_file_event(const FileEvent& event) {
-  switch (event.type) {
-  case FileEventType::Created:
-    // Fall through to Modified case
-  case FileEventType::Modified: {
-    FileInfo file_info;
-    std::filesystem::path path(event.path);
+  std::lock_guard<std::mutex> lock(g_events_mutex);
+  g_pending_file_events.push(event);
+}
 
-    file_info.name = path.filename().string();
-    file_info.full_path = event.path;
-    file_info.relative_path = event.path; // For now, use full path
-    file_info.last_modified = event.timestamp;
+// Process pending file events on main thread (thread-safe)
+void process_pending_file_events() {
+  std::queue<FileEvent> events_to_process;
 
-    if (std::filesystem::is_regular_file(event.path)) {
-      // Handle regular files
-      // Don't clear texture cache here - let main thread handle it
-      // Background thread shouldn't modify OpenGL resources or cache
+  // Quickly extract all pending events under lock
+  {
+    std::lock_guard<std::mutex> lock(g_events_mutex);
+    events_to_process.swap(g_pending_file_events);
+  }
 
-      file_info.extension = path.extension().string();
-      file_info.size = std::filesystem::file_size(event.path);
-      file_info.is_directory = false;
-      file_info.type = get_asset_type(file_info.extension);
-    } else if (std::filesystem::is_directory(event.path)) {
-      // Handle directories
-      file_info.extension = ""; // Directories don't have extensions
-      file_info.size = 0;       // Directories don't have meaningful file size
-      file_info.is_directory = true;
-      file_info.type = AssetType::Directory;
-    } else {
-      // Skip if it's neither a regular file nor directory
+  // Process events without holding the lock
+  bool assets_changed = false;
+  while (!events_to_process.empty()) {
+    FileEvent event = events_to_process.front();
+    events_to_process.pop();
+
+    switch (event.type) {
+    case FileEventType::Created:
+      // Fall through to Modified case
+    case FileEventType::Modified: {
+      FileInfo file_info;
+      std::filesystem::path path(event.path);
+
+      file_info.name = path.filename().string();
+      file_info.full_path = event.path;
+      file_info.relative_path = event.path; // For now, use full path
+      file_info.last_modified = event.timestamp;
+
+      if (std::filesystem::is_regular_file(event.path)) {
+        // Handle regular files
+        // Clear texture cache for modified files so they can be reloaded
+        cleanup_texture_cache(event.path);
+
+        file_info.extension = path.extension().string();
+        file_info.size = std::filesystem::file_size(event.path);
+        file_info.is_directory = false;
+        file_info.type = get_asset_type(file_info.extension);
+      } else if (std::filesystem::is_directory(event.path)) {
+        // Handle directories
+        file_info.extension = ""; // Directories don't have extensions
+        file_info.size = 0;       // Directories don't have meaningful file size
+        file_info.is_directory = true;
+        file_info.type = AssetType::Directory;
+      } else {
+        // Skip if it's neither a regular file nor directory
+        break;
+      }
+
+      // Insert or update in database (safe on main thread)
+      auto existing_asset = g_database.get_asset_by_path(event.path);
+      if (existing_asset.full_path.empty()) {
+        g_database.insert_asset(file_info);
+      } else {
+        g_database.update_asset(file_info);
+      }
+      assets_changed = true;
       break;
     }
+    case FileEventType::Deleted: {
+      // Clean up texture cache for deleted file (must be done on main thread)
+      cleanup_texture_cache(event.path);
 
-    // Insert or update in database
-    auto existing_asset = g_database.get_asset_by_path(event.path);
-    if (existing_asset.full_path.empty()) {
+      g_database.delete_asset(event.path);
+      assets_changed = true;
+      break;
+    }
+    case FileEventType::Renamed: {
+      // Clean up texture cache for old path (must be done on main thread)
+      cleanup_texture_cache(event.old_path);
+
+      // Delete old entry and create new one
+      g_database.delete_asset(event.old_path);
+
+      FileInfo file_info;
+      std::filesystem::path path(event.path);
+
+      file_info.name = path.filename().string();
+      file_info.full_path = event.path;
+      file_info.relative_path = event.path;
+      file_info.last_modified = event.timestamp;
+
+      if (std::filesystem::is_regular_file(event.path)) {
+        // Handle regular files
+        file_info.extension = path.extension().string();
+        file_info.size = std::filesystem::file_size(event.path);
+        file_info.is_directory = false;
+        file_info.type = get_asset_type(file_info.extension);
+      } else if (std::filesystem::is_directory(event.path)) {
+        // Handle directories
+        file_info.extension = ""; // Directories don't have extensions
+        file_info.size = 0;       // Directories don't have meaningful file size
+        file_info.is_directory = true;
+        file_info.type = AssetType::Directory;
+      } else {
+        // Skip if it's neither a regular file nor directory
+        break;
+      }
+
       g_database.insert_asset(file_info);
-    } else {
-      g_database.update_asset(file_info);
-    }
-    g_assets_updated = true;
-    break;
-  }
-  case FileEventType::Deleted: {
-    // Don't clear texture cache here - let main thread handle it
-    // Background thread shouldn't modify OpenGL resources or cache
-    g_database.delete_asset(event.path);
-    g_assets_updated = true;
-    break;
-  }
-  case FileEventType::Renamed: {
-    // Don't clear texture cache here - let main thread handle it
-    // Background thread shouldn't modify OpenGL resources or cache
-
-    // Delete old entry and create new one
-    g_database.delete_asset(event.old_path);
-
-    FileInfo file_info;
-    std::filesystem::path path(event.path);
-
-    file_info.name = path.filename().string();
-    file_info.full_path = event.path;
-    file_info.relative_path = event.path;
-    file_info.last_modified = event.timestamp;
-
-    if (std::filesystem::is_regular_file(event.path)) {
-      // Handle regular files
-      file_info.extension = path.extension().string();
-      file_info.size = std::filesystem::file_size(event.path);
-      file_info.is_directory = false;
-      file_info.type = get_asset_type(file_info.extension);
-    } else if (std::filesystem::is_directory(event.path)) {
-      // Handle directories
-      file_info.extension = ""; // Directories don't have extensions
-      file_info.size = 0;       // Directories don't have meaningful file size
-      file_info.is_directory = true;
-      file_info.type = AssetType::Directory;
-    } else {
-      // Skip if it's neither a regular file nor directory
+      assets_changed = true;
       break;
     }
-
-    g_database.insert_asset(file_info);
-    g_assets_updated = true;
-    break;
+    default:
+      break;
+    }
   }
-  default:
-    break;
+
+  // Only set flag once after processing all events
+  if (assets_changed) {
+    g_assets_updated = true;
   }
 }
 
@@ -514,30 +579,12 @@ int main() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+    // Process any pending file events from background threads
+    process_pending_file_events();
+
     // Check if assets were updated and refresh the list
     if (g_assets_updated.exchange(false)) {
       g_assets = g_database.get_all_assets();
-
-      // Clean up texture cache for assets that no longer exist
-      // This must be done on the main thread since OpenGL resources are involved
-      std::unordered_set<std::string> current_asset_paths;
-      for (const auto& asset : g_assets) {
-        current_asset_paths.insert(asset.full_path);
-      }
-
-      auto cache_it = g_texture_cache.begin();
-      while (cache_it != g_texture_cache.end()) {
-        if (current_asset_paths.find(cache_it->first) == current_asset_paths.end()) {
-          // Asset no longer exists - clean up its texture
-          if (cache_it->second.texture_id != 0) {
-            glDeleteTextures(1, &cache_it->second.texture_id);
-          }
-          cache_it = g_texture_cache.erase(cache_it);
-        } else {
-          ++cache_it;
-        }
-      }
-
       // Re-apply current search filter to include new assets
       filter_assets(search_buffer);
     }
@@ -590,8 +637,8 @@ int main() {
 
     // Draw capsule background
     ImGui::GetWindowDrawList()->AddRectFilled(capsule_min, capsule_max,
-                                              IM_COL32(255, 255, 255, 255), // White background
-                                              25.0f                         // Rounded corners
+                                              COLOR_WHITE, // White background
+                                              25.0f        // Rounded corners
     );
 
     // Position text input - ImGui text inputs are positioned by their center, not top-left
@@ -603,7 +650,7 @@ int main() {
 
     // Remove borders from text input
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0)); // Transparent background
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR_TRANSPARENT_32); // Transparent background
 
     ImGui::InputText("##Search", search_buffer, sizeof(search_buffer), ImGuiInputTextFlags_EnterReturnsTrue);
 
@@ -625,7 +672,7 @@ int main() {
 
     // Progress bar for scanning (only show when actually scanning)
     if (g_initial_scan_in_progress) {
-      ImGui::TextColored(ImVec4(0.2f, 0.7f, 0.9f, 1.0f), "Indexing Assets");
+      ImGui::TextColored(COLOR_HEADER_TEXT, "Indexing Assets");
 
       // Progress bar data
       float progress = g_scan_progress.load();
@@ -647,7 +694,7 @@ int main() {
       ImVec2 text_pos = ImVec2(progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
                                progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
 
-      ImGui::GetWindowDrawList()->AddText(text_pos, IM_COL32(255, 255, 255, 255), progress_text);
+      ImGui::GetWindowDrawList()->AddText(text_pos, COLOR_WHITE, progress_text);
     }
     // No "Ready" text - keep panel empty when not indexing
 
@@ -712,9 +759,9 @@ int main() {
       float image_y_offset = (THUMBNAIL_SIZE - display_size.y) * 0.5f;
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
 
-      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.f, 0.f, 0.f, 0.f));
-      ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.f, 0.f, 0.f, 0.f));
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.f, 0.f, 0.f, 0.3f));
+      ImGui::PushStyleColor(ImGuiCol_Button, COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, COLOR_SEMI_TRANSPARENT);
 
       // Display thumbnail image
       if (asset_texture != 0) {
@@ -756,17 +803,17 @@ int main() {
     // Show message if no assets found
     if (g_filtered_assets.empty()) {
       if (g_initial_scan_in_progress) {
-        ImGui::TextColored(ImVec4(0.2f, 0.7f, 0.9f, 1.0f), "Scanning assets...");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Please wait while we index your assets directory.");
+        ImGui::TextColored(COLOR_HEADER_TEXT, "Scanning assets...");
+        ImGui::TextColored(COLOR_SECONDARY_TEXT, "Please wait while we index your assets directory.");
       } else if (g_assets.empty()) {
-        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No assets found. Add files to the 'assets' directory.");
+        ImGui::TextColored(COLOR_DISABLED_TEXT, "No assets found. Add files to the 'assets' directory.");
       } else {
-        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No assets match your search.");
+        ImGui::TextColored(COLOR_DISABLED_TEXT, "No assets match your search.");
       }
     } else if (g_filtered_assets.size() >= 1000) {
       // Show truncation message
       ImGui::Spacing();
-      ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.2f, 1.0f), "Showing first 1000 results. Use search to narrow down.");
+      ImGui::TextColored(COLOR_WARNING_TEXT, "Showing first 1000 results. Use search to narrow down.");
     }
 
     ImGui::EndChild();
@@ -814,7 +861,7 @@ int main() {
         // Draw border around the viewport
         ImVec2 border_min = image_pos;
         ImVec2 border_max(border_min.x + viewport_size.x, border_min.y + viewport_size.y);
-        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, IM_COL32(150, 150, 150, 255), 8.0f, 0, 1.0f);
+        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, COLOR_BORDER_GRAY, 8.0f, 0, 1.0f);
 
         // Display the 3D viewport
         ImGui::Image((ImTextureID)(intptr_t)g_preview_texture, viewport_size);
@@ -828,8 +875,8 @@ int main() {
         ImGui::Spacing();
 
         // 3D Viewport Info
-        ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "3D Model Preview");
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Model: %s", selected_asset.name.c_str());
+        ImGui::TextColored(COLOR_LABEL_TEXT, "3D Model Preview");
+        ImGui::TextColored(COLOR_SECONDARY_TEXT, "Model: %s", selected_asset.name.c_str());
       } else {
         // 2D Preview for non-model assets
         unsigned int preview_texture = get_asset_texture(selected_asset);
@@ -857,7 +904,7 @@ int main() {
           // Draw border around the image
           ImVec2 border_min = image_pos;
           ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
-          ImGui::GetWindowDrawList()->AddRect(border_min, border_max, IM_COL32(150, 150, 150, 255), 8.0f, 0, 1.0f);
+          ImGui::GetWindowDrawList()->AddRect(border_min, border_max, COLOR_BORDER_GRAY, 8.0f, 0, 1.0f);
 
           ImGui::Image((ImTextureID)(intptr_t)preview_texture, preview_size);
 
@@ -871,19 +918,19 @@ int main() {
         ImGui::Spacing();
 
         // Asset information
-        ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Name: ");
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Name: ");
         ImGui::SameLine();
         ImGui::Text("%s", selected_asset.name.c_str());
 
-        ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Type: ");
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Type: ");
         ImGui::SameLine();
         ImGui::Text("%s", get_asset_type_string(selected_asset.type).c_str());
 
-        ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Size: ");
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Size: ");
         ImGui::SameLine();
         ImGui::Text("%s", format_file_size(selected_asset.size).c_str());
 
-        ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Extension: ");
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Extension: ");
         ImGui::SameLine();
         ImGui::Text("%s", selected_asset.extension.c_str());
 
@@ -891,13 +938,13 @@ int main() {
         if (selected_asset.type == AssetType::Texture) {
           int width, height;
           if (get_texture_dimensions(selected_asset.full_path, width, height)) {
-            ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Dimensions: ");
+            ImGui::TextColored(COLOR_LABEL_TEXT, "Dimensions: ");
             ImGui::SameLine();
             ImGui::Text("%dx%d", width, height);
           }
         }
 
-        ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Path: ");
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Path: ");
         ImGui::SameLine();
         ImGui::Text("%s", format_display_path(selected_asset.full_path).c_str());
 
@@ -907,13 +954,13 @@ int main() {
         localtime_s(&tm_buf, &time_t);
         std::stringstream ss;
         ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
-        ImGui::TextColored(ImVec4(0.2f, 0.2f, 0.8f, 1.0f), "Modified: ");
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Modified: ");
         ImGui::SameLine();
         ImGui::Text("%s", ss.str().c_str());
       }
     } else {
-      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No asset selected");
-      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Click on an asset to preview");
+      ImGui::TextColored(COLOR_DISABLED_TEXT, "No asset selected");
+      ImGui::TextColored(COLOR_DISABLED_TEXT, "Click on an asset to preview");
     }
 
     ImGui::EndChild();
@@ -925,7 +972,7 @@ int main() {
     int display_w, display_h;
     glfwGetFramebufferSize(window, &display_w, &display_h);
     glViewport(0, 0, display_w, display_h);
-    glClearColor(0.95f, 0.97f, 1.00f, 1.00f);
+    glClearColor(CLEAR_COLOR_R, CLEAR_COLOR_G, CLEAR_COLOR_B, CLEAR_COLOR_A);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
