@@ -1,15 +1,12 @@
 #pragma once
 #include <sqlite3.h>
-
-#include <memory>
 #include <string>
 #include <vector>
 
 #include "index.h"
 
-
 class AssetDatabase {
- public:
+public:
   AssetDatabase();
   ~AssetDatabase();
 
@@ -45,7 +42,7 @@ class AssetDatabase {
   bool insert_assets_batch(const std::vector<FileInfo>& files);
   bool clear_all_assets();
 
- private:
+private:
   sqlite3* db_;
   bool is_open_;
 

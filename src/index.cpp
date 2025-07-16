@@ -1,13 +1,19 @@
 #include "index.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <iostream>
 #include <map>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
+#include <unordered_map>
+
+#include "database.h"
 
 // Global map with thread safety
 static std::map<std::string, AssetType> g_type_map;
@@ -41,6 +47,7 @@ AssetType get_asset_type(const std::string& extension) {
       g_type_map[".glb"] = AssetType::Model;
       g_type_map[".ply"] = AssetType::Model;
       g_type_map[".stl"] = AssetType::Model;
+      g_type_map[".3ds"] = AssetType::Model;
 
       // Audio
       g_type_map[".wav"] = AssetType::Sound;
@@ -150,9 +157,9 @@ AssetType get_asset_type_from_string(const std::string& type_string) {
     return AssetType::Unknown; // Default fallback
 }
 
-// Recursively scan directory and collect file information
-std::vector<FileInfo> scan_directory(const std::string& root_path, ProgressCallback progress_callback) {
-  std::vector<FileInfo> files;
+// Lightweight directory scan - only gets paths and modification times (super fast, no progress tracking)
+std::unordered_map<std::string, LightFileInfo> quick_scan(const std::string& root_path) {
+  std::unordered_map<std::string, LightFileInfo> files;
 
   try {
     fs::path root(root_path);
@@ -161,68 +168,96 @@ std::vector<FileInfo> scan_directory(const std::string& root_path, ProgressCallb
       return files;
     }
 
-    std::cout << "Scanning directory: " << root_path << '\n';
+    std::cout << "Quick scanning directory: " << root_path << '\n';
 
-    // First pass: Count total files for progress tracking
-    size_t total_count = 0;
+    // Single pass: Process files
     for (const auto& entry : fs::recursive_directory_iterator(root)) {
-      total_count++;
-    }
+      LightFileInfo light_info;
 
-    std::cout << "Found " << total_count << " files and directories to process\n";
+      // Only get essential information - no expensive operations
+      light_info.full_path = entry.path().string();
+      light_info.is_directory = entry.is_directory();
 
-    // Second pass: Process files with progress updates
-    size_t processed = 0;
-    for (const auto& entry : fs::recursive_directory_iterator(root)) {
-      FileInfo file_info;
-
-      // Basic file information
-      file_info.full_path = entry.path().string();
-      file_info.name = entry.path().filename().string();
-      file_info.is_directory = entry.is_directory();
-
-      // Relative path from root
-      file_info.relative_path = fs::relative(entry.path(), root).string();
-
-      if (!file_info.is_directory) {
-        // File-specific information
-        file_info.extension = entry.path().extension().string();
-        file_info.type = get_asset_type(file_info.extension);
-
-        try {
-          file_info.size = fs::file_size(entry.path());
-          // Convert file_time_type to system_clock::time_point (portable way)
-          auto ftime = fs::last_write_time(entry.path());
-          auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-              ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
-          file_info.last_modified = sctp;
-        } catch (const fs::filesystem_error& e) {
-          std::cerr << "Warning: Could not get file info for " << file_info.full_path << ": " << e.what() << '\n';
-          file_info.size = 0;
-        }
-      } else {
-        file_info.type = AssetType::Directory;
-        file_info.extension = "";
-        file_info.size = 0;
+      try {
+        // Get modification time for both files and directories
+        auto ftime = fs::last_write_time(entry.path());
+        auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+            ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+        light_info.last_modified = sctp;
+      } catch (const fs::filesystem_error& e) {
+        std::cerr << "Warning: Could not get modification time for " << light_info.full_path << ": " << e.what()
+                  << '\n';
+        // Skip files we can't access
+        continue;
       }
 
-      files.push_back(file_info);
-
-      // Update progress via callback if provided
-      processed++;
-      if (progress_callback && total_count > 0) {
-        float progress = static_cast<float>(processed) / static_cast<float>(total_count);
-        progress_callback(processed, total_count, progress);
-      }
+      files[light_info.full_path] = light_info;
     }
 
-    std::cout << "Found " << files.size() << " files and directories\n";
+    std::cout << "Quick scan found " << files.size() << " files and directories\n";
 
   } catch (const fs::filesystem_error& e) {
-    std::cerr << "Error scanning directory: " << e.what() << '\n';
+    std::cerr << "Error quick scanning directory: " << e.what() << '\n';
   }
 
   return files;
+}
+
+// Index a file - create full FileInfo with expensive operations (will include image resizing, 3D previews, etc.)
+FileInfo index_file(const std::string& full_path, const std::string& root_path) {
+  FileInfo file_info;
+
+  try {
+    fs::path path(full_path);
+    fs::path root(root_path);
+
+    // Basic file information
+    file_info.full_path = full_path;
+    file_info.name = path.filename().string();
+    file_info.is_directory = fs::is_directory(path);
+
+    // Relative path from root
+    file_info.relative_path = fs::relative(path, root).string();
+
+    if (!file_info.is_directory) {
+      // File-specific information (expensive operations)
+      file_info.extension = path.extension().string();
+      file_info.type = get_asset_type(file_info.extension);
+
+      try {
+        file_info.size = fs::file_size(path);
+        // Convert file_time_type to system_clock::time_point
+        auto ftime = fs::last_write_time(path);
+        auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+            ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+        file_info.last_modified = sctp;
+      } catch (const fs::filesystem_error& e) {
+        std::cerr << "Warning: Could not get file info for " << file_info.full_path << ": " << e.what() << '\n';
+        file_info.size = 0;
+      }
+    } else {
+      // Directory-specific information
+      file_info.type = AssetType::Directory;
+      file_info.extension = "";
+      file_info.size = 0;
+
+      try {
+        // Get modification time for directory
+        auto ftime = fs::last_write_time(path);
+        auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+            ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+        file_info.last_modified = sctp;
+      } catch (const fs::filesystem_error& e) {
+        std::cerr << "Warning: Could not get modification time for directory " << file_info.full_path << ": "
+                  << e.what() << '\n';
+        file_info.last_modified = std::chrono::system_clock::now(); // Fallback
+      }
+    }
+  } catch (const fs::filesystem_error& e) {
+    std::cerr << "Error creating file info for " << full_path << ": " << e.what() << '\n';
+  }
+
+  return file_info;
 }
 
 // Print file information for debugging
@@ -236,39 +271,123 @@ void print_file_info(const FileInfo& file) {
   std::cout << "---" << '\n';
 }
 
-// Test function to demonstrate the indexing
-void test_indexing() {
-  // Hardcoded path for testing - change this to your assets folder
-  std::string scan_path = "assets";
+// Smart incremental reindexing with two-phase approach
+void reindex_new_or_modified(AssetDatabase& database, std::vector<FileInfo>& assets, std::atomic<bool>& assets_updated,
+                             std::atomic<bool>& initial_scan_complete, std::atomic<bool>& initial_scan_in_progress,
+                             std::atomic<float>& scan_progress, std::atomic<size_t>& files_processed,
+                             std::atomic<size_t>& total_files_to_process) {
+  std::cout << "Starting smart incremental asset reindexing...\n";
+  initial_scan_in_progress = true;
+  scan_progress = 0.0f;
+  files_processed = 0;
+  total_files_to_process = 0;
 
-  std::cout << "Starting file indexing...\n";
-  auto start_time = std::chrono::high_resolution_clock::now();
-
-  std::vector<FileInfo> files = scan_directory(scan_path); // No progress callback for test
-
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-  std::cout << "\nIndexing completed in " << duration.count() << "ms\n";
-  std::cout << "Total files found: " << files.size() << '\n';
-
-  // Print first 10 files as a sample
-  std::cout << "\nSample files:" << '\n';
-  int count = 0;
-  for (const auto& file : files) {
-    if (count++ >= 10)
-      break;
-    print_file_info(file);
+  // Get current database state
+  std::vector<FileInfo> db_assets = database.get_all_assets();
+  std::unordered_map<std::string, FileInfo> db_map;
+  for (const auto& asset : db_assets) {
+    db_map[asset.full_path] = asset;
   }
 
-  // Count files by type
-  std::map<std::string, int> type_count;
-  for (const auto& file : files) {
-    type_count[get_asset_type_string(file.type)]++;
+  // Phase 1: Quick scan to get only paths and modification times (fast)
+  std::unordered_map<std::string, LightFileInfo> current_files = quick_scan("assets");
+
+  // Track what paths need reindexing
+  std::vector<std::string> paths_to_insert;
+  std::vector<std::string> paths_to_update;
+  std::unordered_set<std::string> found_paths;
+
+  // Compare filesystem state with database state (fast comparison)
+  for (const auto& [path, light_info] : current_files) {
+    found_paths.insert(path);
+
+    auto db_it = db_map.find(path);
+    if (db_it == db_map.end()) {
+      // File not in database - needs to be inserted
+      paths_to_insert.push_back(path);
+      std::cout << "New file: " << light_info.full_path << std::endl;
+    } else {
+      // File exists in database - check if modified
+      const FileInfo& db_asset = db_it->second;
+      if (light_info.last_modified > db_asset.last_modified) {
+        // File has been modified - needs to be updated
+        paths_to_update.push_back(path);
+      }
+      // If timestamps match, no action needed
+    }
   }
 
-  std::cout << "\nFiles by type:" << '\n';
-  for (const auto& pair : type_count) {
-    std::cout << "  " << pair.first << ": " << pair.second << '\n';
+  // Find files in database that no longer exist on filesystem
+  std::vector<std::string> assets_to_delete;
+  for (const auto& db_asset : db_assets) {
+    if (found_paths.find(db_asset.full_path) == found_paths.end()) {
+      assets_to_delete.push_back(db_asset.full_path);
+      std::cout << "Deleted file: " << db_asset.name << std::endl;
+    }
   }
+
+  // Set up progress tracking for expensive operations
+  total_files_to_process = paths_to_insert.size() + paths_to_update.size();
+  files_processed = 0;
+
+  // Phase 2: Only do expensive processing for files that actually changed
+  std::vector<FileInfo> assets_to_insert;
+  std::vector<FileInfo> assets_to_update;
+
+  std::cout << "Processing " << paths_to_insert.size() << " new files...\n";
+  for (const std::string& path : paths_to_insert) {
+    FileInfo full_info = index_file(path, "assets");
+    assets_to_insert.push_back(full_info);
+
+    // Update progress
+    files_processed++;
+    if (total_files_to_process > 0) {
+      scan_progress = static_cast<float>(files_processed.load()) / static_cast<float>(total_files_to_process.load());
+    }
+  }
+
+  std::cout << "Processing " << paths_to_update.size() << " modified files...\n";
+  for (const std::string& path : paths_to_update) {
+    FileInfo full_info = index_file(path, "assets");
+    assets_to_update.push_back(full_info);
+
+    // Update progress
+    files_processed++;
+    if (total_files_to_process > 0) {
+      scan_progress = static_cast<float>(files_processed.load()) / static_cast<float>(total_files_to_process.load());
+    }
+  }
+
+  // Apply changes to database
+  if (!assets_to_insert.empty()) {
+    std::cout << "Inserting " << assets_to_insert.size() << " new assets into database...\n";
+    database.insert_assets_batch(assets_to_insert);
+  }
+
+  if (!assets_to_update.empty()) {
+    std::cout << "Updating " << assets_to_update.size() << " modified assets in database...\n";
+    for (const auto& asset : assets_to_update) {
+      database.update_asset(asset);
+    }
+  }
+
+  if (!assets_to_delete.empty()) {
+    std::cout << "Removing " << assets_to_delete.size() << " deleted assets from database...\n";
+    for (const auto& path : assets_to_delete) {
+      database.delete_asset(path);
+    }
+  }
+
+  // Always load assets from database (either updated ones or existing ones)
+  assets = database.get_all_assets();
+  assets_updated = true; // Trigger UI update - main thread will handle filtering
+
+  size_t unchanged_count = current_files.size() - paths_to_insert.size() - paths_to_update.size();
+  std::cout << "Reindexing completed - " << assets_to_insert.size() << " new, " << assets_to_update.size()
+            << " updated, " << assets_to_delete.size() << " removed, " << unchanged_count
+            << " unchanged (skipped expensive processing)\n";
+
+  initial_scan_complete = true;
+  initial_scan_in_progress = false;
+  scan_progress = 1.0f;
 }

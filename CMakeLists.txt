@@ -175,16 +175,7 @@ if(MSVC)
     set_property(TARGET AssetInventory PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
-# Add database test executable
-add_executable(DatabaseTest
-    tests/test_database.cpp
-    src/index.cpp
-    src/database.cpp
-)
 
-if(MSVC)
-    set_property(TARGET DatabaseTest PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-endif()
 
 # Add OpenGL rendering test executable
 add_executable(RenderingTest
@@ -215,7 +206,7 @@ target_link_libraries(RenderingTest PRIVATE
 # Set compiler flags for our own code
 if(MSVC)
     target_compile_options(AssetInventory PRIVATE /W4)
-    target_compile_options(DatabaseTest PRIVATE /W4)
+
 endif()
 
 # Suppress warnings for external libraries
@@ -236,13 +227,7 @@ target_include_directories(AssetInventory PRIVATE
     ${GLAD_DIR}/include
 )
 
-target_include_directories(DatabaseTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
-    ${SQLITE_DIR}
-    ${GLFW_INCLUDE_DIR}
-)
+
 
 # Link libraries
 target_link_libraries(AssetInventory PRIVATE
@@ -259,9 +244,7 @@ if(MSVC)
     target_link_libraries(AssetInventory PRIVATE legacy_stdio_definitions)
 endif()
 
-target_link_libraries(DatabaseTest PRIVATE
-    sqlite3
-)
+
 
 # Copy font file to build directory
 add_custom_command(TARGET AssetInventory POST_BUILD

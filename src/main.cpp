@@ -14,15 +14,12 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "theme.h"
-
-#ifndef GL_CLAMP_TO_EDGE
-#define GL_CLAMP_TO_EDGE 0x812F
-#endif
 
 #include "database.h"
 #include "file_watcher.h"
@@ -300,33 +297,10 @@ void filter_assets(const std::string& search_query) {
   std::cout << std::endl;
 }
 
-// Background initial scan function
-void perform_initial_scan() {
-  std::cout << "Starting background asset scan...\n";
-  g_initial_scan_in_progress = true;
-  g_scan_progress = 0.0f;
-  g_files_processed = 0;
-  g_total_files_to_process = 0;
-
-  // Create progress callback to update global variables
-  auto progress_callback = [](size_t current, size_t total, float progress) {
-    g_files_processed = current;
-    g_total_files_to_process = total;
-    g_scan_progress = progress;
-  };
-
-  std::vector<FileInfo> initial_assets = scan_directory("assets", progress_callback);
-  if (!initial_assets.empty()) {
-    g_database.insert_assets_batch(initial_assets);
-    g_assets = g_database.get_all_assets();
-    g_assets_updated = true; // Trigger UI update - main thread will handle filtering
-  }
-
-  g_initial_scan_complete = true;
-  g_initial_scan_in_progress = false;
-  // Keep progress at 100% briefly, then reset
-  g_scan_progress = 1.0f;
-  std::cout << "Background asset scan completed\n";
+// Wrapper function to call the reindexing from index.cpp
+void reindex() {
+  reindex_new_or_modified(g_database, g_assets, g_assets_updated, g_initial_scan_complete, g_initial_scan_in_progress,
+                          g_scan_progress, g_files_processed, g_total_files_to_process);
 }
 
 // File event callback function
@@ -335,85 +309,85 @@ void on_file_event(const FileEvent& event) {
   case FileEventType::Created:
     // Fall through to Modified case
   case FileEventType::Modified: {
-    // Check if it's a file (not directory)
+    FileInfo file_info;
+    std::filesystem::path path(event.path);
+
+    file_info.name = path.filename().string();
+    file_info.full_path = event.path;
+    file_info.relative_path = event.path; // For now, use full path
+    file_info.last_modified = event.timestamp;
+
     if (std::filesystem::is_regular_file(event.path)) {
-      // Clear texture cache entry for this file so it can be reloaded
-      auto cache_it = g_texture_cache.find(event.path);
-      if (cache_it != g_texture_cache.end()) {
-        // If there's an existing texture, delete it from OpenGL
-        if (cache_it->second.texture_id != 0) {
-          glDeleteTextures(1, &cache_it->second.texture_id);
-        }
-        // Remove from cache
-        g_texture_cache.erase(cache_it);
-      }
+      // Handle regular files
+      // Don't clear texture cache here - let main thread handle it
+      // Background thread shouldn't modify OpenGL resources or cache
 
-      FileInfo file_info;
-      std::filesystem::path path(event.path);
-
-      file_info.name = path.filename().string();
       file_info.extension = path.extension().string();
-      file_info.full_path = event.path;
-      file_info.relative_path = event.path; // For now, use full path
       file_info.size = std::filesystem::file_size(event.path);
-      file_info.last_modified = event.timestamp;
       file_info.is_directory = false;
       file_info.type = get_asset_type(file_info.extension);
-
-      // Insert or update in database
-      auto existing_asset = g_database.get_asset_by_path(event.path);
-      if (existing_asset.full_path.empty()) {
-        g_database.insert_asset(file_info);
-      } else {
-        g_database.update_asset(file_info);
-      }
-      g_assets_updated = true;
+    } else if (std::filesystem::is_directory(event.path)) {
+      // Handle directories
+      file_info.extension = ""; // Directories don't have extensions
+      file_info.size = 0;       // Directories don't have meaningful file size
+      file_info.is_directory = true;
+      file_info.type = AssetType::Directory;
+    } else {
+      // Skip if it's neither a regular file nor directory
+      break;
     }
+
+    // Insert or update in database
+    auto existing_asset = g_database.get_asset_by_path(event.path);
+    if (existing_asset.full_path.empty()) {
+      g_database.insert_asset(file_info);
+    } else {
+      g_database.update_asset(file_info);
+    }
+    g_assets_updated = true;
     break;
   }
   case FileEventType::Deleted: {
-    // Clear texture cache entry for deleted file
-    auto cache_it = g_texture_cache.find(event.path);
-    if (cache_it != g_texture_cache.end()) {
-      if (cache_it->second.texture_id != 0) {
-        glDeleteTextures(1, &cache_it->second.texture_id);
-      }
-      g_texture_cache.erase(cache_it);
-    }
-
+    // Don't clear texture cache here - let main thread handle it
+    // Background thread shouldn't modify OpenGL resources or cache
     g_database.delete_asset(event.path);
     g_assets_updated = true;
     break;
   }
   case FileEventType::Renamed: {
-    // Clear texture cache entry for old path
-    auto cache_it = g_texture_cache.find(event.old_path);
-    if (cache_it != g_texture_cache.end()) {
-      if (cache_it->second.texture_id != 0) {
-        glDeleteTextures(1, &cache_it->second.texture_id);
-      }
-      g_texture_cache.erase(cache_it);
-    }
+    // Don't clear texture cache here - let main thread handle it
+    // Background thread shouldn't modify OpenGL resources or cache
 
     // Delete old entry and create new one
     g_database.delete_asset(event.old_path);
 
-    if (std::filesystem::is_regular_file(event.path)) {
-      FileInfo file_info;
-      std::filesystem::path path(event.path);
+    FileInfo file_info;
+    std::filesystem::path path(event.path);
 
-      file_info.name = path.filename().string();
+    file_info.name = path.filename().string();
+    file_info.full_path = event.path;
+    file_info.relative_path = event.path;
+    file_info.last_modified = event.timestamp;
+
+    if (std::filesystem::is_regular_file(event.path)) {
+      // Handle regular files
       file_info.extension = path.extension().string();
-      file_info.full_path = event.path;
-      file_info.relative_path = event.path;
       file_info.size = std::filesystem::file_size(event.path);
-      file_info.last_modified = event.timestamp;
       file_info.is_directory = false;
       file_info.type = get_asset_type(file_info.extension);
-
-      g_database.insert_asset(file_info);
-      g_assets_updated = true;
+    } else if (std::filesystem::is_directory(event.path)) {
+      // Handle directories
+      file_info.extension = ""; // Directories don't have extensions
+      file_info.size = 0;       // Directories don't have meaningful file size
+      file_info.is_directory = true;
+      file_info.type = AssetType::Directory;
+    } else {
+      // Skip if it's neither a regular file nor directory
+      break;
     }
+
+    g_database.insert_asset(file_info);
+    g_assets_updated = true;
     break;
   }
   default:
@@ -429,12 +403,11 @@ int main() {
     return -1;
   }
 
-  // Clean database before starting (as requested)
-  std::cout << "Cleaning database...\n";
-  g_database.clear_all_assets();
+  // Smart scanning - no longer clearing database on startup
+  std::cout << "Using smart incremental scanning...\n";
 
   // Start background initial scan (non-blocking)
-  std::thread scan_thread(perform_initial_scan);
+  std::thread scan_thread(reindex);
   scan_thread.detach(); // Let it run independently
 
   // Initialize GLFW
@@ -544,6 +517,27 @@ int main() {
     // Check if assets were updated and refresh the list
     if (g_assets_updated.exchange(false)) {
       g_assets = g_database.get_all_assets();
+
+      // Clean up texture cache for assets that no longer exist
+      // This must be done on the main thread since OpenGL resources are involved
+      std::unordered_set<std::string> current_asset_paths;
+      for (const auto& asset : g_assets) {
+        current_asset_paths.insert(asset.full_path);
+      }
+
+      auto cache_it = g_texture_cache.begin();
+      while (cache_it != g_texture_cache.end()) {
+        if (current_asset_paths.find(cache_it->first) == current_asset_paths.end()) {
+          // Asset no longer exists - clean up its texture
+          if (cache_it->second.texture_id != 0) {
+            glDeleteTextures(1, &cache_it->second.texture_id);
+          }
+          cache_it = g_texture_cache.erase(cache_it);
+        } else {
+          ++cache_it;
+        }
+      }
+
       // Re-apply current search filter to include new assets
       filter_assets(search_buffer);
     }
@@ -601,7 +595,7 @@ int main() {
     );
 
     // Position text input - ImGui text inputs are positioned by their center, not top-left
-    float text_input_x = content_search_x + 20;                       // 20px padding from left edge of capsule
+    float text_input_x = content_search_x + 40;                       // 40px padding from left edge of capsule
     float text_input_y = content_search_y + SEARCH_BOX_HEIGHT * 0.5f; // Center of capsule
 
     ImGui::SetCursorPos(ImVec2(text_input_x, text_input_y));

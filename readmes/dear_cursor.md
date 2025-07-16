@@ -111,6 +111,22 @@ wsl -d Ubuntu-22.04 --cd /home/luam/gamedev/AssetInventory -- ./build/AssetInven
 
 ## Important Guidelines for AI Assistants
 
+### Understanding User Intent and Code Changes
+- **Don't make code changes when the user is asking questions** - distinguish between genuine questions and change requests
+- **Questions that should NOT trigger code changes:**
+  - "What's the best way to solve X?"
+  - "Isn't this part of the code strange because of Y?"
+  - "How does this work?"
+  - "What would happen if...?"
+  - "Why is this implemented this way?"
+- **Requests that SHOULD trigger code changes:**
+  - "Let's improve this part this way"
+  - "Let's implement a mechanism for X"
+  - "Please refactor this code so that Y"
+  - "Fix this issue"
+  - "Add feature Z"
+- **When in doubt, ask for clarification** rather than making assumptions about user intent
+
 ### Git and Version Control
 - **NEVER perform git commands (add, commit, push, etc.) unless explicitly requested by the user**
 - **NEVER assume the user wants to commit changes** - always wait for explicit instruction

@@ -117,10 +117,34 @@ bool AssetDatabase::update_asset(const FileInfo& file) {
     return false;
   }
 
-  bool success = bind_file_info_to_statement(stmt, file);
+  // Custom binding for UPDATE (different order than INSERT)
+  auto time_t = std::chrono::system_clock::to_time_t(file.last_modified);
+  std::stringstream ss;
+#ifdef _WIN32
+  std::tm tm_buf;
+  gmtime_s(&tm_buf, &time_t);
+#else
+  std::tm tm_buf;
+  gmtime_r(&time_t, &tm_buf);
+#endif
+  ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
+  std::string time_str = ss.str();
+
+  bool success =
+      (sqlite3_bind_text(stmt, 1, file.name.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+       sqlite3_bind_text(stmt, 2, file.extension.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+       sqlite3_bind_text(stmt, 3, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+       sqlite3_bind_int64(stmt, 4, file.size) == SQLITE_OK &&
+       sqlite3_bind_text(stmt, 5, time_str.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+       sqlite3_bind_int(stmt, 6, file.is_directory ? 1 : 0) == SQLITE_OK &&
+       sqlite3_bind_text(stmt, 7, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+       sqlite3_bind_text(stmt, 8, file.full_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
+
+  if (!success) {
+    print_sqlite_error("binding parameters for update");
+  }
+
   if (success) {
-    // Bind the full_path for the WHERE clause
-    sqlite3_bind_text(stmt, 8, file.full_path.c_str(), -1, SQLITE_TRANSIENT);
 
     int rc = sqlite3_step(stmt);
     success = (rc == SQLITE_DONE);
