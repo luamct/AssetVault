@@ -516,6 +516,10 @@ void set_current_model(const Model& model) {
   g_model_loaded = model.loaded;
 }
 
+const Model& get_current_model() {
+  return g_current_model;
+}
+
 void render_3d_preview(int width, int height) {
   if (!g_preview_initialized) {
     return;
@@ -537,7 +541,8 @@ void render_3d_preview(int width, int height) {
   // Render to framebuffer
   glBindFramebuffer(GL_FRAMEBUFFER, g_preview_framebuffer);
   glViewport(0, 0, width, height);
-  glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+  glClearColor(Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
+               Theme::BACKGROUND_LIGHT_BLUE_1.w);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   // Render the model if loaded, otherwise render a simple colored triangle

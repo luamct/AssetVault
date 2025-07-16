@@ -16,7 +16,6 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -48,29 +47,17 @@ constexpr float ICON_SCALE = 0.5f;   // Icon occupies 50% of the thumbnail area
 constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;     // Margin from window right edge
 constexpr float PREVIEW_INTERNAL_PADDING = 30.0f; // Internal padding within preview panel
 
-// Color constants
-constexpr ImU32 BACKGROUND_COLOR = IM_COL32(242, 247, 255, 255);         // Light blue-gray background
-constexpr ImU32 FALLBACK_THUMBNAIL_COLOR = IM_COL32(242, 247, 255, 255); // Same as background
-
-// ImVec4 UI Colors
-constexpr ImVec4 COLOR_HEADER_TEXT = ImVec4(0.2f, 0.7f, 0.9f, 1.0f);      // Light blue for headers
-constexpr ImVec4 COLOR_LABEL_TEXT = ImVec4(0.2f, 0.2f, 0.8f, 1.0f);       // Blue for labels
-constexpr ImVec4 COLOR_SECONDARY_TEXT = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);   // Medium gray for secondary text
-constexpr ImVec4 COLOR_DISABLED_TEXT = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);    // Darker gray for disabled/placeholder text
-constexpr ImVec4 COLOR_WARNING_TEXT = ImVec4(0.9f, 0.7f, 0.2f, 1.0f);     // Yellow/orange for warnings
-constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);      // Fully transparent
-constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.0f, 0.0f, 0.0f, 0.3f); // Semi-transparent black
-
-// IM_COL32 UI Colors
-constexpr ImU32 COLOR_WHITE = IM_COL32(255, 255, 255, 255);       // Pure white
-constexpr ImU32 COLOR_TRANSPARENT_32 = IM_COL32(0, 0, 0, 0);      // Transparent
-constexpr ImU32 COLOR_BORDER_GRAY = IM_COL32(150, 150, 150, 255); // Gray for borders
-
-// OpenGL Clear Color (light blue background to match ImGui theme)
-constexpr float CLEAR_COLOR_R = 0.95f;
-constexpr float CLEAR_COLOR_G = 0.97f;
-constexpr float CLEAR_COLOR_B = 1.00f;
-constexpr float CLEAR_COLOR_A = 1.00f;
+// Temporary color definitions while migrating to Theme:: namespace
+constexpr ImVec4 COLOR_HEADER_TEXT = ImVec4(0.2f, 0.7f, 0.9f, 1.0f);
+constexpr ImVec4 COLOR_LABEL_TEXT = ImVec4(0.2f, 0.2f, 0.8f, 1.0f);
+constexpr ImVec4 COLOR_SECONDARY_TEXT = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+constexpr ImVec4 COLOR_DISABLED_TEXT = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+constexpr ImVec4 COLOR_WARNING_TEXT = ImVec4(0.9f, 0.7f, 0.2f, 1.0f);
+constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.0f, 0.0f, 0.0f, 0.3f);
+constexpr ImU32 COLOR_WHITE = IM_COL32(255, 255, 255, 255);
+constexpr ImU32 COLOR_TRANSPARENT_32 = IM_COL32(0, 0, 0, 0);
+constexpr ImU32 COLOR_BORDER_GRAY = IM_COL32(150, 150, 150, 255);
 
 // Global variables for search and UI state
 static char search_buffer[256] = "";
@@ -752,7 +739,7 @@ int main() {
       // Draw background for the container (same as app background)
       ImGui::GetWindowDrawList()->AddRectFilled(
           container_pos, ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
-          BACKGROUND_COLOR);
+          Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
 
       // Center the image/icon in the thumbnail area
       float image_x_offset = (THUMBNAIL_SIZE - display_size.x) * 0.5f;
@@ -783,7 +770,7 @@ int main() {
 
         // Add a background to simulate thumbnail (same as app background)
         ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                  FALLBACK_THUMBNAIL_COLOR);
+                                                  Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
       }
 
       ImGui::PopStyleColor(3);
@@ -848,6 +835,9 @@ int main() {
           std::cout << "===========================" << std::endl;
         }
 
+        // Get the current model for displaying info
+        const Model& current_model = get_current_model();
+
         // 3D Preview Viewport for models
         ImVec2 viewport_size(avail_width, avail_height);
 
@@ -874,9 +864,47 @@ int main() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        // 3D Viewport Info
-        ImGui::TextColored(COLOR_LABEL_TEXT, "3D Model Preview");
-        ImGui::TextColored(COLOR_SECONDARY_TEXT, "Model: %s", selected_asset.name.c_str());
+        // 3D Model information
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Path: ");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path).c_str());
+
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Extension: ");
+        ImGui::SameLine();
+        ImGui::Text("%s", selected_asset.extension.c_str());
+
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Type: ");
+        ImGui::SameLine();
+        ImGui::Text("%s", get_asset_type_string(selected_asset.type).c_str());
+
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Size: ");
+        ImGui::SameLine();
+        ImGui::Text("%s", format_file_size(selected_asset.size).c_str());
+
+        // Display vertex and face counts from the loaded model
+        if (current_model.loaded) {
+          int vertex_count =
+              static_cast<int>(current_model.vertices.size() / 8); // 8 floats per vertex (3 pos + 3 normal + 2 tex)
+          int face_count = static_cast<int>(current_model.indices.size() / 3); // 3 indices per triangle
+
+          ImGui::TextColored(COLOR_LABEL_TEXT, "Vertices: ");
+          ImGui::SameLine();
+          ImGui::Text("%d", vertex_count);
+
+          ImGui::TextColored(COLOR_LABEL_TEXT, "Faces: ");
+          ImGui::SameLine();
+          ImGui::Text("%d", face_count);
+        }
+
+        // Format and display last modified time
+        auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
+        std::tm tm_buf;
+        localtime_s(&tm_buf, &time_t);
+        std::stringstream ss;
+        ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
+        ImGui::TextColored(COLOR_LABEL_TEXT, "Modified: ");
+        ImGui::SameLine();
+        ImGui::Text("%s", ss.str().c_str());
       } else {
         // 2D Preview for non-model assets
         unsigned int preview_texture = get_asset_texture(selected_asset);
@@ -946,7 +974,7 @@ int main() {
 
         ImGui::TextColored(COLOR_LABEL_TEXT, "Path: ");
         ImGui::SameLine();
-        ImGui::Text("%s", format_display_path(selected_asset.full_path).c_str());
+        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path).c_str());
 
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
@@ -972,7 +1000,8 @@ int main() {
     int display_w, display_h;
     glfwGetFramebufferSize(window, &display_w, &display_h);
     glViewport(0, 0, display_w, display_h);
-    glClearColor(CLEAR_COLOR_R, CLEAR_COLOR_G, CLEAR_COLOR_B, CLEAR_COLOR_A);
+    glClearColor(Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
+                 Theme::BACKGROUND_LIGHT_BLUE_1.w);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

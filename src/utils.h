@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <string>
 
-
 // String utility functions
 std::string truncate_filename(const std::string& filename, size_t max_length = 20);
 std::string to_lowercase(const std::string& str);

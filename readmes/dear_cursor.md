@@ -28,6 +28,8 @@
 - Pay attention to compiler and linker warnings
 - Address any build issues before proceeding
 - **Avoid using global variables** unless there's a reason beyond convenience, like performance or multi-threading. They are error prone and make testing way harder
+- **Follow DRY principle** - whenever you duplicate the exact same lines of code in multiple places, create a function to eliminate duplication. This improves maintainability and reduces bugs
+- **Use centralized color management** - all colors are defined in `src/theme.h` using the `Theme::` namespace. Never hardcode color values directly in code. Use the existing color constants (e.g., `Theme::BACKGROUND_LIGHT_BLUE_1`, `Theme::ACCENT_BLUE_1`) or add new ones to theme.h with descriptive names using numbered suffixes for similar colors
 
 ### Dependencies
 - Use `download_deps.bat` to automate dependency setup

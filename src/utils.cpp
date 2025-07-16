@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <iomanip>
 #include <sstream>
-
+#include <filesystem> // Added for std::filesystem::current_path()
 
 // Function to truncate filename to specified length with ellipsis
 std::string truncate_filename(const std::string& filename, size_t max_length) {
@@ -23,21 +23,28 @@ std::string to_lowercase(const std::string& str) {
 
 // Function to format path for display (remove everything before first / and convert backslashes)
 std::string format_display_path(const std::string& full_path) {
-  std::string result = full_path;
+  std::string display_path = full_path;
 
-  // Replace backslashes with forward slashes
-  std::replace(result.begin(), result.end(), '\\', '/');
-
-  // Find the first forward slash and remove everything before and including it
-  size_t first_slash = result.find('/');
-  if (first_slash != std::string::npos) {
-    result = result.substr(first_slash + 1);
+  // Remove working directory prefix if present
+  std::string wd = std::filesystem::current_path().string();
+  if (display_path.length() > wd.length() && display_path.substr(0, wd.length()) == wd) {
+    display_path = display_path.substr(wd.length());
+    // Remove leading slash or backslash
+    if (!display_path.empty() && (display_path[0] == '/' || display_path[0] == '\\')) {
+      display_path = display_path.substr(1);
+    }
   }
 
-  return result;
+  // Make path wrappable by adding spaces around slashes
+  size_t pos = 0;
+  while ((pos = display_path.find('/', pos)) != std::string::npos) {
+    display_path.replace(pos, 1, " / ");
+    pos += 3; // Move past the " / "
+  }
+
+  return display_path;
 }
 
-// Function to format file size for display
 std::string format_file_size(uint64_t size_bytes) {
   if (size_bytes >= 1024 * 1024) {
     // Convert to MB

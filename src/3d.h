@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include "theme.h"
 
 // 3D Preview global variables
 extern bool g_preview_initialized;
@@ -40,4 +41,5 @@ bool load_model(const std::string& filepath, Model& model);
 void render_model(const Model& model);
 void cleanup_model(Model& model);
 void set_current_model(const Model& model);
+const Model& get_current_model();
 unsigned int load_texture_for_model(const std::string& filepath);
