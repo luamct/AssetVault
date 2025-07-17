@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <iostream>
 #include <map>
-#include <mutex>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -15,92 +14,82 @@
 
 #include "database.h"
 
-// Global map with thread safety
-static std::map<std::string, AssetType> g_type_map;
-static std::mutex g_type_map_mutex;
-static bool g_type_map_initialized = false;
-
 namespace fs = std::filesystem;
 
 // Asset type mapping based on file extensions - O(1) lookup using map
 AssetType get_asset_type(const std::string& extension) {
-  // Thread-safe initialization
-  {
-    std::lock_guard<std::mutex> lock(g_type_map_mutex);
-    if (!g_type_map_initialized) {
-      // Textures
-      g_type_map[".png"] = AssetType::Texture;
-      g_type_map[".jpg"] = AssetType::Texture;
-      g_type_map[".jpeg"] = AssetType::Texture;
-      g_type_map[".bmp"] = AssetType::Texture;
-      g_type_map[".tga"] = AssetType::Texture;
-      g_type_map[".dds"] = AssetType::Texture;
-      g_type_map[".hdr"] = AssetType::Texture;
-      g_type_map[".exr"] = AssetType::Texture;
-      g_type_map[".ktx"] = AssetType::Texture;
+  static const std::map<std::string, AssetType> type_map = {
+    // Textures
+    {".png", AssetType::Texture},
+    {".jpg", AssetType::Texture},
+    {".jpeg", AssetType::Texture},
+    {".bmp", AssetType::Texture},
+    {".tga", AssetType::Texture},
+    {".dds", AssetType::Texture},
+    {".hdr", AssetType::Texture},
+    {".exr", AssetType::Texture},
+    {".ktx", AssetType::Texture},
 
-      // Models
-      g_type_map[".fbx"] = AssetType::Model;
-      g_type_map[".obj"] = AssetType::Model;
-      g_type_map[".dae"] = AssetType::Model;
-      g_type_map[".gltf"] = AssetType::Model;
-      g_type_map[".glb"] = AssetType::Model;
-      g_type_map[".ply"] = AssetType::Model;
-      g_type_map[".stl"] = AssetType::Model;
-      g_type_map[".3ds"] = AssetType::Model;
+    // Models
+    {".fbx", AssetType::Model},
+    {".obj", AssetType::Model},
+    {".dae", AssetType::Model},
+    {".gltf", AssetType::Model},
+    {".glb", AssetType::Model},
+    {".ply", AssetType::Model},
+    {".stl", AssetType::Model},
+    {".3ds", AssetType::Model},
 
-      // Audio
-      g_type_map[".wav"] = AssetType::Sound;
-      g_type_map[".mp3"] = AssetType::Sound;
-      g_type_map[".ogg"] = AssetType::Sound;
-      g_type_map[".flac"] = AssetType::Sound;
-      g_type_map[".aac"] = AssetType::Sound;
-      g_type_map[".m4a"] = AssetType::Sound;
+    // Audio
+    {".wav", AssetType::Sound},
+    {".mp3", AssetType::Sound},
+    {".ogg", AssetType::Sound},
+    {".flac", AssetType::Sound},
+    {".aac", AssetType::Sound},
+    {".m4a", AssetType::Sound},
 
-      // Fonts
-      g_type_map[".ttf"] = AssetType::Font;
-      g_type_map[".otf"] = AssetType::Font;
-      g_type_map[".woff"] = AssetType::Font;
-      g_type_map[".woff2"] = AssetType::Font;
-      g_type_map[".eot"] = AssetType::Font;
+    // Fonts
+    {".ttf", AssetType::Font},
+    {".otf", AssetType::Font},
+    {".woff", AssetType::Font},
+    {".woff2", AssetType::Font},
+    {".eot", AssetType::Font},
 
-      // Shaders
-      g_type_map[".vert"] = AssetType::Shader;
-      g_type_map[".frag"] = AssetType::Shader;
-      g_type_map[".geom"] = AssetType::Shader;
-      g_type_map[".tesc"] = AssetType::Shader;
-      g_type_map[".tese"] = AssetType::Shader;
-      g_type_map[".comp"] = AssetType::Shader;
-      g_type_map[".glsl"] = AssetType::Shader;
-      g_type_map[".hlsl"] = AssetType::Shader;
+    // Shaders
+    {".vert", AssetType::Shader},
+    {".frag", AssetType::Shader},
+    {".geom", AssetType::Shader},
+    {".tesc", AssetType::Shader},
+    {".tese", AssetType::Shader},
+    {".comp", AssetType::Shader},
+    {".glsl", AssetType::Shader},
+    {".hlsl", AssetType::Shader},
 
-      // Documents
-      g_type_map[".txt"] = AssetType::Document;
-      g_type_map[".md"] = AssetType::Document;
-      g_type_map[".pdf"] = AssetType::Document;
-      g_type_map[".doc"] = AssetType::Document;
-      g_type_map[".docx"] = AssetType::Document;
+    // Documents
+    {".txt", AssetType::Document},
+    {".md", AssetType::Document},
+    {".pdf", AssetType::Document},
+    {".doc", AssetType::Document},
+    {".docx", AssetType::Document},
 
-      // Archives
-      g_type_map[".zip"] = AssetType::Archive;
-      g_type_map[".rar"] = AssetType::Archive;
-      g_type_map[".7z"] = AssetType::Archive;
-      g_type_map[".tar"] = AssetType::Archive;
-      g_type_map[".gz"] = AssetType::Archive;
+    // Archives
+    {".zip", AssetType::Archive},
+    {".rar", AssetType::Archive},
+    {".7z", AssetType::Archive},
+    {".tar", AssetType::Archive},
+    {".gz", AssetType::Archive},
 
-      // Auxiliary files (not shown in search results)
-      g_type_map[".mtl"] = AssetType::Auxiliary;
-
-      g_type_map_initialized = true;
-    }
-  }
+    // Auxiliary files (not shown in search results)
+    {".mtl", AssetType::Auxiliary}
+  };
 
   std::string ext = extension;
-  std::transform(ext.begin(), ext.end(), ext.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(static_cast<int>(c))); });
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(static_cast<int>(c)));
+  });
 
-  auto it = g_type_map.find(ext);
-  return (it != g_type_map.end()) ? it->second : AssetType::Unknown;
+  auto it = type_map.find(ext);
+  return (it != type_map.end()) ? it->second : AssetType::Unknown;
 }
 
 // Convert AssetType enum to string for display
@@ -182,7 +171,8 @@ std::unordered_map<std::string, LightFileInfo> quick_scan(const std::string& roo
         // Get modification time for both files and directories
         auto ftime = fs::last_write_time(entry.path());
         auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-            ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+          ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
+        );
         light_info.last_modified = sctp;
       } catch (const fs::filesystem_error& e) {
         std::cerr << "Warning: Could not get modification time for " << light_info.full_path << ": " << e.what()
@@ -229,7 +219,8 @@ FileInfo index_file(const std::string& full_path, const std::string& root_path) 
         // Convert file_time_type to system_clock::time_point
         auto ftime = fs::last_write_time(path);
         auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-            ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+          ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
+        );
         file_info.last_modified = sctp;
       } catch (const fs::filesystem_error& e) {
         std::cerr << "Warning: Could not get file info for " << file_info.full_path << ": " << e.what() << '\n';
@@ -245,7 +236,8 @@ FileInfo index_file(const std::string& full_path, const std::string& root_path) 
         // Get modification time for directory
         auto ftime = fs::last_write_time(path);
         auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-            ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+          ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
+        );
         file_info.last_modified = sctp;
       } catch (const fs::filesystem_error& e) {
         std::cerr << "Warning: Could not get modification time for directory " << file_info.full_path << ": "
@@ -272,10 +264,11 @@ void print_file_info(const FileInfo& file) {
 }
 
 // Smart incremental reindexing with two-phase approach
-void reindex_new_or_modified(AssetDatabase& database, std::vector<FileInfo>& assets, std::atomic<bool>& assets_updated,
-                             std::atomic<bool>& initial_scan_complete, std::atomic<bool>& initial_scan_in_progress,
-                             std::atomic<float>& scan_progress, std::atomic<size_t>& files_processed,
-                             std::atomic<size_t>& total_files_to_process) {
+void reindex_new_or_modified(
+  AssetDatabase& database, std::vector<FileInfo>& assets, std::atomic<bool>& assets_updated,
+  std::atomic<bool>& initial_scan_complete, std::atomic<bool>& initial_scan_in_progress,
+  std::atomic<float>& scan_progress, std::atomic<size_t>& files_processed, std::atomic<size_t>& total_files_to_process
+) {
   std::cout << "Starting smart incremental asset reindexing...\n";
   initial_scan_in_progress = true;
   scan_progress = 0.0f;

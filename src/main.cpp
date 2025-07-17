@@ -60,7 +60,6 @@ constexpr ImU32 COLOR_TRANSPARENT_32 = IM_COL32(0, 0, 0, 0);
 constexpr ImU32 COLOR_BORDER_GRAY = IM_COL32(150, 150, 150, 255);
 
 // Global variables for search and UI state
-static char search_buffer[256] = "";
 // static bool show_search_results = false;  // Unused variable
 // static unsigned int thumbnail_texture = 0; // Unused variable
 
@@ -530,6 +529,9 @@ int main() {
   static bool file_watcher_started = false;
 
   while (!glfwWindowShouldClose(window)) {
+    // UI state variables
+    static char search_buffer[256] = "";
+
     double current_time = glfwGetTime();
     io.DeltaTime = (float)(current_time - last_time);
     last_time = current_time;

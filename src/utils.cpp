@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <iomanip>
-#include <sstream>
 #include <filesystem> // Added for std::filesystem::current_path()
 
 // Function to truncate filename to specified length with ellipsis
@@ -25,19 +23,14 @@ std::string to_lowercase(const std::string& str) {
 std::string format_display_path(const std::string& full_path) {
   std::string display_path = full_path;
 
-  // Remove working directory prefix if present
-  std::string wd = std::filesystem::current_path().string();
-  if (display_path.length() > wd.length() && display_path.substr(0, wd.length()) == wd) {
-    display_path = display_path.substr(wd.length());
-    // Remove leading slash or backslash
-    if (!display_path.empty() && (display_path[0] == '/' || display_path[0] == '\\')) {
-      display_path = display_path.substr(1);
-    }
+  // Remove leading slash or backslash
+  if (!display_path.empty() && (display_path[0] == '/' || display_path[0] == '\\')) {
+    display_path = display_path.substr(1);
   }
 
   // Make path wrappable by adding spaces around slashes
   size_t pos = 0;
-  while ((pos = display_path.find('/', pos)) != std::string::npos) {
+  while ((pos = display_path.find('\\', pos)) != std::string::npos) {
     display_path.replace(pos, 1, " / ");
     pos += 3; // Move past the " / "
   }

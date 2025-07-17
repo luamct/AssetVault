@@ -21,6 +21,11 @@ SpacesInParentheses: false
 SpacesInSquareBrackets: false
 Standard: c++17
 
+# Braced list formatting for map initialization
+AlignAfterOpenBracket: BlockIndent
+Cpp11BracedListStyle: true
+ContinuationIndentWidth: 2
+
 # Disable include sorting - try multiple approaches
 SortIncludes: false
 IncludeBlocks: Preserve
