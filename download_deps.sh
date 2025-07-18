@@ -63,7 +63,7 @@ extract_zip() {
 
 # Create external directory structure
 print_status "Creating directory structure..."
-mkdir -p external/{imgui,glfw,fonts,sqlite,glad/{include/{glad,KHR},src},assimp/{include,lib},glm}
+mkdir -p external/{imgui,glfw,fonts,sqlite,glad/{include/{glad,KHR},src},assimp/{include,lib},glm,nanosvg}
 
 # Download SQLite amalgamation
 print_status "Downloading SQLite amalgamation..."
@@ -95,6 +95,11 @@ done
 
 # Download stb_image.h
 download_file "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h" "external/imgui/stb_image.h" "stb_image.h"
+
+# Download NanoSVG
+print_status "Downloading NanoSVG..."
+download_file "https://raw.githubusercontent.com/memononen/nanosvg/master/src/nanosvg.h" "external/nanosvg/nanosvg.h" "NanoSVG parser"
+download_file "https://raw.githubusercontent.com/memononen/nanosvg/master/src/nanosvgrast.h" "external/nanosvg/nanosvgrast.h" "NanoSVG rasterizer"
 
 # Download ImGui backends
 mkdir -p external/imgui/backends
@@ -206,6 +211,7 @@ echo "  - GLFW: external/glfw/"
 echo "  - GLAD: external/glad/"
 echo "  - GLM: external/glm/"
 echo "  - Assimp: external/assimp/"
+echo "  - NanoSVG: external/nanosvg/"
 echo "  - Roboto Font: external/fonts/"
 echo
 echo "Next steps:"

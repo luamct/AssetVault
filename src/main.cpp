@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -16,6 +18,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -31,6 +34,12 @@
 // Include stb_image for PNG loading
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+// Include NanoSVG for SVG support
+#define NANOSVG_IMPLEMENTATION
+#include "nanosvg.h"
+#define NANOSVGRAST_IMPLEMENTATION
+#include "nanosvgrast.h"
 
 // Constants
 constexpr int WINDOW_WIDTH = 1920;
@@ -138,14 +147,99 @@ unsigned int load_texture(const char* filename) {
   return texture_id;
 }
 
+// Function to load SVG texture from file
+unsigned int load_svg_texture(
+  const char* filename, int target_width = 512, int target_height = 512, int* out_width = nullptr,
+  int* out_height = nullptr
+) {
+  std::cout << "Loading SVG: " << filename << std::endl;
+
+  // Parse SVG directly from file like the nanosvg examples do
+  NSVGimage* image = nsvgParseFromFile(filename, "px", 96.0f);
+  if (!image) {
+    std::cerr << "Failed to parse SVG: " << filename << '\n';
+    return 0;
+  }
+
+  std::cout << "SVG parsed successfully. Original size: " << image->width << "x" << image->height << std::endl;
+
+  // Store original dimensions if requested
+  if (out_width)
+    *out_width = static_cast<int>(image->width);
+  if (out_height)
+    *out_height = static_cast<int>(image->height);
+
+  if (image->width <= 0 || image->height <= 0) {
+    std::cerr << "Invalid SVG dimensions: " << image->width << "x" << image->height << std::endl;
+    nsvgDelete(image);
+    return 0;
+  }
+
+  // Use original dimensions for rasterization like the examples do
+  int w = static_cast<int>(image->width);
+  int h = static_cast<int>(image->height);
+
+  std::cout << "Rasterizing at original size: " << w << "x" << h << " (scale: 1.0)" << std::endl;
+
+  if (w <= 0 || h <= 0) {
+    std::cerr << "Invalid raster dimensions: " << w << "x" << h << std::endl;
+    nsvgDelete(image);
+    return 0;
+  }
+
+  // Create rasterizer
+  NSVGrasterizer* rast = nsvgCreateRasterizer();
+  if (!rast) {
+    std::cerr << "Failed to create SVG rasterizer for: " << filename << '\n';
+    nsvgDelete(image);
+    return 0;
+  }
+
+  // Allocate image buffer like the nanosvg examples do
+  unsigned char* img_data = static_cast<unsigned char*>(malloc(w * h * 4));
+  if (!img_data) {
+    std::cerr << "Failed to allocate image buffer for: " << filename << '\n';
+    nsvgDeleteRasterizer(rast);
+    nsvgDelete(image);
+    return 0;
+  }
+
+  // Rasterize SVG at original size with scale=1 like the examples do
+  nsvgRasterize(rast, image, 0, 0, 1.0f, img_data, w, h, w * 4);
+
+  // Create OpenGL texture
+  unsigned int texture_id;
+  glGenTextures(1, &texture_id);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+
+  // Set texture parameters (use linear filtering for SVG)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+  // Upload texture data at original size
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data);
+
+  std::cout << "OpenGL texture created successfully with ID: " << texture_id << std::endl;
+
+  // Cleanup
+  free(img_data);
+  nsvgDeleteRasterizer(rast);
+  nsvgDelete(image);
+
+  return texture_id;
+}
+
 // Function to load type-specific textures
 void load_type_textures() {
   const std::unordered_map<AssetType, const char*> texture_paths = {
-      {AssetType::Texture, "images/texture.png"},   {AssetType::Model, "images/model.png"},
-      {AssetType::Sound, "images/sound.png"},       {AssetType::Font, "images/font.png"},
-      {AssetType::Shader, "images/document.png"},   {AssetType::Document, "images/document.png"},
-      {AssetType::Archive, "images/document.png"},  {AssetType::Directory, "images/folder.png"},
-      {AssetType::Auxiliary, "images/unknown.png"}, {AssetType::Unknown, "images/unknown.png"}};
+    {AssetType::Texture, "images/texture.png"},   {AssetType::Model, "images/model.png"},
+    {AssetType::Sound, "images/sound.png"},       {AssetType::Font, "images/font.png"},
+    {AssetType::Shader, "images/document.png"},   {AssetType::Document, "images/document.png"},
+    {AssetType::Archive, "images/document.png"},  {AssetType::Directory, "images/folder.png"},
+    {AssetType::Auxiliary, "images/unknown.png"}, {AssetType::Unknown, "images/unknown.png"}
+  };
 
   for (const auto& [type, path] : texture_paths) {
     unsigned int texture_id = load_texture(path);
@@ -157,8 +251,9 @@ void load_type_textures() {
 }
 
 // Function to calculate aspect-ratio-preserving dimensions with upscaling limit
-ImVec2 calculate_thumbnail_size(int original_width, int original_height, float max_width, float max_height,
-                                float max_upscale_factor = 3.0f) {
+ImVec2 calculate_thumbnail_size(
+  int original_width, int original_height, float max_width, float max_height, float max_upscale_factor = 3.0f
+) {
   float aspect_ratio = static_cast<float>(original_width) / static_cast<float>(original_height);
 
   float calculated_width = max_width;
@@ -197,21 +292,32 @@ unsigned int get_asset_texture(const FileInfo& asset) {
     return it->second.texture_id;
   }
 
-  // Load the texture using the shared function
-  unsigned int texture_id = load_texture(asset.full_path.c_str());
+  unsigned int texture_id = 0;
+  int width = 0, height = 0;
+
+  // Check if this is an SVG file
+  if (asset.extension == ".svg") {
+    // Load SVG texture
+    texture_id = load_svg_texture(asset.full_path.c_str(), 512, 512, &width, &height);
+  } else {
+    // Load regular texture using stb_image
+    texture_id = load_texture(asset.full_path.c_str());
+    if (texture_id != 0) {
+      // Get texture dimensions
+      int channels;
+      unsigned char* data = stbi_load(asset.full_path.c_str(), &width, &height, &channels, 4);
+      if (data) {
+        stbi_image_free(data);
+      } else {
+        width = 0;
+        height = 0;
+      }
+    }
+  }
+
   if (texture_id == 0) {
     std::cerr << "Failed to load texture: " << asset.full_path << '\n';
     return 0;
-  }
-
-  // Get texture dimensions
-  int width, height, channels;
-  unsigned char* data = stbi_load(asset.full_path.c_str(), &width, &height, &channels, 4);
-  if (data) {
-    stbi_image_free(data);
-  } else {
-    width = 0;
-    height = 0;
   }
 
   // Cache the result
@@ -274,6 +380,7 @@ void filter_assets(const std::string& search_query) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   g_filtered_assets.clear();
+  g_selected_asset_index = -1; // Clear selection when search results change
 
   constexpr size_t MAX_RESULTS = 1000; // Limit results to prevent UI blocking
   size_t total_assets = g_assets.size();
@@ -311,8 +418,10 @@ void filter_assets(const std::string& search_query) {
 
 // Wrapper function to call the reindexing from index.cpp
 void reindex() {
-  reindex_new_or_modified(g_database, g_assets, g_assets_updated, g_initial_scan_complete, g_initial_scan_in_progress,
-                          g_scan_progress, g_files_processed, g_total_files_to_process);
+  reindex_new_or_modified(
+    g_database, g_assets, g_assets_updated, g_initial_scan_complete, g_initial_scan_in_progress, g_scan_progress,
+    g_files_processed, g_total_files_to_process
+  );
 }
 
 // Helper function to clean up texture cache entry for a specific path
@@ -592,9 +701,11 @@ int main() {
     // Create main window
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::Begin("Asset Inventory", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse);
+    ImGui::Begin(
+      "Asset Inventory", nullptr,
+      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoCollapse
+    );
 
     // Calculate panel sizes
     float window_width = ImGui::GetWindowSize().x;
@@ -625,9 +736,10 @@ int main() {
     ImVec2 capsule_max(capsule_min.x + SEARCH_BOX_WIDTH, capsule_min.y + SEARCH_BOX_HEIGHT);
 
     // Draw capsule background
-    ImGui::GetWindowDrawList()->AddRectFilled(capsule_min, capsule_max,
-                                              COLOR_WHITE, // White background
-                                              25.0f        // Rounded corners
+    ImGui::GetWindowDrawList()->AddRectFilled(
+      capsule_min, capsule_max,
+      COLOR_WHITE, // White background
+      25.0f        // Rounded corners
     );
 
     // Position text input - ImGui text inputs are positioned by their center, not top-left
@@ -680,8 +792,10 @@ int main() {
       ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
 
       // Center text on progress bar
-      ImVec2 text_pos = ImVec2(progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
-                               progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
+      ImVec2 text_pos = ImVec2(
+        progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
+        progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f
+      );
 
       ImGui::GetWindowDrawList()->AddText(text_pos, COLOR_WHITE, progress_text);
     }
@@ -726,7 +840,7 @@ int main() {
         int width, height;
         if (get_texture_dimensions(g_filtered_assets[i].full_path, width, height)) {
           display_size =
-              calculate_thumbnail_size(width, height, THUMBNAIL_SIZE, THUMBNAIL_SIZE, 3.0f); // 3x upscaling for grid
+            calculate_thumbnail_size(width, height, THUMBNAIL_SIZE, THUMBNAIL_SIZE, 3.0f); // 3x upscaling for grid
         }
       } else {
         // For type icons, use a fixed fraction of the thumbnail size
@@ -740,8 +854,9 @@ int main() {
 
       // Draw background for the container (same as app background)
       ImGui::GetWindowDrawList()->AddRectFilled(
-          container_pos, ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
-          Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
+        container_pos, ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
+        Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1)
+      );
 
       // Center the image/icon in the thumbnail area
       float image_x_offset = (THUMBNAIL_SIZE - display_size.x) * 0.5f;
@@ -755,8 +870,9 @@ int main() {
       // Display thumbnail image
       if (asset_texture != 0) {
         ImGui::SetCursorScreenPos(image_pos);
-        if (ImGui::ImageButton(("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID)(intptr_t)asset_texture,
-                               display_size)) {
+        if (ImGui::ImageButton(
+              ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID)(intptr_t)asset_texture, display_size
+            )) {
           g_selected_asset_index = static_cast<int>(i);
           std::cout << "Selected: " << g_filtered_assets[i].name << '\n';
         }
@@ -771,8 +887,9 @@ int main() {
         ImGui::PopStyleVar();
 
         // Add a background to simulate thumbnail (same as app background)
-        ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                  Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
+        ImGui::GetWindowDrawList()->AddRectFilled(
+          ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1)
+        );
       }
 
       ImGui::PopStyleColor(3);
@@ -782,8 +899,9 @@ int main() {
 
       // Asset name below thumbnail
       std::string truncated_name = truncate_filename(g_filtered_assets[i].name);
-      ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
-                           (THUMBNAIL_SIZE - ImGui::CalcTextSize(truncated_name.c_str()).x) * 0.5f);
+      ImGui::SetCursorPosX(
+        ImGui::GetCursorPosX() + (THUMBNAIL_SIZE - ImGui::CalcTextSize(truncated_name.c_str()).x) * 0.5f
+      );
       ImGui::TextWrapped("%s", truncated_name.c_str());
 
       ImGui::EndGroup();
@@ -886,7 +1004,7 @@ int main() {
         // Display vertex and face counts from the loaded model
         if (current_model.loaded) {
           int vertex_count =
-              static_cast<int>(current_model.vertices.size() / 8); // 8 floats per vertex (3 pos + 3 normal + 2 tex)
+            static_cast<int>(current_model.vertices.size() / 8); // 8 floats per vertex (3 pos + 3 normal + 2 tex)
           int face_count = static_cast<int>(current_model.indices.size() / 3); // 3 indices per triangle
 
           ImGui::TextColored(COLOR_LABEL_TEXT, "Vertices: ");
@@ -1002,8 +1120,10 @@ int main() {
     int display_w, display_h;
     glfwGetFramebufferSize(window, &display_w, &display_h);
     glViewport(0, 0, display_w, display_h);
-    glClearColor(Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
-                 Theme::BACKGROUND_LIGHT_BLUE_1.w);
+    glClearColor(
+      Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
+      Theme::BACKGROUND_LIGHT_BLUE_1.w
+    );
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

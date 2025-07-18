@@ -79,6 +79,9 @@ AssetType get_asset_type(const std::string& extension) {
     {".tar", AssetType::Archive},
     {".gz", AssetType::Archive},
 
+    // Vector graphics
+    {".svg", AssetType::Texture},
+
     // Auxiliary files (not shown in search results)
     {".mtl", AssetType::Auxiliary}
   };

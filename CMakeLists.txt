@@ -93,6 +93,10 @@ endif()
 set(GLM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external")
 message(STATUS "Using GLM: include at ${GLM_INCLUDE_DIR}")
 
+# NanoSVG (header-only library)
+set(NANOSVG_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/nanosvg")
+message(STATUS "Using NanoSVG: include at ${NANOSVG_INCLUDE_DIR}")
+
 # Create GLFW imported target (static library)
 add_library(glfw STATIC IMPORTED)
 set_target_properties(glfw PROPERTIES
@@ -225,6 +229,7 @@ target_include_directories(AssetInventory PRIVATE
     ${ASSIMP_INCLUDE_DIR}
     ${GLM_INCLUDE_DIR}
     ${GLAD_DIR}/include
+    ${NANOSVG_INCLUDE_DIR}
 )
 
 
