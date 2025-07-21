@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm:*)",
+      "Bash(mkdir:*)",
+      "Bash(cmake:*)",
+      "Bash(./build/Debug/AssetInventory.exe)"
+    ],
+    "deny": []
+  }
+}

@@ -6,15 +6,15 @@ A C++ desktop application for managing game assets, built with Dear ImGui, OpenG
 
 - Asset indexing and management with real-time file system monitoring
 - 3D model preview with OpenGL rendering
-- Texture and asset type detection
-- Cross-platform (Windows, Linux, macOS)
+- Texture and image preview with thumbnail generation
+- SVG support with pre-rasterized thumbnails (240px max dimension)
+- Asset type detection and categorization
+- Windows-focused development with Visual Studio 2022
 - Modern C++17 with CMake build system
 
 ## Prerequisites
 
-- **Windows**: Visual Studio 2022 or Build Tools 2022
-- **macOS**: Xcode Command Line Tools
-- **Linux**: GCC 7+ or Clang 6+
+- **Windows**: Visual Studio 2022 or Build Tools 2022 (required)
 - CMake 3.16+
 - Git
 
@@ -25,10 +25,7 @@ A C++ desktop application for managing game assets, built with Dear ImGui, OpenG
 git clone https://github.com/luamct/AssetInventory.git
 cd AssetInventory
 
-# Download dependencies (cross-platform)
-./download_deps.sh
-
-# Configure and build
+# Configure and build (dependencies are pre-included)
 cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Debug
 
@@ -38,16 +35,19 @@ cmake --build build --config Debug
 
 ## Dependencies
 
-The project uses the following dependencies (automatically downloaded by `download_deps.sh`):
+The project uses the following dependencies (pre-included):
 
 - **Dear ImGui** - Immediate mode GUI
-- **GLFW** - Window management and input
+- **GLFW** - Window management and input  
 - **GLAD** - OpenGL loading library
 - **OpenGL** - 3D graphics rendering
 - **GLM** - Mathematics library
 - **Assimp** - 3D model loading
 - **SQLite** - Database storage
-- **STB Image** - Image loading
+- **STB Image** - Image loading and writing
+- **NanoSVG** - SVG parsing and rasterization
+
+See [Dependencies](readmes/DEPENDENCIES.md) for detailed information.
 
 ## Project Structure
 
@@ -105,15 +105,16 @@ cmake --build build --target RenderingTest
 
 Place your game assets in the `assets/` directory. The application will automatically:
 - Index and categorize assets by type
-- Generate thumbnails for textures
+- Generate thumbnails for images and textures
+- Pre-rasterize SVG files to 240px PNG thumbnails with proper aspect ratios
 - Provide 3D preview for models
 - Monitor for file changes in real-time
 
 ## Documentation
 
-- [File Watcher System](readmes/FILE_WATCHER_README.md)
-- [Database](readmes/DATABASE_README.md)
-- [Dear Cursor Setup](readmes/dear_cursor.md)
+- [Dependencies](readmes/DEPENDENCIES.md) - Complete list of dependencies and sources
+- [File Watcher System](readmes/FILE_WATCHER.md) - Real-time file monitoring
+- [Database](readmes/DATABASE.md) - SQLite asset storage system
 
 ## License
 

@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(AssetInventory VERSION 1.0.0 LANGUAGES C CXX)
 
-# Generate compilation database for Clangd
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -209,8 +206,15 @@ target_link_libraries(RenderingTest PRIVATE
 
 # Set compiler flags for our own code
 if(MSVC)
-    target_compile_options(AssetInventory PRIVATE /W4)
-
+    target_compile_options(AssetInventory PRIVATE
+        /W4                    # Enable all warnings for our code
+        /wd4456               # Suppress variable name shadowing warnings (common in header-only libs)
+        /wd4244               # Suppress conversion warnings from external libraries
+        /wd4996               # Suppress deprecated function warnings (like fopen)
+        /wd4702               # Suppress unreachable code warnings from external libs
+        /external:I ${CMAKE_CURRENT_SOURCE_DIR}/external  # Treat external directory as system headers
+        /external:W0          # Disable all warnings for external headers
+    )
 endif()
 
 # Suppress warnings for external libraries

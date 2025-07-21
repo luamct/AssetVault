@@ -7,6 +7,9 @@
 
 using time_point = std::chrono::system_clock::time_point;
 
+// SVG thumbnail constants
+constexpr int SVG_THUMBNAIL_SIZE = 240;
+
 // File type enum
 enum class AssetType { Texture, Model, Sound, Font, Shader, Document, Archive, Directory, Auxiliary, Unknown };
 

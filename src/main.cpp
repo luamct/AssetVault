@@ -48,6 +48,9 @@ constexpr float SEARCH_BOX_WIDTH = 375.0f;
 constexpr float SEARCH_BOX_HEIGHT = 60.0f;
 constexpr float THUMBNAIL_SIZE = 180.0f;
 constexpr float GRID_SPACING = 30.0f;
+
+// Debug flags
+constexpr bool DEBUG_FORCE_DB_CLEAR = false; // Set to true to force database clearing and reindexing
 constexpr float TEXT_MARGIN = 20.0f; // Space below thumbnail for text positioning
 constexpr float TEXT_HEIGHT = 20.0f; // Height reserved for text
 constexpr float ICON_SCALE = 0.5f;   // Icon occupies 50% of the thumbnail area
@@ -175,11 +178,16 @@ unsigned int load_svg_texture(
     return 0;
   }
 
-  // Use original dimensions for rasterization like the examples do
-  int w = static_cast<int>(image->width);
-  int h = static_cast<int>(image->height);
+  // Use target dimensions for rasterization to match thumbnail size
+  int w = target_width;
+  int h = target_height;
+  
+  // Calculate scale factor to fit SVG into target dimensions while preserving aspect ratio
+  float scale_x = static_cast<float>(target_width) / image->width;
+  float scale_y = static_cast<float>(target_height) / image->height;
+  float scale = std::min(scale_x, scale_y);
 
-  std::cout << "Rasterizing at original size: " << w << "x" << h << " (scale: 1.0)" << std::endl;
+  std::cout << "Rasterizing at target size: " << w << "x" << h << " (scale: " << scale << ")" << std::endl;
 
   if (w <= 0 || h <= 0) {
     std::cerr << "Invalid raster dimensions: " << w << "x" << h << std::endl;
@@ -204,8 +212,8 @@ unsigned int load_svg_texture(
     return 0;
   }
 
-  // Rasterize SVG at original size with scale=1 like the examples do
-  nsvgRasterize(rast, image, 0, 0, 1.0f, img_data, w, h, w * 4);
+  // Rasterize SVG at calculated scale to fit target dimensions
+  nsvgRasterize(rast, image, 0, 0, scale, img_data, w, h, w * 4);
 
   // Create OpenGL texture
   unsigned int texture_id;
@@ -297,8 +305,30 @@ unsigned int get_asset_texture(const FileInfo& asset) {
 
   // Check if this is an SVG file
   if (asset.extension == ".svg") {
-    // Load SVG texture
-    texture_id = load_svg_texture(asset.full_path.c_str(), 512, 512, &width, &height);
+    // Load cached PNG thumbnail - should always exist if properly indexed
+    std::filesystem::path asset_path(asset.full_path);
+    std::string png_filename = asset_path.stem().string() + ".png";
+    std::filesystem::path thumbnail_path = std::filesystem::path("thumbnails") / png_filename;
+    
+    if (std::filesystem::exists(thumbnail_path)) {
+      // Load cached PNG thumbnail
+      texture_id = load_texture(thumbnail_path.string().c_str());
+      if (texture_id != 0) {
+        // Get thumbnail dimensions
+        int channels;
+        unsigned char* data = stbi_load(thumbnail_path.string().c_str(), &width, &height, &channels, 4);
+        if (data) {
+          stbi_image_free(data);
+        } else {
+          width = 0;
+          height = 0;
+        }
+      }
+    } else {
+      // No cached thumbnail found - this indicates indexing issue
+      std::cerr << "Warning: No cached thumbnail found for SVG: " << asset.full_path << std::endl;
+      texture_id = 0; // Will fallback to default unknown texture below
+    }
   } else {
     // Load regular texture using stb_image
     texture_id = load_texture(asset.full_path.c_str());
@@ -561,6 +591,12 @@ int main() {
   if (!g_database.initialize("db/assets.db")) {
     std::cerr << "Failed to initialize database\n";
     return -1;
+  }
+
+  // Debug: Force clear database if flag is set
+  if (DEBUG_FORCE_DB_CLEAR) {
+    std::cout << "DEBUG: Forcing database clear for testing...\n";
+    g_database.clear_all_assets();
   }
 
   // Smart scanning - no longer clearing database on startup

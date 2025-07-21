@@ -1,15 +1,18 @@
 {
     "configurations": [
         {
-            "name": "WSL-Clang",
+            "name": "Win32",
+            "configurationProvider": "ms-vscode.cmake-tools",
             "includePath": [
-                "${workspaceFolder}/**",
                 "${workspaceFolder}/src",
-                "${workspaceFolder}/external/glfw/include",
                 "${workspaceFolder}/external/imgui",
                 "${workspaceFolder}/external/imgui/backends",
                 "${workspaceFolder}/external/sqlite",
-                "${workspaceFolder}/external/fonts"
+                "${workspaceFolder}/external/glfw/include",
+                "${workspaceFolder}/external/assimp/include",
+                "${workspaceFolder}/external/glad/include",
+                "${workspaceFolder}/external/nanosvg",
+                "${workspaceFolder}/external"
             ],
             "defines": [
                 "_DEBUG",
@@ -17,53 +20,11 @@
                 "_UNICODE",
                 "WIN32_LEAN_AND_MEAN",
                 "_WIN32_WINNT=0x0601",
-                "NOMINMAX"
+                "NOMINMAX",
+                "IMGUI_IMPL_OPENGL_LOADER_GLAD"
             ],
-            "compilerPath": "/usr/bin/clang++",
-            "cStandard": "c17",
-            "cppStandard": "c++17",
-            "intelliSenseMode": "linux-clang-x64",
-            "compilerArgs": [
-                "-std=c++17",
-                "-Wall",
-                "-Wextra",
-                "-Wpedantic"
-            ],
-            "browse": {
-                "path": [
-                    "${workspaceFolder}/**",
-                    "${workspaceFolder}/src",
-                    "${workspaceFolder}/external"
-                ],
-                "limitSymbolsToIncludedHeaders": true,
-                "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db"
-            }
-        },
-        {
-            "name": "Win32",
-            "includePath": [
-                "${workspaceFolder}/src",
-                "${workspaceFolder}/external/imgui",
-                "${workspaceFolder}/external/glfw/include",
-                "${workspaceFolder}/external/sqlite",
-                "${workspaceFolder}/external/fonts",
-                "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/include",
-                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt",
-                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um",
-                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared",
-                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/winrt",
-                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/cppwinrt"
-            ],
-            "defines": [
-                "_DEBUG",
-                "UNICODE",
-                "_UNICODE",
-                "_WIN32",
-                "_WIN32_WINNT=0x0601"
-            ],
-            "windowsSdkVersion": "10.0.26100.0",
             "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe",
-            "cStandard": "c17",
+            "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-msvc-x64"
         }

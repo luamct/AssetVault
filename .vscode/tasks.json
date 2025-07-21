@@ -2,101 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "WSL: CMake Configure (Ninja)",
-            "type": "shell",
-            "command": "wsl",
-            "args": [
-                "-d",
-                "Ubuntu-22.04",
-                "--cd",
-                "/home/luam/gamedev/AssetInventory",
-                "cmake",
-                "-B",
-                "build",
-                "-S",
-                ".",
-                "-G",
-                "Ninja",
-                "-DCMAKE_BUILD_TYPE=Debug"
-            ],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "WSL: CMake Build (Ninja)",
-            "type": "shell",
-            "command": "wsl",
-            "args": [
-                "-d",
-                "Ubuntu-22.04",
-                "--cd",
-                "/home/luam/gamedev/AssetInventory",
-                "cmake",
-                "--build",
-                "build"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": "$gcc"
-        },
-        {
-            "label": "WSL: Clean Build",
-            "type": "shell",
-            "command": "wsl",
-            "args": [
-                "-d",
-                "Ubuntu-22.04",
-                "--cd",
-                "/home/luam/gamedev/AssetInventory",
-                "bash",
-                "-c",
-                "rm -rf build && mkdir build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build"
-            ],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": "$gcc"
-        },
-        {
-            "label": "WSL: Run AssetInventory",
-            "type": "shell",
-            "command": "wsl",
-            "args": [
-                "-d",
-                "Ubuntu-22.04",
-                "--cd",
-                "/home/luam/gamedev/AssetInventory",
-                "./build/AssetInventory"
-            ],
-            "group": "test",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "CMake Configure (Visual Studio)",
+            "label": "CMake Configure",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -136,7 +42,10 @@
                 "--config",
                 "Debug"
             ],
-            "group": "build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
             "options": {
                 "shell": {
                     "executable": "C:\\Program Files\\Git\\bin\\bash.exe",
@@ -164,6 +73,27 @@
                 "clean"
             ],
             "group": "build",
+            "options": {
+                "shell": {
+                    "executable": "C:\\Program Files\\Git\\bin\\bash.exe",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run AssetInventory",
+            "type": "shell",
+            "command": "./build/Debug/AssetInventory.exe",
+            "group": "test",
             "options": {
                 "shell": {
                     "executable": "C:\\Program Files\\Git\\bin\\bash.exe",

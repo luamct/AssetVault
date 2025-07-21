@@ -1,10 +1,6 @@
-# Asset Database Documentation
+# Database System
 
-This document explains how to use the SQLite database functionality for storing and managing asset information in the AssetInventory project.
-
-## Overview
-
-The database system provides persistent storage for all asset information discovered during directory scanning. It uses SQLite for its simplicity, reliability, and excellent performance for this use case.
+SQLite-based persistent storage for asset metadata with fast indexing and search capabilities.
 
 ## Features
 

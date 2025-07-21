@@ -14,6 +14,12 @@
 
 #include "database.h"
 
+// SVG thumbnail generation dependencies
+#include "nanosvg.h"
+#include "nanosvgrast.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 namespace fs = std::filesystem;
 
 // Asset type mapping based on file extensions - O(1) lookup using map
@@ -196,7 +202,88 @@ std::unordered_map<std::string, LightFileInfo> quick_scan(const std::string& roo
   return files;
 }
 
-// Index a file - create full FileInfo with expensive operations (will include image resizing, 3D previews, etc.)
+// Generate PNG thumbnail from SVG file during indexing
+bool generate_svg_thumbnail(const std::string& svg_path, const std::string& filename) {
+  constexpr int MAX_THUMBNAIL_SIZE = SVG_THUMBNAIL_SIZE;
+
+  // Create thumbnails directory if it doesn't exist
+  fs::path thumbnails_dir = "thumbnails";
+  if (!fs::exists(thumbnails_dir)) {
+    try {
+      fs::create_directory(thumbnails_dir);
+    } catch (const fs::filesystem_error& e) {
+      std::cerr << "Failed to create thumbnails directory: " << e.what() << std::endl;
+      return false;
+    }
+  }
+
+  // Parse SVG file
+  NSVGimage* image = nsvgParseFromFile(svg_path.c_str(), "px", 96.0f);
+  if (!image) {
+    std::cerr << "Failed to parse SVG: " << svg_path << std::endl;
+    return false;
+  }
+
+  if (image->width <= 0 || image->height <= 0) {
+    std::cerr << "Invalid SVG dimensions: " << image->width << "x" << image->height << std::endl;
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Calculate scale factor and actual output dimensions
+  // The largest dimension should be MAX_THUMBNAIL_SIZE, maintaining aspect ratio
+  float scale_x = static_cast<float>(MAX_THUMBNAIL_SIZE) / image->width;
+  float scale_y = static_cast<float>(MAX_THUMBNAIL_SIZE) / image->height;
+  float scale = std::min(scale_x, scale_y);
+
+  // Calculate actual output dimensions maintaining aspect ratio
+  int output_width = static_cast<int>(image->width * scale);
+  int output_height = static_cast<int>(image->height * scale);
+
+  // Create rasterizer
+  NSVGrasterizer* rast = nsvgCreateRasterizer();
+  if (!rast) {
+    std::cerr << "Failed to create SVG rasterizer for: " << svg_path << std::endl;
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Allocate image buffer with actual dimensions (RGBA format)
+  unsigned char* img_data = static_cast<unsigned char*>(malloc(output_width * output_height * 4));
+  if (!img_data) {
+    std::cerr << "Failed to allocate image buffer for: " << svg_path << std::endl;
+    nsvgDeleteRasterizer(rast);
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Clear buffer to transparent
+  memset(img_data, 0, output_width * output_height * 4);
+
+  // Rasterize SVG at calculated scale with proper dimensions
+  nsvgRasterize(rast, image, 0, 0, scale, img_data, output_width, output_height, output_width * 4);
+
+  // Generate output PNG path
+  fs::path svg_file_path(filename);
+  std::string png_filename = svg_file_path.stem().string() + ".png";
+  fs::path output_path = thumbnails_dir / png_filename;
+
+  // Write PNG file with actual dimensions
+  int result = stbi_write_png(output_path.string().c_str(), output_width, output_height, 4, img_data, output_width * 4);
+
+  if (!result) {
+    std::cerr << "Failed to write PNG thumbnail: " << output_path.string() << std::endl;
+  }
+
+  // Cleanup
+  free(img_data);
+  nsvgDeleteRasterizer(rast);
+  nsvgDelete(image);
+
+  return result != 0;
+}
+
+// Index a file
 FileInfo index_file(const std::string& full_path, const std::string& root_path) {
   FileInfo file_info;
 
@@ -228,6 +315,11 @@ FileInfo index_file(const std::string& full_path, const std::string& root_path) 
       } catch (const fs::filesystem_error& e) {
         std::cerr << "Warning: Could not get file info for " << file_info.full_path << ": " << e.what() << '\n';
         file_info.size = 0;
+      }
+
+      // Generate SVG thumbnail if this is an SVG file
+      if (file_info.extension == ".svg" && file_info.type == AssetType::Texture) {
+        generate_svg_thumbnail(file_info.full_path, file_info.name);
       }
     } else {
       // Directory-specific information
