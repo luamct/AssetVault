@@ -58,18 +58,21 @@ struct Model {
   // Bounds
   aiVector3D min_bounds;
   aiVector3D max_bounds;
+
+  // Model metadata
+  std::string path = ""; // Path to the loaded model file
   bool loaded = false;
 };
 
 // 3D Preview functions
 bool initialize_3d_preview();
 void cleanup_3d_preview();
-void render_3d_preview(int width, int height);
+void render_3d_preview(int width, int height, const Model& model);
 bool load_model(const std::string& filepath, Model& model);
 void render_model(const Model& model);
 void cleanup_model(Model& model);
-void set_current_model(const Model& model);
-const Model& get_current_model();
+void set_current_model(Model& current_model, const Model& model);
+const Model& get_current_model(const Model& current_model);
 
 // Material and texture functions
 unsigned int load_texture_for_model(const std::string& filepath);

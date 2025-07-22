@@ -14,8 +14,8 @@ unsigned int g_preview_texture = 0;
 unsigned int g_preview_depth_texture = 0;
 unsigned int g_preview_framebuffer = 0;
 
-// Currently loaded model
-static Model g_current_model;
+// 3D Preview no longer needs a global current model
+// Model state is now managed by the caller
 
 // Vertex shader source (updated for 3D models with texture support)
 const char* vertex_shader_source = R"(
@@ -175,7 +175,7 @@ bool initialize_3d_preview() {
 
 void cleanup_3d_preview() {
   if (g_preview_initialized) {
-    cleanup_model(g_current_model);
+    // Note: Model cleanup is now handled by the caller
     glDeleteProgram(g_preview_shader);
     glDeleteTextures(1, &g_preview_texture);
     glDeleteTextures(1, &g_preview_depth_texture);
@@ -268,7 +268,8 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
     aiString material_name;
     if (ai_material->Get(AI_MATKEY_NAME, material_name) == AI_SUCCESS) {
       material.name = material_name.C_Str();
-    } else {
+    }
+    else {
       material.name = "Material_" + std::to_string(m);
     }
 
@@ -291,7 +292,8 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
             material.has_texture = true;
             break; // Use first successful texture
           }
-        } else {
+        }
+        else {
           // Try alternative path
           std::filesystem::path alt_path = std::filesystem::path(model_path).parent_path() / filename;
           if (std::filesystem::exists(alt_path)) {
@@ -404,7 +406,8 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
       model.vertices.push_back(transformed_normal.x);
       model.vertices.push_back(transformed_normal.y);
       model.vertices.push_back(transformed_normal.z);
-    } else {
+    }
+    else {
       model.vertices.push_back(0.0f);
       model.vertices.push_back(0.0f);
       model.vertices.push_back(1.0f);
@@ -414,7 +417,8 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
     if (mesh->mTextureCoords[0]) {
       model.vertices.push_back(mesh->mTextureCoords[0][i].x);
       model.vertices.push_back(mesh->mTextureCoords[0][i].y);
-    } else {
+    }
+    else {
       model.vertices.push_back(0.0f);
       model.vertices.push_back(0.0f);
     }
@@ -484,13 +488,13 @@ bool load_model(const std::string& filepath, Model& model) {
   );
 
   // Position attribute
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) 0);
   glEnableVertexAttribArray(0);
   // Normal attribute
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) (3 * sizeof(float)));
   glEnableVertexAttribArray(1);
   // Texture coordinate attribute
-  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) (6 * sizeof(float)));
   glEnableVertexAttribArray(2);
 
   glBindVertexArray(0);
@@ -498,6 +502,7 @@ bool load_model(const std::string& filepath, Model& model) {
   // Load all materials from the model
   load_model_materials(scene, filepath, model.materials);
 
+  model.path = filepath;  // Store the path
   model.loaded = true;
 
   return true;
@@ -515,7 +520,7 @@ void render_model(const Model& model) {
   // Center and position the model to ensure it's always visible
   aiVector3D center = (model.min_bounds + model.max_bounds) * 0.5f;
   aiVector3D size = model.max_bounds - model.min_bounds;
-  float max_size = std::max({size.x, size.y, size.z});
+  float max_size = std::max({ size.x, size.y, size.z });
 
   // Just center the model at the origin
   model_matrix = glm::translate(model_matrix, glm::vec3(-center.x, -center.y, -center.z));
@@ -565,18 +570,21 @@ void render_model(const Model& model) {
         glBindTexture(GL_TEXTURE_2D, material.texture_id);
         glUniform1i(glGetUniformLocation(g_preview_shader, "diffuseTexture"), 0);
         glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 1);
-      } else {
+      }
+      else {
         glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 0);
         glUniform3fv(glGetUniformLocation(g_preview_shader, "materialColor"), 1, &material.diffuse_color[0]);
       }
-    } else {
+    }
+    else {
       glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 0);
       glm::vec3 default_color(0.7f, 0.7f, 0.7f);
       glUniform3fv(glGetUniformLocation(g_preview_shader, "materialColor"), 1, &default_color[0]);
     }
 
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(model.indices.size()), GL_UNSIGNED_INT, 0);
-  } else {
+  }
+  else {
     // Render each mesh with its correct material
     for (const auto& mesh : model.meshes) {
       if (mesh.material_index < model.materials.size()) {
@@ -588,14 +596,15 @@ void render_model(const Model& model) {
           glBindTexture(GL_TEXTURE_2D, material.texture_id);
           glUniform1i(glGetUniformLocation(g_preview_shader, "diffuseTexture"), 0);
           glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 1);
-        } else {
+        }
+        else {
           glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 0);
           glUniform3fv(glGetUniformLocation(g_preview_shader, "materialColor"), 1, &material.diffuse_color[0]);
         }
 
         // Draw this specific mesh (indices are already properly offset)
         glDrawElements(
-          GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, (void*)(mesh.index_offset * sizeof(unsigned int))
+          GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, (void*) (mesh.index_offset * sizeof(unsigned int))
         );
       }
     }
@@ -626,19 +635,19 @@ void cleanup_model(Model& model) {
   }
 }
 
-void set_current_model(const Model& model) {
+void set_current_model(Model& current_model, const Model& model) {
   // Clean up previous model
-  cleanup_model(g_current_model);
+  cleanup_model(current_model);
 
   // Copy the new model
-  g_current_model = model;
+  current_model = model;
 }
 
-const Model& get_current_model() {
-  return g_current_model;
+const Model& get_current_model(const Model& current_model) {
+  return current_model;
 }
 
-void render_3d_preview(int width, int height) {
+void render_3d_preview(int width, int height, const Model& model) {
   if (!g_preview_initialized) {
     return;
   }
@@ -667,9 +676,10 @@ void render_3d_preview(int width, int height) {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   // Render the model if loaded, otherwise render a simple colored triangle
-  if (g_current_model.loaded) {
-    render_model(g_current_model);
-  } else {
+  if (model.loaded) {
+    render_model(model);
+  }
+  else {
     // Fallback: render a simple colored triangle
     glUseProgram(g_preview_shader);
 
@@ -706,11 +716,11 @@ void render_3d_preview(int width, int height) {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) 0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) (3 * sizeof(float)));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) (6 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
     glDrawArrays(GL_TRIANGLES, 0, 3);
