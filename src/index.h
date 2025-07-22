@@ -22,7 +22,7 @@ struct FileInfo {
   std::string relative_path; // Path relative to the scanned directory
   uint64_t size;             // File size in bytes
   time_point last_modified;  // Last modification time (system clock - for user display)
-  std::filesystem::file_time_type last_modified_filetime; // Native file time (for fast comparison)
+  uint32_t created_or_modified_seconds; // Max of creation/modification time as seconds since Jan 1, 2000 (for fast comparison)
   bool is_directory = false; // Whether this is a directory
   AssetType type;            // Asset type enum
 

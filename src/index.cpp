@@ -12,6 +12,8 @@
 #include <vector>
 #include <unordered_map>
 
+#include <windows.h>
+
 #include "database.h"
 
 // SVG thumbnail generation dependencies
@@ -192,6 +194,62 @@ void quick_scan(const std::string& root_path, std::unordered_map<std::string, fs
   }
 }
 
+/**
+ * Helper to convert FILETIME to seconds since Jan 1, 2000. This format is a bit arbitrary,
+ * choosen such that conversions are fast, the precision (seconds) and the range (2000 to 2136)
+ * are enough for this application
+ */
+uint32_t filetime_to_seconds_since_2000(const FILETIME& ft) {
+  uint64_t filetime_64 = ((uint64_t) ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+
+  // Convert to seconds since Jan 1, 1601
+  uint64_t seconds_since_1601 = filetime_64 / 10000000ULL; // 100-nanosecond intervals per second
+
+  // Convert to seconds since Jan 1, 2000
+  constexpr uint64_t SECONDS_1601_TO_2000 = 12622780800ULL; // 399 years in seconds
+
+  // Files older than 2000 are set to 0
+  uint64_t seconds_since_2000 = std::max(0ULL, seconds_since_1601 - SECONDS_1601_TO_2000);
+
+  // Clamp to uint32_t range (handles files up until year 2136)
+  return (uint32_t) std::min(seconds_since_2000, (uint64_t) UINT32_MAX);
+}
+
+// Windows-only helper to get both creation and modification time using single GetFileTime call
+// Returns the more recent of creation time or modification time as seconds since Jan 1, 2000
+uint32_t get_max_creation_or_modification_seconds(const fs::path& path) {
+  HANDLE hFile = CreateFileW(
+    path.wstring().c_str(),
+    GENERIC_READ,
+    FILE_SHARE_READ | FILE_SHARE_WRITE,
+    nullptr,
+    OPEN_EXISTING,
+    FILE_ATTRIBUTE_NORMAL,
+    nullptr
+  );
+
+  if (hFile == INVALID_HANDLE_VALUE) {
+    std::cerr << "Warning: Could not open file for time reading: " << path << std::endl;
+    return 0;
+  }
+
+  FILETIME ftCreated, ftModified;
+  if (!GetFileTime(hFile, &ftCreated, nullptr, &ftModified)) {
+    std::cerr << "Warning: Could not get file times for: " << path << std::endl;
+    CloseHandle(hFile);
+    return 0;
+  }
+
+  CloseHandle(hFile);
+
+  // Convert both times to seconds since Jan 1, 2000
+  uint32_t creation_seconds = filetime_to_seconds_since_2000(ftCreated);
+  uint32_t modification_seconds = filetime_to_seconds_since_2000(ftModified);
+
+  // Return the more recent time
+  return std::max(creation_seconds, modification_seconds);
+}
+
 // AssetIndexer implementation
 AssetIndexer::AssetIndexer(const std::string& root_path) : root_path_(root_path) {}
 
@@ -352,22 +410,21 @@ FileInfo AssetIndexer::create_file_info(const std::string& full_path, const std:
       try {
         file_info.size = fs::file_size(path);
 
-        // Use provided timestamp or get from filesystem
+        // Get both creation and modification time using Windows API
+        file_info.created_or_modified_seconds = get_max_creation_or_modification_seconds(path);
+
+        // Store display time as modification time (for user-facing display)
         try {
           auto ftime = fs::last_write_time(path);
-          // Store both formats - native file time for fast comparison, system time for display
-          file_info.last_modified_filetime = ftime;
           auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
             ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
           );
           file_info.last_modified = sctp;
         }
         catch (const fs::filesystem_error& e) {
-          // Fallback to provided timestamp
+          // Fallback to provided timestamp for display
           file_info.last_modified = timestamp;
-          // For native file time, use a default epoch value when filesystem access fails
-          file_info.last_modified_filetime = fs::file_time_type{};
-          std::cerr << "Warning: Using provided timestamp for " << full_path << ": " << e.what() << std::endl;
+          std::cerr << "Warning: Using provided timestamp for display for " << full_path << ": " << e.what() << std::endl;
         }
       }
       catch (const fs::filesystem_error& e) {
@@ -387,11 +444,12 @@ FileInfo AssetIndexer::create_file_info(const std::string& full_path, const std:
       file_info.extension = "";
       file_info.size = 0;
 
+      // Get both creation and modification time using Windows API
+      file_info.created_or_modified_seconds = get_max_creation_or_modification_seconds(path);
+
+      // Store display time as modification time (for user-facing display)
       try {
-        // Get modification time for directory
         auto ftime = fs::last_write_time(path);
-        // Store both formats - native file time for fast comparison, system time for display
-        file_info.last_modified_filetime = ftime;
         auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
           ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
         );
@@ -401,7 +459,6 @@ FileInfo AssetIndexer::create_file_info(const std::string& full_path, const std:
         std::cerr << "Warning: Could not get modification time for directory " << file_info.full_path << ": "
           << e.what() << std::endl;
         file_info.last_modified = timestamp; // Fallback to provided timestamp
-        file_info.last_modified_filetime = fs::file_time_type{}; // Default epoch value
       }
     }
   }
@@ -470,9 +527,12 @@ void reindex_new_or_modified(
       // File exists in database - check if modified using native file times (fast comparison)
       const FileInfo& db_asset = db_it->second;
 
-      // Direct comparison using native file_time_type - no expensive conversion needed
-      if (file_time > db_asset.last_modified_filetime) {
-        // File has been modified - needs to be updated
+      // Get the max of creation and modification time for current file
+      uint32_t current_created_or_modified = get_max_creation_or_modification_seconds(path);
+
+      // Direct integer comparison - very fast
+      if (current_created_or_modified > db_asset.created_or_modified_seconds) {
+        // File has been created or modified more recently - needs to be updated
         paths_to_update.push_back(path);
       }
       // If timestamps match, no action needed
