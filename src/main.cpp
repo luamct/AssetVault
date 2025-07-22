@@ -504,11 +504,34 @@ void process_pending_file_events() {
 
     switch (event.type) {
     case FileEventType::Created:
-      std::cout << "Created event: " << event.path << std::endl;
+    {
+      try {
+        // Clear texture cache for new files
+        if (std::filesystem::is_regular_file(event.path)) {
+          cleanup_texture_cache(event.path);
+        }
+
+        // Use unified indexer with event timestamp
+        FileInfo file_info = indexer.process_file(event.path, event.timestamp);
+
+        // Insert new asset directly (no lookup needed)
+        if (g_database.insert_asset(file_info)) {
+          assets_changed = true;
+        }
+      }
+      catch (const std::exception& e) {
+        std::cerr << "Error processing Created event for " << event.path << ": " << e.what() << std::endl;
+      }
+      break;
+    }
     case FileEventType::Modified:
     {
-      std::cout << "Modified event: " << event.path << std::endl;
       try {
+        // Skip Modified events for paths that no longer exist (likely deleted)
+        if (!std::filesystem::exists(event.path)) {
+          break;
+        }
+
         // Clear texture cache for modified files so they can be reloaded
         if (std::filesystem::is_regular_file(event.path)) {
           cleanup_texture_cache(event.path);
@@ -517,41 +540,39 @@ void process_pending_file_events() {
         // Use unified indexer with event timestamp
         FileInfo file_info = indexer.process_file(event.path, event.timestamp);
 
-        // Save to database with consistent logic
-        if (indexer.save_to_database(g_database, file_info)) {
+        // Update existing asset directly
+        if (g_database.update_asset(file_info)) {
           assets_changed = true;
         }
       }
       catch (const std::exception& e) {
-        std::cerr << "Error processing file event for " << event.path << ": " << e.what() << std::endl;
+        std::cerr << "Error processing Modified event for " << event.path << ": " << e.what() << std::endl;
       }
       break;
     }
     case FileEventType::Deleted:
     {
-      std::cout << "Deleted event: " << event.path << std::endl;
       // Clean up texture cache for deleted file (must be done on main thread)
       cleanup_texture_cache(event.path);
 
-      // Use indexer's delete helper for consistent logic
-      if (indexer.delete_from_database(g_database, event.path)) {
+      // Delete from database directly
+      if (g_database.delete_asset(event.path)) {
         assets_changed = true;
       }
       break;
     }
     case FileEventType::Renamed:
     {
-      std::cout << "Renamed event: " << event.path << std::endl;
       // Clean up texture cache for old path (must be done on main thread)
       cleanup_texture_cache(event.old_path);
 
       try {
         // Delete old entry
-        indexer.delete_from_database(g_database, event.old_path);
+        g_database.delete_asset(event.old_path);
 
         // Create new entry using unified indexer
         FileInfo file_info = indexer.process_file(event.path, event.timestamp);
-        if (indexer.save_to_database(g_database, file_info)) {
+        if (g_database.insert_asset(file_info)) {
           assets_changed = true;
         }
       }

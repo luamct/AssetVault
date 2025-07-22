@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <unordered_map>
@@ -20,7 +21,8 @@ struct FileInfo {
   std::string full_path;     // Full path to the file
   std::string relative_path; // Path relative to the scanned directory
   uint64_t size;             // File size in bytes
-  time_point last_modified;  // Last modification time
+  time_point last_modified;  // Last modification time (system clock - for user display)
+  std::filesystem::file_time_type last_modified_filetime; // Native file time (for fast comparison)
   bool is_directory = false; // Whether this is a directory
   AssetType type;            // Asset type enum
 
@@ -30,12 +32,6 @@ struct FileInfo {
 // Progress callback types
 using ProgressCallback = std::function<void(size_t current, size_t total, float progress)>;
 
-// Lightweight file info for quick scanning
-struct LightFileInfo {
-  std::string full_path;
-  time_point last_modified;
-  bool is_directory = false;
-};
 
 // Forward declaration
 class AssetDatabase;
@@ -71,7 +67,7 @@ AssetType get_asset_type(const std::string& extension);
 std::string get_asset_type_string(AssetType type);
 AssetType get_asset_type_from_string(const std::string& type_string);
 
-void quick_scan(const std::string& root_path, std::unordered_map<std::string, LightFileInfo>& files);
+void quick_scan(const std::string& root_path, std::unordered_map<std::string, std::filesystem::file_time_type>& files);
 void reindex_new_or_modified(
   AssetDatabase& database, std::vector<FileInfo>& assets, std::atomic<bool>& assets_updated,
   std::atomic<bool>& initial_scan_complete, std::atomic<bool>& initial_scan_in_progress,
