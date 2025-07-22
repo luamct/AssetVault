@@ -5,14 +5,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "stb_image.h"
+#include "texture_manager.h"
 #include "theme.h"
 
-// 3D Preview global variables
-bool g_preview_initialized = false;
-unsigned int g_preview_shader = 0;
-unsigned int g_preview_texture = 0;
-unsigned int g_preview_depth_texture = 0;
-unsigned int g_preview_framebuffer = 0;
+// 3D Preview global variables are now managed by TextureManager
 
 // 3D Preview no longer needs a global current model
 // Model state is now managed by the caller
@@ -96,159 +92,15 @@ void main()
 }
 )";
 
-bool initialize_3d_preview() {
-  // Create shader program
-  unsigned int vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-  glShaderSource(vertex_shader, 1, &vertex_shader_source, nullptr);
-  glCompileShader(vertex_shader);
-
-  // Check for shader compile errors
-  int success;
-  char info_log[512];
-  glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
-  if (!success) {
-    glGetShaderInfoLog(vertex_shader, 512, nullptr, info_log);
-    std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << info_log << std::endl;
-    return false;
-  }
-
-  unsigned int fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-  glShaderSource(fragment_shader, 1, &fragment_shader_source, nullptr);
-  glCompileShader(fragment_shader);
-
-  glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
-  if (!success) {
-    glGetShaderInfoLog(fragment_shader, 512, nullptr, info_log);
-    std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << info_log << std::endl;
-    return false;
-  }
-
-  g_preview_shader = glCreateProgram();
-  glAttachShader(g_preview_shader, vertex_shader);
-  glAttachShader(g_preview_shader, fragment_shader);
-  glLinkProgram(g_preview_shader);
-
-  glGetProgramiv(g_preview_shader, GL_LINK_STATUS, &success);
-  if (!success) {
-    glGetProgramInfoLog(g_preview_shader, 512, nullptr, info_log);
-    std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << info_log << std::endl;
-    return false;
-  }
-
-  // Clean up shaders
-  glDeleteShader(vertex_shader);
-  glDeleteShader(fragment_shader);
-
-  // Create framebuffer
-  glGenFramebuffers(1, &g_preview_framebuffer);
-  glBindFramebuffer(GL_FRAMEBUFFER, g_preview_framebuffer);
-
-  // Create color texture
-  glGenTextures(1, &g_preview_texture);
-  glBindTexture(GL_TEXTURE_2D, g_preview_texture);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 800, 800, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_preview_texture, 0);
-
-  // Create depth texture
-  glGenTextures(1, &g_preview_depth_texture);
-  glBindTexture(GL_TEXTURE_2D, g_preview_depth_texture);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, 800, 800, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, g_preview_depth_texture, 0);
-
-  // Check framebuffer completeness
-  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-    std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
-    return false;
-  }
-
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-  // Enable depth testing
-  glEnable(GL_DEPTH_TEST);
-
-  g_preview_initialized = true;
-  std::cout << "3D preview initialized successfully!" << std::endl;
-  return true;
-}
-
-void cleanup_3d_preview() {
-  if (g_preview_initialized) {
-    // Note: Model cleanup is now handled by the caller
-    glDeleteProgram(g_preview_shader);
-    glDeleteTextures(1, &g_preview_texture);
-    glDeleteTextures(1, &g_preview_depth_texture);
-    glDeleteFramebuffers(1, &g_preview_framebuffer);
-    g_preview_initialized = false;
-  }
-}
-
-// Function to load texture for 3D models
-unsigned int load_texture_for_model(const std::string& filepath) {
-  int width, height, channels;
-  unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &channels, 0);
-  if (!data) {
-    std::cout << "Failed to load texture: " << filepath << std::endl;
-    return 0;
-  }
-
-  unsigned int texture_id;
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-  // Upload texture data
-  GLenum format = GL_RGB;
-  if (channels == 4)
-    format = GL_RGBA;
-  else if (channels == 1)
-    format = GL_RED;
-
-  glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-  glGenerateMipmap(GL_TEXTURE_2D);
-
-  stbi_image_free(data);
-  return texture_id;
-}
-
-// Helper function to get base path (from Assimp sample)
+// Helper function to get base path
 std::string getBasePath(const std::string& path) {
   size_t pos = path.find_last_of("\\/");
   return (std::string::npos == pos) ? "" : path.substr(0, pos + 1);
 }
 
-// Function to create a solid color texture from RGB values
-unsigned int create_solid_color_texture(float r, float g, float b) {
-  // Create a 1x1 texture with the specified color
-  unsigned char color_data[3] = {
-    static_cast<unsigned char>(r * 255.0f), static_cast<unsigned char>(g * 255.0f),
-    static_cast<unsigned char>(b * 255.0f)
-  };
 
-  unsigned int texture_id;
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-  // Upload the 1x1 color data
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, color_data);
-
-  return texture_id;
-}
-
-// Load all materials from model (NEW multi-material approach)
-void load_model_materials(const aiScene* scene, const std::string& model_path, std::vector<Material>& materials) {
+// Load all materials from model
+void load_model_materials(const aiScene* scene, const std::string& model_path, std::vector<Material>& materials, TextureManager& texture_manager) {
   materials.clear();
 
   if (!scene || scene->mNumMaterials == 0) {
@@ -287,7 +139,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
         // Try to load the texture
         std::string fileloc = basepath + filename;
         if (std::filesystem::exists(fileloc)) {
-          material.texture_id = load_texture_for_model(fileloc);
+          material.texture_id = texture_manager.load_texture_for_model(fileloc);
           if (material.texture_id != 0) {
             material.has_texture = true;
             break; // Use first successful texture
@@ -297,7 +149,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
           // Try alternative path
           std::filesystem::path alt_path = std::filesystem::path(model_path).parent_path() / filename;
           if (std::filesystem::exists(alt_path)) {
-            material.texture_id = load_texture_for_model(alt_path.string());
+            material.texture_id = texture_manager.load_texture_for_model(alt_path.string());
             if (material.texture_id != 0) {
               material.has_texture = true;
               break;
@@ -323,7 +175,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
     // If no texture, create solid color texture
     if (!material.has_texture) {
       material.texture_id =
-        create_solid_color_texture(material.diffuse_color.x, material.diffuse_color.y, material.diffuse_color.z);
+        texture_manager.create_solid_color_texture(material.diffuse_color.x, material.diffuse_color.y, material.diffuse_color.z);
     }
 
     materials.push_back(material);
@@ -438,7 +290,7 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
   model.meshes.push_back(mesh_info);
 }
 
-bool load_model(const std::string& filepath, Model& model) {
+bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager) {
   // Clean up previous model
   cleanup_model(model);
 
@@ -500,7 +352,7 @@ bool load_model(const std::string& filepath, Model& model) {
   glBindVertexArray(0);
 
   // Load all materials from the model
-  load_model_materials(scene, filepath, model.materials);
+  load_model_materials(scene, filepath, model.materials, texture_manager);
 
   model.path = filepath;  // Store the path
   model.loaded = true;
@@ -508,11 +360,11 @@ bool load_model(const std::string& filepath, Model& model) {
   return true;
 }
 
-void render_model(const Model& model) {
+void render_model(const Model& model, TextureManager& texture_manager) {
   if (!model.loaded)
     return;
 
-  glUseProgram(g_preview_shader);
+  glUseProgram(texture_manager.get_preview_shader());
 
   // Set up matrices
   glm::mat4 model_matrix = glm::mat4(1.0f);
@@ -543,20 +395,20 @@ void render_model(const Model& model) {
   );
 
   // Set uniforms
-  glUniformMatrix4fv(glGetUniformLocation(g_preview_shader, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(g_preview_shader, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_preview_shader(), "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_preview_shader(), "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
 
   // Dynamic far clipping plane based on camera distance
   float far_plane = camera_distance * 2.0f; // 2x camera distance to ensure model is visible
   glUniformMatrix4fv(
-    glGetUniformLocation(g_preview_shader, "projection"), 1, GL_FALSE,
+    glGetUniformLocation(texture_manager.get_preview_shader(), "projection"), 1, GL_FALSE,
     glm::value_ptr(glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane))
   );
 
   // Light and material properties
-  glUniform3f(glGetUniformLocation(g_preview_shader, "lightPos"), camera_x, camera_y + 1.0f, camera_z);
-  glUniform3f(glGetUniformLocation(g_preview_shader, "viewPos"), camera_x, camera_y, camera_z);
-  glUniform3f(glGetUniformLocation(g_preview_shader, "lightColor"), 1.0f, 1.0f, 1.0f);
+  glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "lightPos"), camera_x, camera_y + 1.0f, camera_z);
+  glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "viewPos"), camera_x, camera_y, camera_z);
+  glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "lightColor"), 1.0f, 1.0f, 1.0f);
 
   // NEW: Render each mesh with its material
   glBindVertexArray(model.vao);
@@ -568,18 +420,18 @@ void render_model(const Model& model) {
       if (material.has_texture && material.texture_id != 0) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, material.texture_id);
-        glUniform1i(glGetUniformLocation(g_preview_shader, "diffuseTexture"), 0);
-        glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 1);
+        glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "diffuseTexture"), 0);
+        glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 1);
       }
       else {
-        glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 0);
-        glUniform3fv(glGetUniformLocation(g_preview_shader, "materialColor"), 1, &material.diffuse_color[0]);
+        glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
+        glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &material.diffuse_color[0]);
       }
     }
     else {
-      glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 0);
+      glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
       glm::vec3 default_color(0.7f, 0.7f, 0.7f);
-      glUniform3fv(glGetUniformLocation(g_preview_shader, "materialColor"), 1, &default_color[0]);
+      glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &default_color[0]);
     }
 
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(model.indices.size()), GL_UNSIGNED_INT, 0);
@@ -594,12 +446,12 @@ void render_model(const Model& model) {
         if (material.has_texture && material.texture_id != 0) {
           glActiveTexture(GL_TEXTURE0);
           glBindTexture(GL_TEXTURE_2D, material.texture_id);
-          glUniform1i(glGetUniformLocation(g_preview_shader, "diffuseTexture"), 0);
-          glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 1);
+          glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "diffuseTexture"), 0);
+          glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 1);
         }
         else {
-          glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 0);
-          glUniform3fv(glGetUniformLocation(g_preview_shader, "materialColor"), 1, &material.diffuse_color[0]);
+          glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
+          glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &material.diffuse_color[0]);
         }
 
         // Draw this specific mesh (indices are already properly offset)
@@ -647,8 +499,8 @@ const Model& get_current_model(const Model& current_model) {
   return current_model;
 }
 
-void render_3d_preview(int width, int height, const Model& model) {
-  if (!g_preview_initialized) {
+void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager) {
+  if (!texture_manager.is_preview_initialized()) {
     return;
   }
 
@@ -656,9 +508,9 @@ void render_3d_preview(int width, int height, const Model& model) {
   static int last_fb_width = 0, last_fb_height = 0;
   if (width != last_fb_width || height != last_fb_height) {
     // Recreate framebuffer with new size
-    glBindTexture(GL_TEXTURE_2D, g_preview_texture);
+    glBindTexture(GL_TEXTURE_2D, texture_manager.get_preview_texture());
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-    glBindTexture(GL_TEXTURE_2D, g_preview_depth_texture);
+    glBindTexture(GL_TEXTURE_2D, texture_manager.get_preview_depth_texture());
     glTexImage2D(
       GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, width, height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr
     );
@@ -667,7 +519,7 @@ void render_3d_preview(int width, int height, const Model& model) {
   }
 
   // Render to framebuffer
-  glBindFramebuffer(GL_FRAMEBUFFER, g_preview_framebuffer);
+  glBindFramebuffer(GL_FRAMEBUFFER, texture_manager.get_preview_framebuffer());
   glViewport(0, 0, width, height);
   glClearColor(
     Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
@@ -677,11 +529,11 @@ void render_3d_preview(int width, int height, const Model& model) {
 
   // Render the model if loaded, otherwise render a simple colored triangle
   if (model.loaded) {
-    render_model(model);
+    render_model(model, texture_manager);
   }
   else {
     // Fallback: render a simple colored triangle
-    glUseProgram(g_preview_shader);
+    glUseProgram(texture_manager.get_preview_shader());
 
     // Set up matrices for triangle
     glm::mat4 model_matrix = glm::mat4(1.0f);
@@ -689,17 +541,17 @@ void render_3d_preview(int width, int height, const Model& model) {
       glm::lookAt(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
     glm::mat4 projection_matrix = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 1000.0f);
 
-    glUniformMatrix4fv(glGetUniformLocation(g_preview_shader, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-    glUniformMatrix4fv(glGetUniformLocation(g_preview_shader, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
+    glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_preview_shader(), "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
+    glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_preview_shader(), "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
     glUniformMatrix4fv(
-      glGetUniformLocation(g_preview_shader, "projection"), 1, GL_FALSE, glm::value_ptr(projection_matrix)
+      glGetUniformLocation(texture_manager.get_preview_shader(), "projection"), 1, GL_FALSE, glm::value_ptr(projection_matrix)
     );
 
     // Set lighting uniforms for fallback triangle
-    glUniform3f(glGetUniformLocation(g_preview_shader, "lightPos"), 2.0f, 2.0f, 3.0f);
-    glUniform3f(glGetUniformLocation(g_preview_shader, "viewPos"), 0.0f, 0.0f, 3.0f);
-    glUniform3f(glGetUniformLocation(g_preview_shader, "lightColor"), 1.0f, 1.0f, 1.0f);
-    glUniform1i(glGetUniformLocation(g_preview_shader, "useTexture"), 0);
+    glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "lightPos"), 2.0f, 2.0f, 3.0f);
+    glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "viewPos"), 0.0f, 0.0f, 3.0f);
+    glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "lightColor"), 1.0f, 1.0f, 1.0f);
+    glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
 
     // Create a simple triangle
     float vertices[] = {

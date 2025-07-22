@@ -28,6 +28,7 @@
 #include "database.h"
 #include "file_watcher.h"
 #include "index.h"
+#include "texture_manager.h"
 #include "utils.h"
 #include "3d.h"
 
@@ -71,20 +72,6 @@ constexpr ImU32 COLOR_WHITE = IM_COL32(255, 255, 255, 255);
 constexpr ImU32 COLOR_TRANSPARENT_32 = IM_COL32(0, 0, 0, 0);
 constexpr ImU32 COLOR_BORDER_GRAY = IM_COL32(150, 150, 150, 255);
 
-// Global variables for search and UI state
-// static bool show_search_results = false;  // Unused variable
-// static unsigned int thumbnail_texture = 0; // Unused variable
-
-// Texture cache for loaded images
-struct TextureCacheEntry {
-  unsigned int texture_id;
-  std::string file_path;
-  int width;
-  int height;
-
-  TextureCacheEntry() : texture_id(0), width(0), height(0) {}
-};
-
 // Global variables
 std::vector<FileInfo> g_assets;
 std::atomic<bool> g_assets_updated(false);
@@ -95,19 +82,11 @@ std::atomic<size_t> g_files_processed(0);
 std::atomic<size_t> g_total_files_to_process(0);
 AssetDatabase g_database;
 FileWatcher g_file_watcher;
-unsigned int g_default_texture = 0;
+TextureManager g_texture_manager;
 
 // Thread-safe event queue for file watcher events
 std::queue<FileEvent> g_pending_file_events;
 std::mutex g_events_mutex;
-
-// Selection state
-
-// Type-specific textures
-std::unordered_map<AssetType, unsigned int> g_texture_icons;
-
-// Texture cache
-std::unordered_map<std::string, TextureCacheEntry> g_texture_cache;
 
 bool load_roboto_font(ImGuiIO& io) {
   // Load embedded Roboto font from external/fonts directory
@@ -120,134 +99,6 @@ bool load_roboto_font(ImGuiIO& io) {
   // If embedded font fails to load, log error and use default font
   std::cerr << "Failed to load embedded Roboto font. Check that external/fonts/Roboto-Regular.ttf exists.\n";
   return false;
-}
-
-// Function to load texture from file
-unsigned int load_texture(const char* filename) {
-  int width, height, channels;
-  unsigned char* data = stbi_load(filename, &width, &height, &channels, 4);
-  if (!data) {
-    std::cerr << "Failed to load texture: " << filename << '\n';
-    return 0;
-  }
-
-  unsigned int texture_id;
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters for pixel art (nearest neighbor filtering)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-  // Upload texture data
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-
-  stbi_image_free(data);
-  return texture_id;
-}
-
-// Function to load SVG texture from file
-unsigned int load_svg_texture(
-  const char* filename, int target_width = 512, int target_height = 512, int* out_width = nullptr,
-  int* out_height = nullptr) {
-  std::cout << "Loading SVG: " << filename << std::endl;
-
-  // Parse SVG directly from file like the nanosvg examples do
-  NSVGimage* image = nsvgParseFromFile(filename, "px", 96.0f);
-  if (!image) {
-    std::cerr << "Failed to parse SVG: " << filename << '\n';
-    return 0;
-  }
-
-  std::cout << "SVG parsed successfully. Original size: " << image->width << "x" << image->height << std::endl;
-
-  // Store original dimensions if requested
-  if (out_width)
-    *out_width = static_cast<int>(image->width);
-  if (out_height)
-    *out_height = static_cast<int>(image->height);
-
-  if (image->width <= 0 || image->height <= 0) {
-    std::cerr << "Invalid SVG dimensions: " << image->width << "x" << image->height << std::endl;
-    nsvgDelete(image);
-    return 0;
-  }
-
-  // Use target dimensions for rasterization to match thumbnail size
-  int w = target_width;
-  int h = target_height;
-
-  // Calculate scale factor to fit SVG into target dimensions while preserving aspect ratio
-  float scale_x = static_cast<float>(target_width) / image->width;
-  float scale_y = static_cast<float>(target_height) / image->height;
-  float scale = std::min(scale_x, scale_y);
-
-  std::cout << "Rasterizing at target size: " << w << "x" << h << " (scale: " << scale << ")" << std::endl;
-
-  if (w <= 0 || h <= 0) {
-    std::cerr << "Invalid raster dimensions: " << w << "x" << h << std::endl;
-    nsvgDelete(image);
-    return 0;
-  }
-
-  // Create rasterizer
-  NSVGrasterizer* rast = nsvgCreateRasterizer();
-  if (!rast) {
-    std::cerr << "Failed to create SVG rasterizer for: " << filename << '\n';
-    nsvgDelete(image);
-    return 0;
-  }
-
-  // Allocate image buffer like the nanosvg examples do
-  unsigned char* img_data = static_cast<unsigned char*>(malloc(w * h * 4));
-  if (!img_data) {
-    std::cerr << "Failed to allocate image buffer for: " << filename << '\n';
-    nsvgDeleteRasterizer(rast);
-    nsvgDelete(image);
-    return 0;
-  }
-
-  // Rasterize SVG at calculated scale to fit target dimensions
-  nsvgRasterize(rast, image, 0, 0, scale, img_data, w, h, w * 4);
-
-  // Create OpenGL texture
-  unsigned int texture_id;
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters (use linear filtering for SVG)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-  // Upload texture data at original size
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data);
-
-  std::cout << "OpenGL texture created successfully with ID: " << texture_id << std::endl;
-
-  // Cleanup
-  free(img_data);
-  nsvgDeleteRasterizer(rast);
-  nsvgDelete(image);
-
-  return texture_id;
-}
-
-// Function to load type-specific textures
-void load_type_textures() {
-  const std::unordered_map<AssetType, const char*> texture_paths = {
-      {AssetType::Texture, "images/texture.png"}, {AssetType::Model, "images/model.png"}, {AssetType::Sound, "images/sound.png"}, {AssetType::Font, "images/font.png"}, {AssetType::Shader, "images/document.png"}, {AssetType::Document, "images/document.png"}, {AssetType::Archive, "images/document.png"}, {AssetType::Directory, "images/folder.png"}, {AssetType::Auxiliary, "images/unknown.png"}, {AssetType::Unknown, "images/unknown.png"} };
-
-  for (const auto& [type, path] : texture_paths) {
-    unsigned int texture_id = load_texture(path);
-    g_texture_icons[type] = texture_id;
-    if (texture_id == 0) {
-      std::cerr << "Failed to load type texture: " << path << '\n';
-    }
-  }
 }
 
 // Function to calculate aspect-ratio-preserving dimensions with upscaling limit
@@ -272,98 +123,6 @@ ImVec2 calculate_thumbnail_size(
   }
 
   return ImVec2(calculated_width, calculated_height);
-}
-
-// Function to get or load texture for an asset
-unsigned int get_asset_texture(const FileInfo& asset) {
-  // For non-texture assets, return type-specific icon
-  if (asset.type != AssetType::Texture) {
-    auto it = g_texture_icons.find(asset.type);
-    if (it != g_texture_icons.end()) {
-      return it->second;
-    }
-    return g_default_texture;
-  }
-
-  // Check if texture is already cached
-  auto it = g_texture_cache.find(asset.full_path);
-  if (it != g_texture_cache.end()) {
-    return it->second.texture_id;
-  }
-
-  unsigned int texture_id = 0;
-  int width = 0, height = 0;
-
-  // Check if this is an SVG file
-  if (asset.extension == ".svg") {
-    // Load cached PNG thumbnail - should always exist if properly indexed
-    std::filesystem::path asset_path(asset.full_path);
-    std::string png_filename = asset_path.stem().string() + ".png";
-    std::filesystem::path thumbnail_path = std::filesystem::path("thumbnails") / png_filename;
-
-    if (std::filesystem::exists(thumbnail_path)) {
-      // Load cached PNG thumbnail
-      texture_id = load_texture(thumbnail_path.string().c_str());
-      if (texture_id != 0) {
-        // Get thumbnail dimensions
-        int channels;
-        unsigned char* data = stbi_load(thumbnail_path.string().c_str(), &width, &height, &channels, 4);
-        if (data) {
-          stbi_image_free(data);
-        }
-        else {
-          width = 0;
-          height = 0;
-        }
-      }
-    }
-    else {
-      // No cached thumbnail found - this indicates indexing issue
-      std::cerr << "Warning: No cached thumbnail found for SVG: " << asset.full_path << std::endl;
-      texture_id = 0; // Will fallback to default unknown texture below
-    }
-  }
-  else {
-    // Load regular texture using stb_image
-    texture_id = load_texture(asset.full_path.c_str());
-    if (texture_id != 0) {
-      // Get texture dimensions
-      int channels;
-      unsigned char* data = stbi_load(asset.full_path.c_str(), &width, &height, &channels, 4);
-      if (data) {
-        stbi_image_free(data);
-      }
-      else {
-        width = 0;
-        height = 0;
-      }
-    }
-  }
-
-  if (texture_id == 0) {
-    std::cerr << "Failed to load texture: " << asset.full_path << '\n';
-    return 0;
-  }
-
-  // Cache the result
-  TextureCacheEntry& entry = g_texture_cache[asset.full_path];
-  entry.texture_id = texture_id;
-  entry.file_path = asset.full_path;
-  entry.width = width;
-  entry.height = height;
-
-  return texture_id;
-}
-
-// Function to get cached texture dimensions
-bool get_texture_dimensions(const std::string& file_path, int& width, int& height) {
-  auto it = g_texture_cache.find(file_path);
-  if (it != g_texture_cache.end()) {
-    width = it->second.width;
-    height = it->second.height;
-    return true;
-  }
-  return false;
 }
 
 // Function to check if asset matches search terms
@@ -464,17 +223,6 @@ void reindex() {
     g_files_processed, g_total_files_to_process);
 }
 
-// Helper function to clean up texture cache entry for a specific path
-void cleanup_texture_cache(const std::string& path) {
-  auto cache_it = g_texture_cache.find(path);
-  if (cache_it != g_texture_cache.end()) {
-    if (cache_it->second.texture_id != 0) {
-      glDeleteTextures(1, &cache_it->second.texture_id);
-    }
-    g_texture_cache.erase(cache_it);
-  }
-}
-
 // File event callback function (runs on background thread)
 // Only queues events - all processing happens on main thread
 void on_file_event(const FileEvent& event) {
@@ -483,7 +231,6 @@ void on_file_event(const FileEvent& event) {
 }
 
 // Process pending file events on main thread (thread-safe)
-// Uses unified AssetIndexer for consistent processing
 void process_pending_file_events() {
   std::queue<FileEvent> events_to_process;
 
@@ -508,7 +255,7 @@ void process_pending_file_events() {
       try {
         // Clear texture cache for new files
         if (std::filesystem::is_regular_file(event.path)) {
-          cleanup_texture_cache(event.path);
+          g_texture_manager.cleanup_texture_cache(event.path);
         }
 
         // Use unified indexer with event timestamp
@@ -534,7 +281,7 @@ void process_pending_file_events() {
 
         // Clear texture cache for modified files so they can be reloaded
         if (std::filesystem::is_regular_file(event.path)) {
-          cleanup_texture_cache(event.path);
+          g_texture_manager.cleanup_texture_cache(event.path);
         }
 
         // Use unified indexer with event timestamp
@@ -553,7 +300,7 @@ void process_pending_file_events() {
     case FileEventType::Deleted:
     {
       // Clean up texture cache for deleted file (must be done on main thread)
-      cleanup_texture_cache(event.path);
+      g_texture_manager.cleanup_texture_cache(event.path);
 
       // Delete from database directly
       if (g_database.delete_asset(event.path)) {
@@ -564,7 +311,7 @@ void process_pending_file_events() {
     case FileEventType::Renamed:
     {
       // Clean up texture cache for old path (must be done on main thread)
-      cleanup_texture_cache(event.old_path);
+      g_texture_manager.cleanup_texture_cache(event.old_path);
 
       try {
         // Delete old entry
@@ -607,7 +354,7 @@ int main() {
   }
 
   // Smart scanning - no longer clearing database on startup
-  std::cout << "Using smart incremental scanning...\n";
+  std::cout << "Incremental scanning...\n";
 
   // Start background initial scan (non-blocking)
   std::thread scan_thread(reindex);
@@ -637,12 +384,7 @@ int main() {
     return -1;
   }
 
-  // Initialize 3D preview
-  if (!initialize_3d_preview()) {
-    std::cerr << "Failed to initialize 3D preview\n";
-    glfwTerminate();
-    return -1;
-  }
+  // 3D preview initialization now handled by TextureManager
 
   // Initialize Dear ImGui
   IMGUI_CHECKVERSION();
@@ -667,14 +409,16 @@ int main() {
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init("#version 330");
 
-  // Load default texture (generic icon)
-  g_default_texture = load_texture("images/texture.png");
-  if (g_default_texture == 0) {
-    std::cerr << "Warning: Could not load default texture\n";
+  // Initialize texture manager
+  if (!g_texture_manager.initialize()) {
+    std::cerr << "Failed to initialize texture manager\n";
+    return -1;
   }
 
-  // Load type-specific textures
-  load_type_textures();
+  // Initialize 3D preview system
+  if (!g_texture_manager.initialize_preview_system()) {
+    std::cerr << "Warning: Failed to initialize 3D preview system\n";
+  }
 
   // Search state
   SearchState search_state;
@@ -701,7 +445,7 @@ int main() {
     }
 
     // Render 3D preview to framebuffer BEFORE starting ImGui frame
-    if (g_preview_initialized) {
+    if (g_texture_manager.is_preview_initialized()) {
       // Calculate the size for the right panel (same as 2D previews)
       float right_panel_width = (ImGui::GetIO().DisplaySize.x * 0.25f) - PREVIEW_RIGHT_MARGIN;
       float avail_width = right_panel_width - PREVIEW_INTERNAL_PADDING;
@@ -711,7 +455,7 @@ int main() {
       int fb_height = static_cast<int>(avail_height);
 
       // Render the 3D preview
-      render_3d_preview(fb_width, fb_height, search_state.current_model);
+      render_3d_preview(fb_width, fb_height, search_state.current_model, g_texture_manager);
     }
 
     // Start the Dear ImGui frame
@@ -867,14 +611,14 @@ int main() {
       ImGui::BeginGroup();
 
       // Get texture for this asset
-      unsigned int asset_texture = get_asset_texture(search_state.filtered_assets[i]);
+      unsigned int asset_texture = g_texture_manager.get_asset_texture(search_state.filtered_assets[i]);
 
       // Calculate display size based on asset type
       ImVec2 display_size(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
       bool is_texture = (search_state.filtered_assets[i].type == AssetType::Texture && asset_texture != 0);
       if (is_texture) {
         int width, height;
-        if (get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height)) {
+        if (g_texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height)) {
           display_size =
             calculate_thumbnail_size(width, height, THUMBNAIL_SIZE, THUMBNAIL_SIZE, 3.0f); // 3x upscaling for grid
         }
@@ -974,13 +718,13 @@ int main() {
       const FileInfo& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
 
       // Check if selected asset is a model
-      if (selected_asset.type == AssetType::Model && g_preview_initialized) {
+      if (selected_asset.type == AssetType::Model && g_texture_manager.is_preview_initialized()) {
         // Load the model if it's different from the currently loaded one
         if (selected_asset.full_path != search_state.current_model.path) {
           std::cout << "=== Loading Model in Main ===" << std::endl;
           std::cout << "Selected asset: " << selected_asset.full_path << std::endl;
           Model model;
-          if (load_model(selected_asset.full_path, model)) {
+          if (load_model(selected_asset.full_path, model, g_texture_manager)) {
             set_current_model(search_state.current_model, model);
             std::cout << "Model loaded successfully in main" << std::endl;
           }
@@ -1009,7 +753,7 @@ int main() {
         ImGui::GetWindowDrawList()->AddRect(border_min, border_max, COLOR_BORDER_GRAY, 8.0f, 0, 1.0f);
 
         // Display the 3D viewport
-        ImGui::Image((ImTextureID) (intptr_t) g_preview_texture, viewport_size);
+        ImGui::Image((ImTextureID) (intptr_t) g_texture_manager.get_preview_texture(), viewport_size);
 
         // Restore cursor for info below
         ImGui::SetCursorScreenPos(container_pos);
@@ -1063,13 +807,13 @@ int main() {
       }
       else {
         // 2D Preview for non-model assets
-        unsigned int preview_texture = get_asset_texture(selected_asset);
+        unsigned int preview_texture = g_texture_manager.get_asset_texture(selected_asset);
         if (preview_texture != 0) {
           ImVec2 preview_size(avail_width, avail_height);
 
           if (selected_asset.type == AssetType::Texture) {
             int width, height;
-            if (get_texture_dimensions(selected_asset.full_path, width, height)) {
+            if (g_texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
               preview_size = calculate_thumbnail_size(width, height, avail_width, avail_height, 100.0);
             }
           }
@@ -1122,7 +866,7 @@ int main() {
         // Display dimensions for texture assets
         if (selected_asset.type == AssetType::Texture) {
           int width, height;
-          if (get_texture_dimensions(selected_asset.full_path, width, height)) {
+          if (g_texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
             ImGui::TextColored(COLOR_LABEL_TEXT, "Dimensions: ");
             ImGui::SameLine();
             ImGui::Text("%dx%d", width, height);
@@ -1167,28 +911,11 @@ int main() {
     glfwSwapBuffers(window);
   }
 
-  // Cleanup textures
-  for (auto& entry : g_texture_cache) {
-    if (entry.second.texture_id != 0) {
-      glDeleteTextures(1, &entry.second.texture_id);
-    }
-  }
-  g_texture_cache.clear();
-
-  if (g_default_texture != 0) {
-    glDeleteTextures(1, &g_default_texture);
-  }
-
-  // Cleanup type-specific textures
-  for (auto& [type, texture_id] : g_texture_icons) {
-    if (texture_id != 0) {
-      glDeleteTextures(1, &texture_id);
-    }
-  }
+  // Cleanup texture manager
+  g_texture_manager.cleanup();
 
   // Cleanup 3D preview resources
   cleanup_model(search_state.current_model);
-  cleanup_3d_preview();
 
   // Cleanup
   ImGui_ImplOpenGL3_Shutdown();

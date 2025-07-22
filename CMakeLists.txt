@@ -168,6 +168,7 @@ add_executable(AssetInventory
     src/database.cpp
     src/utils.cpp
     src/3d.cpp
+    src/texture_manager.cpp
     ${FILE_WATCHER_SOURCES}
 )
 

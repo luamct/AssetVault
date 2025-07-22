@@ -9,12 +9,8 @@
 #include <string>
 #include <vector>
 
-// 3D Preview global variables
-extern bool g_preview_initialized;
-extern unsigned int g_preview_shader;
-extern unsigned int g_preview_texture;
-extern unsigned int g_preview_depth_texture;
-extern unsigned int g_preview_framebuffer;
+// Forward declaration
+class TextureManager;
 
 // Material data structure
 struct Material {
@@ -64,17 +60,13 @@ struct Model {
   bool loaded = false;
 };
 
-// 3D Preview functions
-bool initialize_3d_preview();
-void cleanup_3d_preview();
-void render_3d_preview(int width, int height, const Model& model);
-bool load_model(const std::string& filepath, Model& model);
-void render_model(const Model& model);
+// 3D Preview functions (now handled by TextureManager)
+void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager);
+bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager);
+void render_model(const Model& model, TextureManager& texture_manager);
 void cleanup_model(Model& model);
 void set_current_model(Model& current_model, const Model& model);
 const Model& get_current_model(const Model& current_model);
 
-// Material and texture functions
-unsigned int load_texture_for_model(const std::string& filepath);
-void load_model_materials(const aiScene* scene, const std::string& model_path, std::vector<Material>& materials);
-unsigned int create_solid_color_texture(float r, float g, float b);
+// Material functions (now using TextureManager)
+void load_model_materials(const aiScene* scene, const std::string& model_path, std::vector<Material>& materials, TextureManager& texture_manager);

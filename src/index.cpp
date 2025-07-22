@@ -5,6 +5,7 @@
 #include <chrono>
 #include <ctime>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <string>
@@ -218,18 +219,27 @@ uint32_t filetime_to_seconds_since_2000(const FILETIME& ft) {
 // Windows-only helper to get both creation and modification time using single GetFileTime call
 // Returns the more recent of creation time or modification time as seconds since Jan 1, 2000
 uint32_t get_max_creation_or_modification_seconds(const fs::path& path) {
+  // Use FILE_FLAG_BACKUP_SEMANTICS to handle both files and directories
+  DWORD flags = FILE_ATTRIBUTE_NORMAL;
+  if (fs::is_directory(path)) {
+    flags = FILE_FLAG_BACKUP_SEMANTICS;
+  }
+  
   HANDLE hFile = CreateFileW(
     path.wstring().c_str(),
     GENERIC_READ,
     FILE_SHARE_READ | FILE_SHARE_WRITE,
     nullptr,
     OPEN_EXISTING,
-    FILE_ATTRIBUTE_NORMAL,
+    flags,
     nullptr
   );
 
   if (hFile == INVALID_HANDLE_VALUE) {
-    std::cerr << "Warning: Could not open file for time reading: " << path << std::endl;
+    // Only log warning for files, not directories (to reduce noise)
+    if (!fs::is_directory(path)) {
+      std::cerr << "Warning: Could not open file for time reading: " << path << std::endl;
+    }
     return 0;
   }
 
@@ -492,6 +502,7 @@ void reindex_new_or_modified(
   std::atomic<float>& scan_progress, std::atomic<size_t>& files_processed, std::atomic<size_t>& total_files_to_process
 ) {
   std::cout << "Starting smart incremental asset reindexing...\n";
+  auto start_time = std::chrono::high_resolution_clock::now();
   initial_scan_in_progress = true;
   scan_progress = 0.0f;
   files_processed = 0;
@@ -506,7 +517,11 @@ void reindex_new_or_modified(
 
   // Phase 1: Quick scan to get only paths and native modification times (fast)
   std::unordered_map<std::string, fs::file_time_type> current_files;
+  auto quick_scan_start = std::chrono::high_resolution_clock::now();
   quick_scan("assets", current_files);
+  auto quick_scan_end = std::chrono::high_resolution_clock::now();
+  auto quick_scan_duration = std::chrono::duration_cast<std::chrono::milliseconds>(quick_scan_end - quick_scan_start);
+  std::cout << "Quick scan completed in " << quick_scan_duration.count() << "ms - found " << current_files.size() << " files\n";
 
   // Track what paths need reindexing
   std::vector<std::string> paths_to_insert;
@@ -560,6 +575,7 @@ void reindex_new_or_modified(
   AssetIndexer indexer("assets");
 
   std::cout << "Processing " << paths_to_insert.size() << " new files...\n";
+  auto new_files_start = std::chrono::high_resolution_clock::now();
   for (const std::string& path : paths_to_insert) {
     FileInfo full_info = indexer.process_file(path);
     assets_to_insert.push_back(full_info);
@@ -570,8 +586,14 @@ void reindex_new_or_modified(
       scan_progress = static_cast<float>(files_processed.load()) / static_cast<float>(total_files_to_process.load());
     }
   }
+  auto new_files_end = std::chrono::high_resolution_clock::now();
+  auto new_files_duration = std::chrono::duration_cast<std::chrono::milliseconds>(new_files_end - new_files_start);
+  if (paths_to_insert.size() > 0) {
+    std::cout << "New files processing took " << new_files_duration.count() << "ms\n";
+  }
 
   std::cout << "Processing " << paths_to_update.size() << " modified files...\n";
+  auto mod_files_start = std::chrono::high_resolution_clock::now();
   for (const std::string& path : paths_to_update) {
     FileInfo full_info = indexer.process_file(path);
     assets_to_update.push_back(full_info);
@@ -581,6 +603,11 @@ void reindex_new_or_modified(
     if (total_files_to_process > 0) {
       scan_progress = static_cast<float>(files_processed.load()) / static_cast<float>(total_files_to_process.load());
     }
+  }
+  auto mod_files_end = std::chrono::high_resolution_clock::now();
+  auto mod_files_duration = std::chrono::duration_cast<std::chrono::milliseconds>(mod_files_end - mod_files_start);
+  if (paths_to_update.size() > 0) {
+    std::cout << "Modified files processing took " << mod_files_duration.count() << "ms\n";
   }
 
   // Apply changes to database
@@ -608,9 +635,23 @@ void reindex_new_or_modified(
   assets_updated = true; // Trigger UI update - main thread will handle filtering
 
   size_t unchanged_count = current_files.size() - paths_to_insert.size() - paths_to_update.size();
+  
+  // Calculate timing metrics
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+  double total_duration_ms = total_duration.count();
+  
+  // Calculate average time per file (including all files scanned, not just processed)
+  double avg_time_per_file = 0.0;
+  if (current_files.size() > 0) {
+    avg_time_per_file = total_duration_ms / current_files.size();
+  }
+  
   std::cout << "Reindexing completed - " << assets_to_insert.size() << " new, " << assets_to_update.size()
     << " updated, " << assets_to_delete.size() << " removed, " << unchanged_count
     << " unchanged (skipped expensive processing)\n";
+  std::cout << "Total scan time: " << total_duration_ms << "ms for " << current_files.size() 
+    << " files (avg " << std::fixed << std::setprecision(2) << avg_time_per_file << "ms per file)\n";
 
   initial_scan_complete = true;
   initial_scan_in_progress = false;

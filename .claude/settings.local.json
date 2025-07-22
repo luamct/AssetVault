@@ -4,7 +4,8 @@
       "Bash(rm:*)",
       "Bash(mkdir:*)",
       "Bash(cmake:*)",
-      "Bash(./build/Debug/AssetInventory.exe)"
+      "Bash(./build/Debug/AssetInventory.exe)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }
