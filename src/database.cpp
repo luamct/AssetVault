@@ -401,6 +401,60 @@ bool AssetDatabase::insert_assets_batch(const std::vector<FileInfo>& files) {
   return success;
 }
 
+bool AssetDatabase::update_assets_batch(const std::vector<FileInfo>& files) {
+  if (files.empty()) {
+    return true;
+  }
+
+  // Begin transaction for better performance
+  if (!execute_sql("BEGIN TRANSACTION")) {
+    return false;
+  }
+
+  bool success = true;
+  for (const auto& file : files) {
+    if (!update_asset(file)) {
+      success = false;
+      break;
+    }
+  }
+
+  if (success) {
+    execute_sql("COMMIT");
+  } else {
+    execute_sql("ROLLBACK");
+  }
+
+  return success;
+}
+
+bool AssetDatabase::delete_assets_batch(const std::vector<std::string>& paths) {
+  if (paths.empty()) {
+    return true;
+  }
+
+  // Begin transaction for better performance
+  if (!execute_sql("BEGIN TRANSACTION")) {
+    return false;
+  }
+
+  bool success = true;
+  for (const auto& path : paths) {
+    if (!delete_asset(path)) {
+      success = false;
+      break;
+    }
+  }
+
+  if (success) {
+    execute_sql("COMMIT");
+  } else {
+    execute_sql("ROLLBACK");
+  }
+
+  return success;
+}
+
 bool AssetDatabase::clear_all_assets() {
   return execute_sql("DELETE FROM assets");
 }

@@ -17,8 +17,8 @@
 #include "index.h" // For SVG_THUMBNAIL_SIZE
 
 TextureManager::TextureManager()
-    : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
-      preview_framebuffer_(0), preview_shader_(0), preview_initialized_(false) {
+  : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
+  preview_framebuffer_(0), preview_shader_(0), preview_initialized_(false) {
 }
 
 TextureManager::~TextureManager() {
@@ -35,7 +35,7 @@ bool TextureManager::initialize() {
 
   // Load type-specific textures
   load_type_textures();
-  
+
   std::cout << "TextureManager initialized successfully\n";
   return true;
 }
@@ -176,15 +176,15 @@ unsigned int TextureManager::load_svg_texture(
 
 void TextureManager::load_type_textures() {
   const std::unordered_map<AssetType, const char*> texture_paths = {
-      {AssetType::Texture, "images/texture.png"}, 
-      {AssetType::Model, "images/model.png"}, 
-      {AssetType::Sound, "images/sound.png"}, 
-      {AssetType::Font, "images/font.png"}, 
-      {AssetType::Shader, "images/document.png"}, 
-      {AssetType::Document, "images/document.png"}, 
-      {AssetType::Archive, "images/document.png"}, 
-      {AssetType::Directory, "images/folder.png"}, 
-      {AssetType::Auxiliary, "images/unknown.png"}, 
+      {AssetType::Texture, "images/texture.png"},
+      {AssetType::Model, "images/model.png"},
+      {AssetType::Sound, "images/sound.png"},
+      {AssetType::Font, "images/font.png"},
+      {AssetType::Shader, "images/document.png"},
+      {AssetType::Document, "images/document.png"},
+      {AssetType::Archive, "images/document.png"},
+      {AssetType::Directory, "images/folder.png"},
+      {AssetType::Auxiliary, "images/unknown.png"},
       {AssetType::Unknown, "images/unknown.png"}
   };
 
@@ -211,6 +211,13 @@ unsigned int TextureManager::get_asset_texture(const FileInfo& asset) {
   auto it = texture_cache_.find(asset.full_path);
   if (it != texture_cache_.end()) {
     return it->second.texture_id;
+  }
+
+  // Check if file exists before attempting to load (defensive check for deleted files)
+  if (!std::filesystem::exists(asset.full_path)) {
+    // Return type icon for missing texture files (no error spam)
+    auto icon_it = type_icons_.find(asset.type);
+    return (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
   }
 
   unsigned int texture_id = 0;
@@ -382,7 +389,7 @@ unsigned int TextureManager::load_texture_for_model(const std::string& filepath)
   int width, height, channels;
   unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &channels, 0);
   if (!data) {
-    std::cout << "Failed to load texture: " << filepath << std::endl;
+    std::cout << "Failed to load texture for 3d model: " << filepath << std::endl;
     return 0;
   }
 
@@ -413,7 +420,7 @@ unsigned int TextureManager::load_texture_for_model(const std::string& filepath)
 unsigned int TextureManager::create_solid_color_texture(float r, float g, float b) {
   // Create a 1x1 texture with the specified color
   unsigned char color_data[3] = {
-    static_cast<unsigned char>(r * 255.0f), 
+    static_cast<unsigned char>(r * 255.0f),
     static_cast<unsigned char>(g * 255.0f),
     static_cast<unsigned char>(b * 255.0f)
   };
@@ -445,21 +452,21 @@ bool TextureManager::initialize_preview_system() {
     layout (location = 0) in vec3 aPos;
     layout (location = 1) in vec3 aNormal;
     layout (location = 2) in vec2 aTexCoord;
-    
+
     out vec3 FragPos;
     out vec3 Normal;
     out vec2 TexCoord;
-    
+
     uniform mat4 model;
     uniform mat4 view;
     uniform mat4 projection;
-    
+
     void main()
     {
         FragPos = vec3(model * vec4(aPos, 1.0));
         Normal = mat3(transpose(inverse(model))) * aNormal;
         TexCoord = aTexCoord;
-    
+
         gl_Position = projection * view * vec4(FragPos, 1.0);
     }
   )";
@@ -467,15 +474,15 @@ bool TextureManager::initialize_preview_system() {
   const char* fragment_shader_source = R"(
     #version 330 core
     out vec4 FragColor;
-    
+
     in vec3 FragPos;
     in vec3 Normal;
     in vec2 TexCoord;
-    
+
     uniform sampler2D texture_diffuse1;
     uniform bool has_texture;
     uniform vec3 material_color;
-    
+
     void main()
     {
         vec3 result;
@@ -492,7 +499,7 @@ bool TextureManager::initialize_preview_system() {
   unsigned int vertex_shader = glCreateShader(GL_VERTEX_SHADER);
   glShaderSource(vertex_shader, 1, &vertex_shader_source, nullptr);
   glCompileShader(vertex_shader);
-  
+
   int success;
   char info_log[512];
   glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
@@ -506,7 +513,7 @@ bool TextureManager::initialize_preview_system() {
   unsigned int fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
   glShaderSource(fragment_shader, 1, &fragment_shader_source, nullptr);
   glCompileShader(fragment_shader);
-  
+
   glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
   if (!success) {
     glGetShaderInfoLog(fragment_shader, 512, nullptr, info_log);
@@ -519,7 +526,7 @@ bool TextureManager::initialize_preview_system() {
   glAttachShader(preview_shader_, vertex_shader);
   glAttachShader(preview_shader_, fragment_shader);
   glLinkProgram(preview_shader_);
-  
+
   glGetProgramiv(preview_shader_, GL_LINK_STATUS, &success);
   if (!success) {
     glGetProgramInfoLog(preview_shader_, 512, nullptr, info_log);

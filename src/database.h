@@ -40,6 +40,8 @@ public:
 
   // Batch operations
   bool insert_assets_batch(const std::vector<FileInfo>& files);
+  bool update_assets_batch(const std::vector<FileInfo>& files);
+  bool delete_assets_batch(const std::vector<std::string>& paths);
   bool clear_all_assets();
 
 private:

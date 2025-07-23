@@ -25,6 +25,7 @@
 #include "imgui_impl_opengl3.h"
 #include "theme.h"
 
+#include "event_processor.h"
 #include "database.h"
 #include "file_watcher.h"
 #include "index.h"
@@ -84,9 +85,9 @@ AssetDatabase g_database;
 FileWatcher g_file_watcher;
 TextureManager g_texture_manager;
 
-// Thread-safe event queue for file watcher events
-std::queue<FileEvent> g_pending_file_events;
-std::mutex g_events_mutex;
+// Unified event processor for both initial scan and runtime events
+EventProcessor* g_event_processor = nullptr;
+std::atomic<bool> g_search_update_needed(false);
 
 bool load_roboto_font(ImGuiIO& io) {
   // Load embedded Roboto font from external/fonts directory
@@ -182,38 +183,51 @@ void filter_assets(SearchState& search_state) {
   search_state.selected_asset_index = -1; // Clear selection when search results change
 
   constexpr size_t MAX_RESULTS = 1000; // Limit results to prevent UI blocking
-  size_t total_assets = g_assets.size();
+  size_t total_assets = 0;
   size_t filtered_count = 0;
 
-  for (const auto& asset : g_assets) {
-    // Skip auxiliary files - they should never appear in search results
-    if (asset.type == AssetType::Auxiliary) {
-      continue;
-    }
+  // Lock assets during filtering to prevent race conditions
+  if (g_event_processor) {
+    std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
 
-    if (asset_matches_search(asset, search_state.buffer)) {
-      search_state.filtered_assets.push_back(asset);
-      filtered_count++;
+    total_assets = g_assets.size();
+    for (const auto& asset : g_assets) {
+      // Skip auxiliary files - they should never appear in search results
+      if (asset.type == AssetType::Auxiliary) {
+        continue;
+      }
 
-      // Stop at maximum results to prevent UI blocking
-      if (search_state.filtered_assets.size() >= MAX_RESULTS) {
-        break;
+      if (asset_matches_search(asset, search_state.buffer)) {
+        search_state.filtered_assets.push_back(asset);
+        filtered_count++;
+
+        // Stop at maximum results to prevent UI blocking
+        if (search_state.filtered_assets.size() >= MAX_RESULTS) {
+          break;
+        }
       }
     }
   }
-
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-  double duration_ms = duration.count() / 1000.0;
-
-  std::cout << "DEBUG SEARCH: \"" << search_state.buffer << "\" | Results: " << filtered_count << "/" << total_assets;
-  if (search_state.filtered_assets.size() >= MAX_RESULTS) {
-    std::cout << " | Time: " << std::fixed << std::setprecision(2) << duration_ms << "ms [TRUNCATED]";
-  }
   else {
-    std::cout << " | Time: " << std::fixed << std::setprecision(2) << duration_ms << "ms";
+    // Fallback for when event processor isn't initialized yet
+    total_assets = g_assets.size();
+    for (const auto& asset : g_assets) {
+      // Skip auxiliary files - they should never appear in search results
+      if (asset.type == AssetType::Auxiliary) {
+        continue;
+      }
+
+      if (asset_matches_search(asset, search_state.buffer)) {
+        search_state.filtered_assets.push_back(asset);
+        filtered_count++;
+
+        // Stop at maximum results to prevent UI blocking
+        if (search_state.filtered_assets.size() >= MAX_RESULTS) {
+          break;
+        }
+      }
+    }
   }
-  std::cout << std::endl;
 }
 
 // Wrapper function to call the reindexing from index.cpp
@@ -224,120 +238,14 @@ void reindex() {
 }
 
 // File event callback function (runs on background thread)
-// Only queues events - all processing happens on main thread
+// Queues events for unified processing
 void on_file_event(const FileEvent& event) {
-  std::lock_guard<std::mutex> lock(g_events_mutex);
-  g_pending_file_events.push(event);
-}
-
-// Process pending file events on main thread (thread-safe)
-void process_pending_file_events() {
-  std::queue<FileEvent> events_to_process;
-
-  // Quickly extract all pending events under lock
-  {
-    std::lock_guard<std::mutex> lock(g_events_mutex);
-    events_to_process.swap(g_pending_file_events);
-  }
-
-  // Create indexer for consistent processing (same as initial scan)
-  static AssetIndexer indexer("assets");
-
-  // Process events without holding the lock
-  bool assets_changed = false;
-  while (!events_to_process.empty()) {
-    FileEvent event = events_to_process.front();
-    events_to_process.pop();
-
-    switch (event.type) {
-    case FileEventType::Created:
-    {
-      try {
-        // Clear texture cache for new files
-        if (std::filesystem::is_regular_file(event.path)) {
-          g_texture_manager.cleanup_texture_cache(event.path);
-        }
-
-        // Use unified indexer with event timestamp
-        FileInfo file_info = indexer.process_file(event.path, event.timestamp);
-
-        // Insert new asset directly (no lookup needed)
-        if (g_database.insert_asset(file_info)) {
-          assets_changed = true;
-        }
-      }
-      catch (const std::exception& e) {
-        std::cerr << "Error processing Created event for " << event.path << ": " << e.what() << std::endl;
-      }
-      break;
-    }
-    case FileEventType::Modified:
-    {
-      try {
-        // Skip Modified events for paths that no longer exist (likely deleted)
-        if (!std::filesystem::exists(event.path)) {
-          break;
-        }
-
-        // Clear texture cache for modified files so they can be reloaded
-        if (std::filesystem::is_regular_file(event.path)) {
-          g_texture_manager.cleanup_texture_cache(event.path);
-        }
-
-        // Use unified indexer with event timestamp
-        FileInfo file_info = indexer.process_file(event.path, event.timestamp);
-
-        // Update existing asset directly
-        if (g_database.update_asset(file_info)) {
-          assets_changed = true;
-        }
-      }
-      catch (const std::exception& e) {
-        std::cerr << "Error processing Modified event for " << event.path << ": " << e.what() << std::endl;
-      }
-      break;
-    }
-    case FileEventType::Deleted:
-    {
-      // Clean up texture cache for deleted file (must be done on main thread)
-      g_texture_manager.cleanup_texture_cache(event.path);
-
-      // Delete from database directly
-      if (g_database.delete_asset(event.path)) {
-        assets_changed = true;
-      }
-      break;
-    }
-    case FileEventType::Renamed:
-    {
-      // Clean up texture cache for old path (must be done on main thread)
-      g_texture_manager.cleanup_texture_cache(event.old_path);
-
-      try {
-        // Delete old entry
-        g_database.delete_asset(event.old_path);
-
-        // Create new entry using unified indexer
-        FileInfo file_info = indexer.process_file(event.path, event.timestamp);
-        if (g_database.insert_asset(file_info)) {
-          assets_changed = true;
-        }
-      }
-      catch (const std::exception& e) {
-        std::cerr << "Error processing rename event from " << event.old_path << " to " << event.path << ": " << e.what() << std::endl;
-      }
-      break;
-    }
-    default:
-      break;
-    }
-  }
-
-  // Only set flag once after processing all events
-  if (assets_changed) {
-    g_assets_updated = true;
+  if (g_event_processor) {
+    g_event_processor->queue_event(event);
   }
 }
+
+// Note: File event processing now handled by EventProcessor in background thread
 
 int main() {
   // Initialize database
@@ -351,6 +259,13 @@ int main() {
   if (DEBUG_FORCE_DB_CLEAR) {
     std::cout << "DEBUG: Forcing database clear for testing...\n";
     g_database.clear_all_assets();
+  }
+
+  // Initialize unified event processor for both initial scan and runtime events
+  g_event_processor = new EventProcessor(g_database, g_assets, g_search_update_needed, 100);
+  if (!g_event_processor->start()) {
+    std::cerr << "Failed to start EventProcessor\n";
+    return -1;
   }
 
   // Smart scanning - no longer clearing database on startup
@@ -463,13 +378,15 @@ int main() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // Process any pending file events from background threads
-    process_pending_file_events();
+    // Check if search needs to be updated due to asset changes
+    if (g_search_update_needed.exchange(false)) {
+      // Re-apply current search filter to include updated assets
+      filter_assets(search_state);
+    }
 
-    // Check if assets were updated and refresh the list
+    // Keep old asset reload for initial scan compatibility (for now)
     if (g_assets_updated.exchange(false)) {
       g_assets = g_database.get_all_assets();
-      // Re-apply current search filter to include new assets
       filter_assets(search_state);
     }
 
@@ -552,32 +469,63 @@ int main() {
     ImGui::SameLine();
     ImGui::BeginChild("ProgressRegion", ImVec2(right_width, top_height), true);
 
-    // Progress bar for scanning (only show when actually scanning)
-    if (g_initial_scan_in_progress) {
-      ImGui::TextColored(COLOR_HEADER_TEXT, "Indexing Assets");
+    // Progress bar for scanning (show for both initial scan and runtime processing)
+    bool show_initial_scan = g_initial_scan_in_progress;
+    bool show_runtime_processing = (g_event_processor && g_event_processor->has_pending_work());
+    
+    if (show_initial_scan || show_runtime_processing) {
+      if (show_initial_scan) {
+        ImGui::TextColored(COLOR_HEADER_TEXT, "Indexing Assets");
 
-      // Progress bar data
-      float progress = g_scan_progress.load();
-      size_t processed = g_files_processed.load();
-      size_t total = g_total_files_to_process.load();
+        // Progress bar data from initial scan
+        float progress = g_scan_progress.load();
+        size_t processed = g_files_processed.load();
+        size_t total = g_total_files_to_process.load();
 
-      // Draw progress bar without text overlay
-      ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "");
+        // Draw progress bar without text overlay
+        ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "");
 
-      // Overlay centered text on the progress bar
-      char progress_text[64];
-      snprintf(progress_text, sizeof(progress_text), "%zu/%zu", processed, total);
+        // Overlay centered text on the progress bar
+        char progress_text[64];
+        snprintf(progress_text, sizeof(progress_text), "%zu/%zu", processed, total);
 
-      ImVec2 text_size = ImGui::CalcTextSize(progress_text);
-      ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
-      ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
+        ImVec2 text_size = ImGui::CalcTextSize(progress_text);
+        ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
+        ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
 
-      // Center text on progress bar
-      ImVec2 text_pos = ImVec2(
-        progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
-        progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
+        // Center text on progress bar
+        ImVec2 text_pos = ImVec2(
+          progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
+          progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
 
-      ImGui::GetWindowDrawList()->AddText(text_pos, COLOR_WHITE, progress_text);
+        ImGui::GetWindowDrawList()->AddText(text_pos, COLOR_WHITE, progress_text);
+      }
+      else if (show_runtime_processing) {
+        ImGui::TextColored(COLOR_HEADER_TEXT, "Processing Assets");
+
+        // Progress bar data from event processor
+        float progress = g_event_processor->get_progress();
+        size_t processed = g_event_processor->get_total_processed();
+        size_t total = g_event_processor->get_total_queued();
+
+        // Draw progress bar without text overlay
+        ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "");
+
+        // Overlay centered text on the progress bar
+        char progress_text[64];
+        snprintf(progress_text, sizeof(progress_text), "%zu/%zu", processed, total);
+
+        ImVec2 text_size = ImGui::CalcTextSize(progress_text);
+        ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
+        ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
+
+        // Center text on progress bar
+        ImVec2 text_pos = ImVec2(
+          progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
+          progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(text_pos, COLOR_WHITE, progress_text);
+      }
     }
     // No "Ready" text - keep panel empty when not indexing
 
@@ -924,6 +872,14 @@ int main() {
 
   // Stop file watcher and close database
   g_file_watcher.stop_watching();
+
+  // Cleanup event processor
+  if (g_event_processor) {
+    g_event_processor->stop();
+    delete g_event_processor;
+    g_event_processor = nullptr;
+  }
+
   g_database.close();
 
   glfwDestroyWindow(window);
