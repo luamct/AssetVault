@@ -11,6 +11,10 @@
 // SVG support
 #include "nanosvg.h"
 #include "nanosvgrast.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+#include "index.h" // For SVG_THUMBNAIL_SIZE
 
 TextureManager::TextureManager()
     : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
@@ -291,6 +295,87 @@ bool TextureManager::get_texture_dimensions(const std::string& file_path, int& w
     return true;
   }
   return false;
+}
+
+bool TextureManager::generate_svg_thumbnail(const std::string& svg_path, const std::string& filename) {
+  constexpr int MAX_THUMBNAIL_SIZE = SVG_THUMBNAIL_SIZE;
+
+  // Create thumbnails directory if it doesn't exist
+  std::filesystem::path thumbnails_dir = "thumbnails";
+  if (!std::filesystem::exists(thumbnails_dir)) {
+    try {
+      std::filesystem::create_directory(thumbnails_dir);
+    }
+    catch (const std::filesystem::filesystem_error& e) {
+      std::cerr << "Failed to create thumbnails directory: " << e.what() << std::endl;
+      return false;
+    }
+  }
+
+  // Parse SVG file
+  NSVGimage* image = nsvgParseFromFile(svg_path.c_str(), "px", 96.0f);
+  if (!image) {
+    std::cerr << "Failed to parse SVG: " << svg_path << std::endl;
+    return false;
+  }
+
+  if (image->width <= 0 || image->height <= 0) {
+    std::cerr << "Invalid SVG dimensions: " << image->width << "x" << image->height << std::endl;
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Calculate scale factor and actual output dimensions
+  // The largest dimension should be MAX_THUMBNAIL_SIZE, maintaining aspect ratio
+  float scale_x = static_cast<float>(MAX_THUMBNAIL_SIZE) / image->width;
+  float scale_y = static_cast<float>(MAX_THUMBNAIL_SIZE) / image->height;
+  float scale = std::min(scale_x, scale_y);
+
+  // Calculate actual output dimensions maintaining aspect ratio
+  int output_width = static_cast<int>(image->width * scale);
+  int output_height = static_cast<int>(image->height * scale);
+
+  // Create rasterizer
+  NSVGrasterizer* rast = nsvgCreateRasterizer();
+  if (!rast) {
+    std::cerr << "Failed to create SVG rasterizer for: " << svg_path << std::endl;
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Allocate image buffer with actual dimensions (RGBA format)
+  unsigned char* img_data = static_cast<unsigned char*>(malloc(output_width * output_height * 4));
+  if (!img_data) {
+    std::cerr << "Failed to allocate image buffer for: " << svg_path << std::endl;
+    nsvgDeleteRasterizer(rast);
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Clear buffer to transparent
+  memset(img_data, 0, output_width * output_height * 4);
+
+  // Rasterize SVG at calculated scale with proper dimensions
+  nsvgRasterize(rast, image, 0, 0, scale, img_data, output_width, output_height, output_width * 4);
+
+  // Generate output PNG path
+  std::filesystem::path svg_file_path(filename);
+  std::string png_filename = svg_file_path.stem().string() + ".png";
+  std::filesystem::path output_path = thumbnails_dir / png_filename;
+
+  // Write PNG file with actual dimensions
+  int result = stbi_write_png(output_path.string().c_str(), output_width, output_height, 4, img_data, output_width * 4);
+
+  if (!result) {
+    std::cerr << "Failed to write PNG thumbnail: " << output_path.string() << std::endl;
+  }
+
+  // Cleanup
+  free(img_data);
+  nsvgDeleteRasterizer(rast);
+  nsvgDelete(image);
+
+  return result != 0;
 }
 
 unsigned int TextureManager::load_texture_for_model(const std::string& filepath) {

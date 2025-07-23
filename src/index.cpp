@@ -5,7 +5,6 @@
 #include <chrono>
 #include <ctime>
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
 #include <map>
 #include <string>
@@ -16,12 +15,7 @@
 #include <windows.h>
 
 #include "database.h"
-
-// SVG thumbnail generation dependencies
-#include "nanosvg.h"
-#include "nanosvgrast.h"
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#include "texture_manager.h"
 
 
 namespace fs = std::filesystem;
@@ -159,41 +153,6 @@ AssetType get_asset_type_from_string(const std::string& type_string) {
     return AssetType::Unknown; // Default fallback
 }
 
-// Lightweight directory scan - only gets paths and native modification times
-void quick_scan(const std::string& root_path, std::unordered_map<std::string, fs::file_time_type>& files) {
-  try {
-    fs::path root(root_path);
-    if (!fs::exists(root) || !fs::is_directory(root)) {
-      std::cerr << "Error: Path does not exist or is not a directory: " << root_path << '\n';
-      return;
-    }
-
-    std::cout << "Quick scanning directory: " << root_path << '\n';
-
-    // Single pass: Get paths and native file times (no expensive conversion)
-    for (const auto& entry : fs::recursive_directory_iterator(root)) {
-      std::string full_path = entry.path().string();
-
-      try {
-        // Store native file time directly - no conversion needed for comparison
-        auto ftime = fs::last_write_time(entry.path());
-        files[full_path] = ftime;
-      }
-      catch (const fs::filesystem_error& e) {
-        std::cerr << "Warning: Could not get modification time for " << full_path << ": " << e.what()
-          << '\n';
-        // Skip files we can't access - don't add to map
-        continue;
-      }
-    }
-
-    std::cout << "Quick scan found " << files.size() << " files and directories\n";
-
-  }
-  catch (const fs::filesystem_error& e) {
-    std::cerr << "Error quick scanning directory: " << e.what() << '\n';
-  }
-}
 
 /**
  * Helper to convert FILETIME to seconds since Jan 1, 2000. This format is a bit arbitrary,
@@ -219,27 +178,18 @@ uint32_t filetime_to_seconds_since_2000(const FILETIME& ft) {
 // Windows-only helper to get both creation and modification time using single GetFileTime call
 // Returns the more recent of creation time or modification time as seconds since Jan 1, 2000
 uint32_t get_max_creation_or_modification_seconds(const fs::path& path) {
-  // Use FILE_FLAG_BACKUP_SEMANTICS to handle both files and directories
-  DWORD flags = FILE_ATTRIBUTE_NORMAL;
-  if (fs::is_directory(path)) {
-    flags = FILE_FLAG_BACKUP_SEMANTICS;
-  }
-  
   HANDLE hFile = CreateFileW(
     path.wstring().c_str(),
     GENERIC_READ,
     FILE_SHARE_READ | FILE_SHARE_WRITE,
     nullptr,
     OPEN_EXISTING,
-    flags,
+    FILE_ATTRIBUTE_NORMAL,
     nullptr
   );
 
   if (hFile == INVALID_HANDLE_VALUE) {
-    // Only log warning for files, not directories (to reduce noise)
-    if (!fs::is_directory(path)) {
-      std::cerr << "Warning: Could not open file for time reading: " << path << std::endl;
-    }
+    std::cerr << "Warning: Could not open file for time reading: " << path << std::endl;
     return 0;
   }
 
@@ -261,7 +211,8 @@ uint32_t get_max_creation_or_modification_seconds(const fs::path& path) {
 }
 
 // AssetIndexer implementation
-AssetIndexer::AssetIndexer(const std::string& root_path) : root_path_(root_path) {}
+AssetIndexer::AssetIndexer(const std::string& root_path) 
+    : root_path_(root_path) {}
 
 FileInfo AssetIndexer::process_file(const std::string& full_path) {
   // Use current time as default timestamp
@@ -270,127 +221,6 @@ FileInfo AssetIndexer::process_file(const std::string& full_path) {
 }
 
 FileInfo AssetIndexer::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
-  return create_file_info(full_path, timestamp);
-}
-
-bool AssetIndexer::save_to_database(AssetDatabase& database, const FileInfo& file_info) {
-  try {
-    // Check if asset already exists
-    auto existing_asset = database.get_asset_by_path(file_info.full_path);
-    if (existing_asset.full_path.empty()) {
-      // Asset doesn't exist - insert new
-      database.insert_asset(file_info);
-      std::cout << "Inserted: " << file_info.name << std::endl;
-    }
-    else {
-      // Asset exists - update
-      database.update_asset(file_info);
-      std::cout << "Updated: " << file_info.name << std::endl;
-    }
-    return true;
-  }
-  catch (const std::exception& e) {
-    std::cerr << "Error saving asset to database: " << e.what() << std::endl;
-    return false;
-  }
-}
-
-bool AssetIndexer::delete_from_database(AssetDatabase& database, const std::string& full_path) {
-  try {
-    database.delete_asset(full_path);
-    std::cout << "Deleted from database: " << full_path << std::endl;
-    return true;
-  }
-  catch (const std::exception& e) {
-    std::cerr << "Error deleting asset from database: " << e.what() << std::endl;
-    return false;
-  }
-}
-
-// Generate PNG thumbnail from SVG file during indexing
-bool AssetIndexer::generate_svg_thumbnail(const std::string& svg_path, const std::string& filename) {
-  constexpr int MAX_THUMBNAIL_SIZE = SVG_THUMBNAIL_SIZE;
-
-  // Create thumbnails directory if it doesn't exist
-  fs::path thumbnails_dir = "thumbnails";
-  if (!fs::exists(thumbnails_dir)) {
-    try {
-      fs::create_directory(thumbnails_dir);
-    }
-    catch (const fs::filesystem_error& e) {
-      std::cerr << "Failed to create thumbnails directory: " << e.what() << std::endl;
-      return false;
-    }
-  }
-
-  // Parse SVG file
-  NSVGimage* image = nsvgParseFromFile(svg_path.c_str(), "px", 96.0f);
-  if (!image) {
-    std::cerr << "Failed to parse SVG: " << svg_path << std::endl;
-    return false;
-  }
-
-  if (image->width <= 0 || image->height <= 0) {
-    std::cerr << "Invalid SVG dimensions: " << image->width << "x" << image->height << std::endl;
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Calculate scale factor and actual output dimensions
-  // The largest dimension should be MAX_THUMBNAIL_SIZE, maintaining aspect ratio
-  float scale_x = static_cast<float>(MAX_THUMBNAIL_SIZE) / image->width;
-  float scale_y = static_cast<float>(MAX_THUMBNAIL_SIZE) / image->height;
-  float scale = std::min(scale_x, scale_y);
-
-  // Calculate actual output dimensions maintaining aspect ratio
-  int output_width = static_cast<int>(image->width * scale);
-  int output_height = static_cast<int>(image->height * scale);
-
-  // Create rasterizer
-  NSVGrasterizer* rast = nsvgCreateRasterizer();
-  if (!rast) {
-    std::cerr << "Failed to create SVG rasterizer for: " << svg_path << std::endl;
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Allocate image buffer with actual dimensions (RGBA format)
-  unsigned char* img_data = static_cast<unsigned char*>(malloc(output_width * output_height * 4));
-  if (!img_data) {
-    std::cerr << "Failed to allocate image buffer for: " << svg_path << std::endl;
-    nsvgDeleteRasterizer(rast);
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Clear buffer to transparent
-  memset(img_data, 0, output_width * output_height * 4);
-
-  // Rasterize SVG at calculated scale with proper dimensions
-  nsvgRasterize(rast, image, 0, 0, scale, img_data, output_width, output_height, output_width * 4);
-
-  // Generate output PNG path
-  fs::path svg_file_path(filename);
-  std::string png_filename = svg_file_path.stem().string() + ".png";
-  fs::path output_path = thumbnails_dir / png_filename;
-
-  // Write PNG file with actual dimensions
-  int result = stbi_write_png(output_path.string().c_str(), output_width, output_height, 4, img_data, output_width * 4);
-
-  if (!result) {
-    std::cerr << "Failed to write PNG thumbnail: " << output_path.string() << std::endl;
-  }
-
-  // Cleanup
-  free(img_data);
-  nsvgDeleteRasterizer(rast);
-  nsvgDelete(image);
-
-  return result != 0;
-}
-
-// Create comprehensive file info
-FileInfo AssetIndexer::create_file_info(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
   FileInfo file_info;
 
   try {
@@ -445,7 +275,7 @@ FileInfo AssetIndexer::create_file_info(const std::string& full_path, const std:
 
       // Generate SVG thumbnail if this is an SVG file
       if (file_info.extension == ".svg" && file_info.type == AssetType::Texture) {
-        generate_svg_thumbnail(file_info.full_path, file_info.name);
+        TextureManager::generate_svg_thumbnail(file_info.full_path, file_info.name);
       }
     }
     else {
@@ -454,8 +284,8 @@ FileInfo AssetIndexer::create_file_info(const std::string& full_path, const std:
       file_info.extension = "";
       file_info.size = 0;
 
-      // Get both creation and modification time using Windows API
-      file_info.created_or_modified_seconds = get_max_creation_or_modification_seconds(path);
+      // Directories don't need timestamp tracking - we track individual files instead
+      file_info.created_or_modified_seconds = 0;
 
       // Store display time as modification time (for user-facing display)
       try {
@@ -483,6 +313,42 @@ FileInfo AssetIndexer::create_file_info(const std::string& full_path, const std:
   return file_info;
 }
 
+bool AssetIndexer::save_to_database(AssetDatabase& database, const FileInfo& file_info) {
+  try {
+    // Check if asset already exists
+    auto existing_asset = database.get_asset_by_path(file_info.full_path);
+    if (existing_asset.full_path.empty()) {
+      // Asset doesn't exist - insert new
+      database.insert_asset(file_info);
+      std::cout << "Inserted: " << file_info.name << std::endl;
+    }
+    else {
+      // Asset exists - update
+      database.update_asset(file_info);
+      std::cout << "Updated: " << file_info.name << std::endl;
+    }
+    return true;
+  }
+  catch (const std::exception& e) {
+    std::cerr << "Error saving asset to database: " << e.what() << std::endl;
+    return false;
+  }
+}
+
+bool AssetIndexer::delete_from_database(AssetDatabase& database, const std::string& full_path) {
+  try {
+    database.delete_asset(full_path);
+    std::cout << "Deleted from database: " << full_path << std::endl;
+    return true;
+  }
+  catch (const std::exception& e) {
+    std::cerr << "Error deleting asset from database: " << e.what() << std::endl;
+    return false;
+  }
+}
+
+
+
 
 // Print file information for debugging
 void print_file_info(const FileInfo& file) {
@@ -502,7 +368,6 @@ void reindex_new_or_modified(
   std::atomic<float>& scan_progress, std::atomic<size_t>& files_processed, std::atomic<size_t>& total_files_to_process
 ) {
   std::cout << "Starting smart incremental asset reindexing...\n";
-  auto start_time = std::chrono::high_resolution_clock::now();
   initial_scan_in_progress = true;
   scan_progress = 0.0f;
   files_processed = 0;
@@ -515,42 +380,71 @@ void reindex_new_or_modified(
     db_map[asset.full_path] = asset;
   }
 
-  // Phase 1: Quick scan to get only paths and native modification times (fast)
-  std::unordered_map<std::string, fs::file_time_type> current_files;
-  auto quick_scan_start = std::chrono::high_resolution_clock::now();
-  quick_scan("assets", current_files);
-  auto quick_scan_end = std::chrono::high_resolution_clock::now();
-  auto quick_scan_duration = std::chrono::duration_cast<std::chrono::milliseconds>(quick_scan_end - quick_scan_start);
-  std::cout << "Quick scan completed in " << quick_scan_duration.count() << "ms - found " << current_files.size() << " files\n";
+  // Phase 1: Get filesystem paths (fast scan)
+  std::unordered_set<std::string> current_files;
+  try {
+    fs::path root("assets");
+    if (!fs::exists(root) || !fs::is_directory(root)) {
+      std::cerr << "Error: Path does not exist or is not a directory: assets\n";
+      initial_scan_complete = true;
+      initial_scan_in_progress = false;
+      return;
+    }
+
+    std::cout << "Scanning directory: assets\n";
+
+    // Single pass: Get all file paths
+    for (const auto& entry : fs::recursive_directory_iterator(root)) {
+      try {
+        current_files.insert(entry.path().string());
+      }
+      catch (const fs::filesystem_error& e) {
+        std::cerr << "Warning: Could not access " << entry.path().string() << ": " << e.what() << '\n';
+        continue;
+      }
+    }
+
+    std::cout << "Found " << current_files.size() << " files and directories\n";
+  }
+  catch (const fs::filesystem_error& e) {
+    std::cerr << "Error scanning directory: " << e.what() << '\n';
+    initial_scan_complete = true;
+    initial_scan_in_progress = false;
+    return;
+  }
 
   // Track what paths need reindexing
   std::vector<std::string> paths_to_insert;
   std::vector<std::string> paths_to_update;
   std::unordered_set<std::string> found_paths;
 
-  // Compare filesystem state with database state (fast comparison)
-  for (const auto& [path, file_time] : current_files) {
+  // Compare filesystem state with database state
+  for (const auto& path : current_files) {
     found_paths.insert(path);
 
     auto db_it = db_map.find(path);
     if (db_it == db_map.end()) {
       // File not in database - needs to be inserted
       paths_to_insert.push_back(path);
-      std::cout << "New file: " << path << std::endl;
     }
     else {
-      // File exists in database - check if modified using native file times (fast comparison)
+      // File exists in database - check if modified
       const FileInfo& db_asset = db_it->second;
+
+      // Skip timestamp comparison for directories - they don't need reprocessing
+      if (fs::is_directory(path)) {
+        // Directories are just containers; we process their contents individually
+        continue;
+      }
 
       // Get the max of creation and modification time for current file
       uint32_t current_created_or_modified = get_max_creation_or_modification_seconds(path);
 
-      // Direct integer comparison - very fast
+      // Direct integer comparison
       if (current_created_or_modified > db_asset.created_or_modified_seconds) {
         // File has been created or modified more recently - needs to be updated
         paths_to_update.push_back(path);
       }
-      // If timestamps match, no action needed
     }
   }
 
@@ -559,7 +453,6 @@ void reindex_new_or_modified(
   for (const auto& db_asset : db_assets) {
     if (found_paths.find(db_asset.full_path) == found_paths.end()) {
       assets_to_delete.push_back(db_asset.full_path);
-      std::cout << "Deleted file: " << db_asset.name << std::endl;
     }
   }
 
@@ -575,7 +468,6 @@ void reindex_new_or_modified(
   AssetIndexer indexer("assets");
 
   std::cout << "Processing " << paths_to_insert.size() << " new files...\n";
-  auto new_files_start = std::chrono::high_resolution_clock::now();
   for (const std::string& path : paths_to_insert) {
     FileInfo full_info = indexer.process_file(path);
     assets_to_insert.push_back(full_info);
@@ -586,14 +478,8 @@ void reindex_new_or_modified(
       scan_progress = static_cast<float>(files_processed.load()) / static_cast<float>(total_files_to_process.load());
     }
   }
-  auto new_files_end = std::chrono::high_resolution_clock::now();
-  auto new_files_duration = std::chrono::duration_cast<std::chrono::milliseconds>(new_files_end - new_files_start);
-  if (paths_to_insert.size() > 0) {
-    std::cout << "New files processing took " << new_files_duration.count() << "ms\n";
-  }
 
   std::cout << "Processing " << paths_to_update.size() << " modified files...\n";
-  auto mod_files_start = std::chrono::high_resolution_clock::now();
   for (const std::string& path : paths_to_update) {
     FileInfo full_info = indexer.process_file(path);
     assets_to_update.push_back(full_info);
@@ -603,11 +489,6 @@ void reindex_new_or_modified(
     if (total_files_to_process > 0) {
       scan_progress = static_cast<float>(files_processed.load()) / static_cast<float>(total_files_to_process.load());
     }
-  }
-  auto mod_files_end = std::chrono::high_resolution_clock::now();
-  auto mod_files_duration = std::chrono::duration_cast<std::chrono::milliseconds>(mod_files_end - mod_files_start);
-  if (paths_to_update.size() > 0) {
-    std::cout << "Modified files processing took " << mod_files_duration.count() << "ms\n";
   }
 
   // Apply changes to database
@@ -635,23 +516,9 @@ void reindex_new_or_modified(
   assets_updated = true; // Trigger UI update - main thread will handle filtering
 
   size_t unchanged_count = current_files.size() - paths_to_insert.size() - paths_to_update.size();
-  
-  // Calculate timing metrics
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-  double total_duration_ms = total_duration.count();
-  
-  // Calculate average time per file (including all files scanned, not just processed)
-  double avg_time_per_file = 0.0;
-  if (current_files.size() > 0) {
-    avg_time_per_file = total_duration_ms / current_files.size();
-  }
-  
   std::cout << "Reindexing completed - " << assets_to_insert.size() << " new, " << assets_to_update.size()
     << " updated, " << assets_to_delete.size() << " removed, " << unchanged_count
     << " unchanged (skipped expensive processing)\n";
-  std::cout << "Total scan time: " << total_duration_ms << "ms for " << current_files.size() 
-    << " files (avg " << std::fixed << std::setprecision(2) << avg_time_per_file << "ms per file)\n";
 
   initial_scan_complete = true;
   initial_scan_in_progress = false;

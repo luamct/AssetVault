@@ -175,7 +175,7 @@ struct SearchState {
 };
 
 // Function to filter assets based on search query
-void filter_assets(const std::string& search_query, SearchState& search_state) {
+void filter_assets(SearchState& search_state) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   search_state.filtered_assets.clear();
@@ -191,7 +191,7 @@ void filter_assets(const std::string& search_query, SearchState& search_state) {
       continue;
     }
 
-    if (asset_matches_search(asset, search_query)) {
+    if (asset_matches_search(asset, search_state.buffer)) {
       search_state.filtered_assets.push_back(asset);
       filtered_count++;
 
@@ -206,7 +206,7 @@ void filter_assets(const std::string& search_query, SearchState& search_state) {
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
   double duration_ms = duration.count() / 1000.0;
 
-  std::cout << "DEBUG SEARCH: \"" << search_query << "\" | Results: " << filtered_count << "/" << total_assets;
+  std::cout << "DEBUG SEARCH: \"" << search_state.buffer << "\" | Results: " << filtered_count << "/" << total_assets;
   if (search_state.filtered_assets.size() >= MAX_RESULTS) {
     std::cout << " | Time: " << std::fixed << std::setprecision(2) << duration_ms << "ms [TRUNCATED]";
   }
@@ -470,12 +470,12 @@ int main() {
     if (g_assets_updated.exchange(false)) {
       g_assets = g_database.get_all_assets();
       // Re-apply current search filter to include new assets
-      filter_assets(search_state.buffer, search_state);
+      filter_assets(search_state);
     }
 
     // Apply initial filter when we first have assets
     if (!search_state.initial_filter_applied && !g_assets.empty()) {
-      filter_assets(search_state.buffer, search_state);
+      filter_assets(search_state);
       search_state.last_buffer = search_state.buffer;
       search_state.initial_filter_applied = true;
     }
@@ -542,7 +542,7 @@ int main() {
 
     // Only filter if search terms have changed
     if (std::string(search_state.buffer) != search_state.last_buffer) {
-      filter_assets(search_state.buffer, search_state);
+      filter_assets(search_state);
       search_state.last_buffer = search_state.buffer;
     }
 

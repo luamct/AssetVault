@@ -58,8 +58,6 @@ private:
     std::string root_path_;
 
     // Helper methods
-    bool generate_svg_thumbnail(const std::string& svg_path, const std::string& filename);
-    FileInfo create_file_info(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);
 };
 
 // Function declarations
@@ -67,7 +65,6 @@ AssetType get_asset_type(const std::string& extension);
 std::string get_asset_type_string(AssetType type);
 AssetType get_asset_type_from_string(const std::string& type_string);
 
-void quick_scan(const std::string& root_path, std::unordered_map<std::string, std::filesystem::file_time_type>& files);
 void reindex_new_or_modified(
   AssetDatabase& database, std::vector<FileInfo>& assets, std::atomic<bool>& assets_updated,
   std::atomic<bool>& initial_scan_complete, std::atomic<bool>& initial_scan_in_progress,
