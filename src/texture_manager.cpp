@@ -14,7 +14,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#include "index.h" // For SVG_THUMBNAIL_SIZE
+#include "asset.h" // For SVG_THUMBNAIL_SIZE
 
 TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),

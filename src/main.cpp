@@ -29,7 +29,7 @@
 #include "event_processor.h"
 #include "database.h"
 #include "file_watcher.h"
-#include "index.h"
+#include "asset.h"
 #include "texture_manager.h"
 #include "utils.h"
 #include "3d.h"

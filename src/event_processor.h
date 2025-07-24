@@ -9,7 +9,7 @@
 
 #include "database.h"
 #include "file_watcher.h"
-#include "index.h"
+#include "asset.h"
 
 // Forward declarations
 class TextureManager;

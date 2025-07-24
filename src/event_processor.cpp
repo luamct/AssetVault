@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <unordered_set>
@@ -107,6 +108,10 @@ void EventProcessor::process_events() {
 }
 
 void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
+    // Static locals for global performance tracking (thread-safe since only one processing thread)
+    static uint64_t total_processing_time_ms = 0;
+    static size_t total_assets_processed = 0;
+
     auto start_time = std::chrono::high_resolution_clock::now();
 
     // Group events by type for potential batch optimizations
@@ -151,16 +156,24 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     // Signal that search needs to be updated
     search_update_needed_ = true;
 
-    // Note: We assume DB operations will succeed and increment before them for responsive progress
-
-    // Calculate and log timing metrics
+    // Calculate timing metrics
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-    double total_ms = duration.count();
-    double ms_per_asset = batch.size() > 0 ? total_ms / batch.size() : 0.0;
 
-    std::cout << "Batch of " << batch.size() << " assets completed in " << total_ms << "ms ("
-        << std::fixed << std::setprecision(2) << ms_per_asset << "ms per asset)" << std::endl;
+    // Update global tracking
+    total_processing_time_ms += duration.count();
+    total_assets_processed += batch.size();
+
+    // Calculate averages
+    double batch_avg = batch.size() > 0 ? (double) duration.count() / batch.size() : 0.0;
+    double global_avg = total_assets_processed > 0 ? (double) total_processing_time_ms / total_assets_processed : 0.0;
+
+    // Enhanced logging with both batch and global metrics
+    std::cout << "Batch of " << batch.size() << " assets completed in "
+        << duration.count() << "ms (" << std::fixed << std::setprecision(2)
+        << batch_avg << "ms per asset)" << std::endl;
+    std::cout << "Global average: " << global_avg << "ms per asset ("
+        << total_assets_processed << " total assets processed)" << std::endl;
 }
 
 // Batch processing methods for better performance
@@ -211,7 +224,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
             FileInfo file_info = process_file(event.path, event.timestamp);
             files_to_update.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
-            
+
             // Queue texture invalidation for modified texture assets
             if (file_info.type == AssetType::Texture) {
                 texture_manager_.queue_texture_invalidation(event.path);
@@ -250,7 +263,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     for (const auto& event : events) {
         paths_to_delete.push_back(event.path);
         total_events_processed_++;  // Increment per file processed
-        
+
         // Queue texture invalidation for deleted assets
         texture_manager_.queue_texture_invalidation(event.path);
     }
@@ -291,7 +304,7 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
             FileInfo file_info = process_file(event.path, event.timestamp);
             new_files.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
-            
+
             // Queue texture invalidation for both old and new paths
             texture_manager_.queue_texture_invalidation(event.old_path);
             // Only invalidate new path if it's a texture asset
@@ -413,7 +426,7 @@ static uint32_t filetime_to_seconds_since_2000(const FILETIME& ft) {
     const uint64_t EPOCH_2000 = 125911584000000000ULL;
 
     // Convert FILETIME to 64-bit value
-    uint64_t ft_as_uint64 = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    uint64_t ft_as_uint64 = ((uint64_t) ft.dwHighDateTime << 32) | ft.dwLowDateTime;
 
     // Calculate difference from Jan 1, 2000
     if (ft_as_uint64 < EPOCH_2000) {
@@ -424,7 +437,7 @@ static uint32_t filetime_to_seconds_since_2000(const FILETIME& ft) {
     uint64_t seconds_since_2000 = intervals_since_2000 / 10000000ULL; // Convert to seconds
 
     // Clamp to uint32_t max
-    return (uint32_t)std::min(seconds_since_2000, (uint64_t)UINT32_MAX);
+    return (uint32_t) std::min(seconds_since_2000, (uint64_t) UINT32_MAX);
 }
 
 static uint32_t get_max_creation_or_modification_seconds(const fs::path& path) {
@@ -553,7 +566,7 @@ FileInfo EventProcessor::process_file(const std::string& full_path, const std::c
             }
             catch (const fs::filesystem_error& e) {
                 std::cerr << "Warning: Could not get modification time for directory " << file_info.full_path << ": "
-                          << e.what() << std::endl;
+                    << e.what() << std::endl;
                 file_info.last_modified = timestamp; // Fallback to provided timestamp
             }
         }

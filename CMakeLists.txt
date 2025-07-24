@@ -164,7 +164,7 @@ add_definitions(
 # Add executable
 add_executable(AssetInventory
     src/main.cpp
-    src/index.cpp
+    src/asset.cpp
     src/database.cpp
     src/utils.cpp
     src/3d.cpp

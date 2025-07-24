@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "index.h" // For AssetType and FileInfo
+#include "asset.h" // For AssetType and FileInfo
 
 // Texture cache entry structure
 struct TextureCacheEntry {

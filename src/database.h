@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "index.h"
+#include "asset.h"
 
 class AssetDatabase {
 public:
