@@ -164,195 +164,162 @@ void filter_assets(SearchState& search_state) {
   search_state.filtered_assets.clear();
   search_state.selected_asset_index = -1; // Clear selection when search results change
 
-  constexpr size_t MAX_RESULTS = Config::MAX_SEARCH_RESULTS; // Limit results to prevent UI blocking
   size_t total_assets = 0;
   size_t filtered_count = 0;
 
   // Lock assets during filtering to prevent race conditions
-  if (g_event_processor) {
-    std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
+  std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
 
-    total_assets = g_assets.size();
-    for (const auto& asset : g_assets) {
-      // Skip auxiliary files - they should never appear in search results
-      if (asset.type == AssetType::Auxiliary) {
-        continue;
-      }
-
-      if (asset_matches_search(asset, search_state.buffer)) {
-        search_state.filtered_assets.push_back(asset);
-        filtered_count++;
-
-        // Stop at maximum results to prevent UI blocking
-        if (search_state.filtered_assets.size() >= MAX_RESULTS) {
-          break;
-        }
-      }
+  total_assets = g_assets.size();
+  for (const auto& asset : g_assets) {
+    // Skip ignored asset types (O(1) lookup) - they should never appear in search results
+    if (Config::IGNORED_ASSET_TYPES.count(asset.type) > 0) {
+      continue;
     }
-  }
-  else {
-    // Fallback for when event processor isn't initialized yet
-    total_assets = g_assets.size();
-    for (const auto& asset : g_assets) {
-      // Skip auxiliary files - they should never appear in search results
-      if (asset.type == AssetType::Auxiliary) {
-        continue;
-      }
 
-      if (asset_matches_search(asset, search_state.buffer)) {
-        search_state.filtered_assets.push_back(asset);
-        filtered_count++;
+    if (asset_matches_search(asset, search_state.buffer)) {
+      search_state.filtered_assets.push_back(asset);
+      filtered_count++;
 
-        // Stop at maximum results to prevent UI blocking
-        if (search_state.filtered_assets.size() >= MAX_RESULTS) {
-          break;
-        }
+      // Stop at maximum results until we have an infinite scroll implementation
+      if (search_state.filtered_assets.size() >= Config::MAX_SEARCH_RESULTS) {
+        break;
       }
     }
   }
 }
-
 
 // File event callback function (runs on background thread)
 // Queues events for unified processing
 void on_file_event(const FileEvent& event) {
-  if (g_event_processor) {
-    g_event_processor->queue_event(event);
-  }
+  g_event_processor->queue_event(event);
 }
-
-// Note: File event processing now handled by EventProcessor in background thread
 
 // Perform initial scan and generate events for EventProcessor
 void perform_initial_scan() {
-    namespace fs = std::filesystem;
-    auto scan_start = std::chrono::high_resolution_clock::now();
-    
-    std::cout << "Starting smart incremental asset scanning...\n";
-    
-    // Get current database state
-    std::vector<FileInfo> db_assets = g_database.get_all_assets();
-    std::cout << "Database contains " << db_assets.size() << " assets\n";
-    std::unordered_map<std::string, FileInfo> db_map;
-    for (const auto& asset : db_assets) {
-        db_map[asset.full_path] = asset;
+  namespace fs = std::filesystem;
+  auto scan_start = std::chrono::high_resolution_clock::now();
+
+  std::cout << "Starting smart incremental asset scanning...\n";
+
+  // Get current database state
+  std::vector<FileInfo> db_assets = g_database.get_all_assets();
+  std::cout << "Database contains " << db_assets.size() << " assets\n";
+  std::unordered_map<std::string, FileInfo> db_map;
+  for (const auto& asset : db_assets) {
+    db_map[asset.full_path] = asset;
+  }
+
+  // Phase 1: Get filesystem paths (fast scan)
+  std::unordered_set<std::string> current_files;
+  try {
+    fs::path root(Config::ASSET_ROOT_DIRECTORY);
+    if (!fs::exists(root) || !fs::is_directory(root)) {
+      std::cerr << "Error: Path does not exist or is not a directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
+      g_initial_scan_complete = true;
+      return;
     }
-    
-    // Phase 1: Get filesystem paths (fast scan)
-    std::unordered_set<std::string> current_files;
-    try {
-        fs::path root(Config::ASSET_ROOT_DIRECTORY);
-        if (!fs::exists(root) || !fs::is_directory(root)) {
-            std::cerr << "Error: Path does not exist or is not a directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
-            g_initial_scan_complete = true;
-            return;
-        }
-        
-        std::cout << "Scanning directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
-        
-        // Single pass: Get all file paths
-        for (const auto& entry : fs::recursive_directory_iterator(root)) {
-            try {
-                std::string path_str = entry.path().string();
-                current_files.insert(path_str);
-            }
-            catch (const fs::filesystem_error& e) {
-                std::cerr << "Warning: Could not access " << entry.path().string() << ": " << e.what() << '\n';
-                continue;
-            }
-        }
-        
-        std::cout << "Found " << current_files.size() << " files and directories\n";
+
+    std::cout << "Scanning directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
+
+    // Single pass: Get all file paths
+    for (const auto& entry : fs::recursive_directory_iterator(root)) {
+      try {
+        std::string path_str = entry.path().string();
+        current_files.insert(path_str);
+      }
+      catch (const fs::filesystem_error& e) {
+        std::cerr << "Warning: Could not access " << entry.path().string() << ": " << e.what() << '\n';
+        continue;
+      }
     }
-    catch (const fs::filesystem_error& e) {
-        std::cerr << "Error scanning directory: " << e.what() << '\n';
-        g_initial_scan_complete = true;
-        return;
-    }
-    
-    // Track what events need to be generated
-    std::vector<FileEvent> events_to_queue;
-    std::unordered_set<std::string> found_paths;
-    
-    // Get current timestamp for all events
-    auto current_time = std::chrono::system_clock::now();
-    
-    // Compare filesystem state with database state
-    for (const auto& path : current_files) {
-        found_paths.insert(path);
-        
-        auto db_it = db_map.find(path);
-        if (db_it == db_map.end()) {
-            // File not in database - create a Created event
-            FileEventType event_type = fs::is_directory(path) ? FileEventType::DirectoryCreated : FileEventType::Created;
-            FileEvent event(event_type, path);
-            event.timestamp = current_time;
-            events_to_queue.push_back(event);
-        }
-        else {
-            // File exists in database - check if modified
-            const FileInfo& db_asset = db_it->second;
-            
-            // Skip timestamp comparison for directories
-            if (fs::is_directory(path)) {
-                continue;
-            }
-            
-            // Get the max of creation and modification time for current file
-            uint32_t current_timestamp = EventProcessor::get_file_timestamp_for_comparison(path);
-            
-            // Direct integer comparison
-            if (current_timestamp > db_asset.created_or_modified_seconds) {
-                // File has been modified - create a Modified event
-                FileEvent event(FileEventType::Modified, path);
-                event.timestamp = current_time;
-                events_to_queue.push_back(event);
-            }
-        }
-    }
-    
-    // Find files in database that no longer exist on filesystem
-    for (const auto& db_asset : db_assets) {
-        if (found_paths.find(db_asset.full_path) == found_paths.end()) {
-            // File no longer exists - create a Deleted event
-            FileEventType event_type = db_asset.is_directory ? FileEventType::DirectoryDeleted : FileEventType::Deleted;
-            FileEvent event(event_type, db_asset.full_path);
-            event.timestamp = current_time;
-            events_to_queue.push_back(event);
-        }
-    }
-    
-    auto scan_end = std::chrono::high_resolution_clock::now();
-    auto scan_duration = std::chrono::duration_cast<std::chrono::milliseconds>(scan_end - scan_start);
-    
-    std::cout << "Filesystem scan completed in " << scan_duration.count() << "ms\n";
-    std::cout << "Found " << events_to_queue.size() << " changes to process\n";
-    
-    // Queue all events to the EventProcessor
-    if (!events_to_queue.empty()) {
-        auto queue_start = std::chrono::high_resolution_clock::now();
-        g_event_processor->queue_events(events_to_queue);
-        auto queue_end = std::chrono::high_resolution_clock::now();
-        auto queue_duration = std::chrono::duration_cast<std::chrono::milliseconds>(queue_end - queue_start);
-        
-        std::cout << "Published " << events_to_queue.size() << " events to EventProcessor in " 
-                  << queue_duration.count() << "ms\n";
+
+    std::cout << "Found " << current_files.size() << " files and directories\n";
+  }
+  catch (const fs::filesystem_error& e) {
+    std::cerr << "Error scanning directory: " << e.what() << '\n';
+    g_initial_scan_complete = true;
+    return;
+  }
+
+  // Track what events need to be generated
+  std::vector<FileEvent> events_to_queue;
+  std::unordered_set<std::string> found_paths;
+
+  // Get current timestamp for all events
+  auto current_time = std::chrono::system_clock::now();
+
+  // Compare filesystem state with database state
+  for (const auto& path : current_files) {
+    found_paths.insert(path);
+
+    auto db_it = db_map.find(path);
+    if (db_it == db_map.end()) {
+      // File not in database - create a Created event
+      FileEventType event_type = fs::is_directory(path) ? FileEventType::DirectoryCreated : FileEventType::Created;
+      FileEvent event(event_type, path);
+      event.timestamp = current_time;
+      events_to_queue.push_back(event);
     }
     else {
-        // No events to process, but we still need to load existing assets from database
-        std::cout << "No changes detected, loading existing assets from database\n";
-        if (g_event_processor) {
-            std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
-            g_assets = db_assets; // Load existing database assets into g_assets
-        }
-        else {
-            g_assets = db_assets; // Fallback if event processor not available
-        }
-        std::cout << "Loaded " << g_assets.size() << " existing assets\n";
+      // File exists in database - check if modified
+      const FileInfo& db_asset = db_it->second;
+
+      // Skip timestamp comparison for directories
+      if (fs::is_directory(path)) {
+        continue;
+      }
+
+      // Get the max of creation and modification time for current file
+      uint32_t current_timestamp = EventProcessor::get_file_timestamp_for_comparison(path);
+
+      // Direct integer comparison
+      if (current_timestamp > db_asset.created_or_modified_seconds) {
+        // File has been modified - create a Modified event
+        FileEvent event(FileEventType::Modified, path);
+        event.timestamp = current_time;
+        events_to_queue.push_back(event);
+      }
     }
-    
-    // Mark initial scan as complete
-    g_initial_scan_complete = true;
+  }
+
+  // Find files in database that no longer exist on filesystem
+  for (const auto& db_asset : db_assets) {
+    if (found_paths.find(db_asset.full_path) == found_paths.end()) {
+      // File no longer exists - create a Deleted event
+      FileEventType event_type = db_asset.is_directory ? FileEventType::DirectoryDeleted : FileEventType::Deleted;
+      FileEvent event(event_type, db_asset.full_path);
+      event.timestamp = current_time;
+      events_to_queue.push_back(event);
+    }
+  }
+
+  auto scan_end = std::chrono::high_resolution_clock::now();
+  auto scan_duration = std::chrono::duration_cast<std::chrono::milliseconds>(scan_end - scan_start);
+
+  std::cout << "Filesystem scan completed in " << scan_duration.count() << "ms\n";
+  std::cout << "Found " << events_to_queue.size() << " changes to process\n";
+
+  // Queue all events to the EventProcessor
+  if (!events_to_queue.empty()) {
+    auto queue_start = std::chrono::high_resolution_clock::now();
+    g_event_processor->queue_events(events_to_queue);
+    auto queue_end = std::chrono::high_resolution_clock::now();
+    auto queue_duration = std::chrono::duration_cast<std::chrono::milliseconds>(queue_end - queue_start);
+
+    std::cout << "Published " << events_to_queue.size() << " events to EventProcessor in "
+      << queue_duration.count() << "ms\n";
+  }
+  else {
+    // No events to process, but we still need to load existing assets from database
+    std::cout << "No changes detected, loading existing assets from database\n";
+    std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
+    g_assets = db_assets; // Load existing database assets into g_assets
+    std::cout << "Loaded " << g_assets.size() << " existing assets\n";
+  }
+
+  // Mark initial scan as complete
+  g_initial_scan_complete = true;
 }
 
 int main() {
@@ -446,7 +413,6 @@ int main() {
   // Main loop
   double last_time = glfwGetTime();
   while (!glfwWindowShouldClose(window)) {
-
     double current_time = glfwGetTime();
     io.DeltaTime = (float) (current_time - last_time);
     last_time = current_time;
@@ -932,6 +898,7 @@ int main() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     glfwSwapBuffers(window);
+
   }
 
   // Cleanup texture manager
@@ -949,11 +916,8 @@ int main() {
   g_file_watcher.stop_watching();
 
   // Cleanup event processor
-  if (g_event_processor) {
-    g_event_processor->stop();
-    delete g_event_processor;
-    g_event_processor = nullptr;
-  }
+  g_event_processor->stop();
+  delete g_event_processor;
 
   g_database.close();
 

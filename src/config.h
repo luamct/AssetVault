@@ -1,5 +1,8 @@
 #pragma once
 
+#include <unordered_set>
+#include "asset.h"
+
 namespace Config {
     // =============================================================================
     // WINDOW & UI LAYOUT
@@ -33,6 +36,14 @@ namespace Config {
 
     // Search & UI limits
     constexpr size_t MAX_SEARCH_RESULTS = 1000; // Limit results to prevent UI blocking
+    
+    // Asset types to exclude from search results (O(1) lookup)
+    inline const std::unordered_set<AssetType> IGNORED_ASSET_TYPES = {
+        AssetType::Auxiliary,  // System/helper files (.mtl, .log, .cache, .tmp, .bak, etc.)
+        AssetType::Unknown,    // Unrecognized files (.DS_Store, .gitignore, README, etc.)
+        AssetType::Directory,  // Folders
+        AssetType::Document    // Documents (.txt, .md, .pdf, .doc, etc.)
+    };
 
     // Asset processing
     constexpr int SVG_THUMBNAIL_SIZE = 240;
@@ -60,6 +71,7 @@ namespace Config {
 
     // Set to true to force database clearing and reindexing on startup
     constexpr bool DEBUG_FORCE_DB_CLEAR = false;
+
 
     // Font settings
     constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";

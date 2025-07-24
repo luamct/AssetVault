@@ -522,7 +522,6 @@ FileInfo EventProcessor::process_file(const std::string& full_path, const std::c
                 // TODO: Implement for other platforms
                 file_info.created_or_modified_seconds = 0;
 #endif
-
                 // Store display time as modification time (for user-facing display)
                 try {
                     auto ftime = fs::last_write_time(path);

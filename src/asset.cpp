@@ -6,11 +6,13 @@
 
 // Asset type mapping based on file extensions - O(1) lookup using map
 AssetType get_asset_type(const std::string& extension) {
+
   static const std::map<std::string, AssetType> type_map = {
     // Textures
     {".png", AssetType::Texture},
     {".jpg", AssetType::Texture},
     {".jpeg", AssetType::Texture},
+    {".gif", AssetType::Texture},
     {".bmp", AssetType::Texture},
     {".tga", AssetType::Texture},
     {".dds", AssetType::Texture},
@@ -71,7 +73,15 @@ AssetType get_asset_type(const std::string& extension) {
     {".svg", AssetType::Texture},
 
     // Auxiliary files (not shown in search results)
-    {".mtl", AssetType::Auxiliary}
+    {".mtl", AssetType::Auxiliary},
+
+    // Temporary and backup files
+    {".log", AssetType::Auxiliary},
+    {".cache", AssetType::Auxiliary},
+    {".tmp", AssetType::Auxiliary},
+    {".temp", AssetType::Auxiliary},
+    {".bak", AssetType::Auxiliary},
+    {".backup", AssetType::Auxiliary}
   };
 
   std::string ext = extension;
