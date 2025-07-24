@@ -33,6 +33,7 @@
 #include "texture_manager.h"
 #include "utils.h"
 #include "3d.h"
+#include "config.h"
 
 // Include stb_image for PNG loading
 #define STB_IMAGE_IMPLEMENTATION
@@ -44,23 +45,7 @@
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvgrast.h"
 
-// Constants
-constexpr int WINDOW_WIDTH = 1960;
-constexpr int WINDOW_HEIGHT = 1080;
-constexpr float SEARCH_BOX_WIDTH = 375.0f;
-constexpr float SEARCH_BOX_HEIGHT = 60.0f;
-constexpr float THUMBNAIL_SIZE = 180.0f;
-constexpr float GRID_SPACING = 30.0f;
-
-// Debug flags
-constexpr bool DEBUG_FORCE_DB_CLEAR = false; // Set to true to force database clearing and reindexing
-constexpr float TEXT_MARGIN = 20.0f;         // Space below thumbnail for text positioning
-constexpr float TEXT_HEIGHT = 20.0f;         // Height reserved for text
-constexpr float ICON_SCALE = 0.5f;           // Icon occupies 50% of the thumbnail area
-
-// Preview panel layout constants
-constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;     // Margin from window right edge
-constexpr float PREVIEW_INTERNAL_PADDING = 30.0f; // Internal padding within preview panel
+// All constants now defined in config.h
 
 // Temporary color definitions while migrating to Theme:: namespace
 constexpr ImVec4 COLOR_HEADER_TEXT = ImVec4(0.2f, 0.7f, 0.9f, 1.0f);
@@ -88,20 +73,20 @@ std::atomic<bool> g_search_update_needed(false);
 
 bool load_roboto_font(ImGuiIO& io) {
   // Load embedded Roboto font from external/fonts directory
-  ImFont* font = io.Fonts->AddFontFromFileTTF("external/fonts/Roboto-Regular.ttf", 24.0f);
+  ImFont* font = io.Fonts->AddFontFromFileTTF(Config::FONT_PATH, Config::FONT_SIZE);
   if (font) {
     std::cout << "Roboto font loaded successfully!\n";
     return true;
   }
 
   // If embedded font fails to load, log error and use default font
-  std::cerr << "Failed to load embedded Roboto font. Check that external/fonts/Roboto-Regular.ttf exists.\n";
+  std::cerr << "Failed to load embedded Roboto font. Check that " << Config::FONT_PATH << " exists.\n";
   return false;
 }
 
 // Function to calculate aspect-ratio-preserving dimensions with upscaling limit
 ImVec2 calculate_thumbnail_size(
-  int original_width, int original_height, float max_width, float max_height, float max_upscale_factor = 3.0f) {
+  int original_width, int original_height, float max_width, float max_height, float max_upscale_factor = Config::MAX_THUMBNAIL_UPSCALE_FACTOR) {
   float aspect_ratio = static_cast<float>(original_width) / static_cast<float>(original_height);
 
   float calculated_width = max_width;
@@ -179,7 +164,7 @@ void filter_assets(SearchState& search_state) {
   search_state.filtered_assets.clear();
   search_state.selected_asset_index = -1; // Clear selection when search results change
 
-  constexpr size_t MAX_RESULTS = 1000; // Limit results to prevent UI blocking
+  constexpr size_t MAX_RESULTS = Config::MAX_SEARCH_RESULTS; // Limit results to prevent UI blocking
   size_t total_assets = 0;
   size_t filtered_count = 0;
 
@@ -256,14 +241,14 @@ void perform_initial_scan() {
     // Phase 1: Get filesystem paths (fast scan)
     std::unordered_set<std::string> current_files;
     try {
-        fs::path root("assets");
+        fs::path root(Config::ASSET_ROOT_DIRECTORY);
         if (!fs::exists(root) || !fs::is_directory(root)) {
-            std::cerr << "Error: Path does not exist or is not a directory: assets\n";
+            std::cerr << "Error: Path does not exist or is not a directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
             g_initial_scan_complete = true;
             return;
         }
         
-        std::cout << "Scanning directory: assets\n";
+        std::cout << "Scanning directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
         
         // Single pass: Get all file paths
         for (const auto& entry : fs::recursive_directory_iterator(root)) {
@@ -373,19 +358,19 @@ void perform_initial_scan() {
 int main() {
   // Initialize database
   std::cout << "Initializing database...\n";
-  if (!g_database.initialize("db/assets.db")) {
+  if (!g_database.initialize(Config::DATABASE_PATH)) {
     std::cerr << "Failed to initialize database\n";
     return -1;
   }
 
   // Debug: Force clear database if flag is set
-  if (DEBUG_FORCE_DB_CLEAR) {
+  if (Config::DEBUG_FORCE_DB_CLEAR) {
     std::cout << "DEBUG: Forcing database clear for testing...\n";
     g_database.clear_all_assets();
   }
 
   // Initialize unified event processor for both initial scan and runtime events
-  g_event_processor = new EventProcessor(g_database, g_assets, g_search_update_needed, g_texture_manager, 100);
+  g_event_processor = new EventProcessor(g_database, g_assets, g_search_update_needed, g_texture_manager, Config::EVENT_PROCESSOR_BATCH_SIZE);
   if (!g_event_processor->start()) {
     std::cerr << "Failed to start EventProcessor\n";
     return -1;
@@ -402,7 +387,7 @@ int main() {
   }
 
   // Create window
-  GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Asset Inventory", nullptr, nullptr);
+  GLFWwindow* window = glfwCreateWindow(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT, "Asset Inventory", nullptr, nullptr);
   if (!window) {
     std::cerr << "Failed to create GLFW window\n";
     glfwTerminate();
@@ -471,7 +456,7 @@ int main() {
     // Start file watcher after initial scan completes
     if (g_initial_scan_complete && !g_file_watcher.is_watching()) {
       std::cout << "Starting file watcher...\n";
-      if (g_file_watcher.start_watching("assets", on_file_event)) {
+      if (g_file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event)) {
         std::cout << "File watcher started successfully\n";
       }
       else {
@@ -482,8 +467,8 @@ int main() {
     // Render 3D preview to framebuffer BEFORE starting ImGui frame
     if (g_texture_manager.is_preview_initialized()) {
       // Calculate the size for the right panel (same as 2D previews)
-      float right_panel_width = (ImGui::GetIO().DisplaySize.x * 0.25f) - PREVIEW_RIGHT_MARGIN;
-      float avail_width = right_panel_width - PREVIEW_INTERNAL_PADDING;
+      float right_panel_width = (ImGui::GetIO().DisplaySize.x * 0.25f) - Config::PREVIEW_RIGHT_MARGIN;
+      float avail_width = right_panel_width - Config::PREVIEW_INTERNAL_PADDING;
       float avail_height = avail_width; // Square aspect ratio
 
       int fb_width = static_cast<int>(avail_width);
@@ -532,7 +517,7 @@ int main() {
     float window_width = ImGui::GetWindowSize().x;
     float window_height = ImGui::GetWindowSize().y;
     float left_width = window_width * 0.75f;
-    float right_width = window_width * 0.25f - PREVIEW_RIGHT_MARGIN;
+    float right_width = window_width * 0.25f - Config::PREVIEW_RIGHT_MARGIN;
     float top_height = window_height * 0.15f;
     float bottom_height = window_height * 0.85f - 20.0f; // Account for some padding
 
@@ -543,8 +528,8 @@ int main() {
     ImVec2 content_region = ImGui::GetContentRegionAvail();
 
     // Calculate centered position within content region
-    float content_search_x = (content_region.x - SEARCH_BOX_WIDTH) * 0.5f;
-    float content_search_y = (content_region.y - SEARCH_BOX_HEIGHT) * 0.5f;
+    float content_search_x = (content_region.x - Config::SEARCH_BOX_WIDTH) * 0.5f;
+    float content_search_y = (content_region.y - Config::SEARCH_BOX_HEIGHT) * 0.5f;
 
     // Ensure we have a minimum Y position
     if (content_search_y < 5.0f) {
@@ -554,7 +539,7 @@ int main() {
     // Get screen position for drawing (content area start + our offset)
     ImVec2 content_start = ImGui::GetCursorScreenPos();
     ImVec2 capsule_min(content_start.x + content_search_x, content_start.y + content_search_y);
-    ImVec2 capsule_max(capsule_min.x + SEARCH_BOX_WIDTH, capsule_min.y + SEARCH_BOX_HEIGHT);
+    ImVec2 capsule_max(capsule_min.x + Config::SEARCH_BOX_WIDTH, capsule_min.y + Config::SEARCH_BOX_HEIGHT);
 
     // Draw capsule background
     ImGui::GetWindowDrawList()->AddRectFilled(
@@ -565,10 +550,10 @@ int main() {
 
     // Position text input - ImGui text inputs are positioned by their center, not top-left
     float text_input_x = content_search_x + 40;                       // 40px padding from left edge of capsule
-    float text_input_y = content_search_y + SEARCH_BOX_HEIGHT * 0.5f; // Center of capsule
+    float text_input_y = content_search_y + Config::SEARCH_BOX_HEIGHT * 0.5f; // Center of capsule
 
     ImGui::SetCursorPos(ImVec2(text_input_x, text_input_y));
-    ImGui::PushItemWidth(SEARCH_BOX_WIDTH - 40); // Leave 20px padding on each side
+    ImGui::PushItemWidth(Config::SEARCH_BOX_WIDTH - 40); // Leave 20px padding on each side
 
     // Remove borders from text input
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
@@ -630,10 +615,10 @@ int main() {
 
     // Calculate grid layout upfront since all items have the same size
     float available_width = left_width - 20.0f;                     // Account for padding
-    float item_height = THUMBNAIL_SIZE + TEXT_MARGIN + TEXT_HEIGHT; // Full item height including text
+    float item_height = Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN + Config::TEXT_HEIGHT; // Full item height including text
     // Add GRID_SPACING to available width since we don't need spacing after the
     // last item
-    int columns = static_cast<int>((available_width + GRID_SPACING) / (THUMBNAIL_SIZE + GRID_SPACING));
+    int columns = static_cast<int>((available_width + Config::GRID_SPACING) / (Config::THUMBNAIL_SIZE + Config::GRID_SPACING));
     if (columns < 1)
       columns = 1;
 
@@ -644,8 +629,8 @@ int main() {
       int col = static_cast<int>(i) % columns;
 
       // Calculate absolute position for this grid item
-      float x_pos = col * (THUMBNAIL_SIZE + GRID_SPACING);
-      float y_pos = row * (item_height + GRID_SPACING);
+      float x_pos = col * (Config::THUMBNAIL_SIZE + Config::GRID_SPACING);
+      float y_pos = row * (item_height + Config::GRID_SPACING);
 
       // Set cursor to the calculated position
       ImGui::SetCursorPos(ImVec2(x_pos, y_pos));
@@ -656,23 +641,23 @@ int main() {
       unsigned int asset_texture = g_texture_manager.get_asset_texture(search_state.filtered_assets[i]);
 
       // Calculate display size based on asset type
-      ImVec2 display_size(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+      ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
       bool is_texture = (search_state.filtered_assets[i].type == AssetType::Texture && asset_texture != 0);
       if (is_texture) {
         int width, height;
         if (g_texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height)) {
           display_size =
-            calculate_thumbnail_size(width, height, THUMBNAIL_SIZE, THUMBNAIL_SIZE, 3.0f); // 3x upscaling for grid
+            calculate_thumbnail_size(width, height, Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE, Config::MAX_THUMBNAIL_UPSCALE_FACTOR); // upscaling for grid
         }
       }
       else {
         // For type icons, use a fixed fraction of the thumbnail size
-        display_size = ImVec2(THUMBNAIL_SIZE * ICON_SCALE, THUMBNAIL_SIZE * ICON_SCALE);
+        display_size = ImVec2(Config::THUMBNAIL_SIZE * Config::ICON_SCALE, Config::THUMBNAIL_SIZE * Config::ICON_SCALE);
       }
 
       // Create a fixed-size container for consistent layout
-      ImVec2 container_size(THUMBNAIL_SIZE,
-        THUMBNAIL_SIZE + TEXT_MARGIN + TEXT_HEIGHT); // Thumbnail + text area
+      ImVec2 container_size(Config::THUMBNAIL_SIZE,
+        Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN + Config::TEXT_HEIGHT); // Thumbnail + text area
       ImVec2 container_pos = ImGui::GetCursorScreenPos();
 
       // Draw background for the container (same as app background)
@@ -681,8 +666,8 @@ int main() {
         Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
 
       // Center the image/icon in the thumbnail area
-      float image_x_offset = (THUMBNAIL_SIZE - display_size.x) * 0.5f;
-      float image_y_offset = (THUMBNAIL_SIZE - display_size.y) * 0.5f;
+      float image_x_offset = (Config::THUMBNAIL_SIZE - display_size.x) * 0.5f;
+      float image_y_offset = (Config::THUMBNAIL_SIZE - display_size.y) * 0.5f;
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
 
       ImGui::PushStyleColor(ImGuiCol_Button, COLOR_TRANSPARENT);
@@ -716,12 +701,12 @@ int main() {
       ImGui::PopStyleColor(3);
 
       // Position text at the bottom of the container
-      ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + THUMBNAIL_SIZE + TEXT_MARGIN));
+      ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN));
 
       // Asset name below thumbnail
       std::string truncated_name = truncate_filename(search_state.filtered_assets[i].name);
       ImGui::SetCursorPosX(
-        ImGui::GetCursorPosX() + (THUMBNAIL_SIZE - ImGui::CalcTextSize(truncated_name.c_str()).x) * 0.5f);
+        ImGui::GetCursorPosX() + (Config::THUMBNAIL_SIZE - ImGui::CalcTextSize(truncated_name.c_str()).x) * 0.5f);
       ImGui::TextWrapped("%s", truncated_name.c_str());
 
       ImGui::EndGroup();
@@ -749,7 +734,7 @@ int main() {
     ImGui::BeginChild("AssetPreview", ImVec2(right_width, bottom_height), true);
 
     // Use fixed panel dimensions for stable calculations
-    float avail_width = right_width - PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
+    float avail_width = right_width - Config::PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
     float avail_height = avail_width;                           // Square aspect ratio for preview area
 
     if (search_state.selected_asset_index >= 0) {
@@ -852,12 +837,12 @@ int main() {
           if (selected_asset.type == AssetType::Texture) {
             int width, height;
             if (g_texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
-              preview_size = calculate_thumbnail_size(width, height, avail_width, avail_height, 100.0);
+              preview_size = calculate_thumbnail_size(width, height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
             }
           }
           else {
             // For type icons, use ICON_SCALE * min(available_width, available_height)
-            float icon_dim = ICON_SCALE * std::min(avail_width, avail_height);
+            float icon_dim = Config::ICON_SCALE * std::min(avail_width, avail_height);
             preview_size = ImVec2(icon_dim, icon_dim);
           }
 

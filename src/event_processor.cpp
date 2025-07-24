@@ -7,6 +7,7 @@
 #include <iostream>
 #include <unordered_set>
 
+#include "config.h"
 #include "texture_manager.h"
 
 namespace fs = std::filesystem;
@@ -16,7 +17,7 @@ EventProcessor::EventProcessor(AssetDatabase& database, std::vector<FileInfo>& a
     : database_(database), assets_(assets), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
-    root_path_("assets") {
+    root_path_(Config::ASSET_ROOT_DIRECTORY) {
 }
 
 EventProcessor::~EventProcessor() {
@@ -396,7 +397,7 @@ void EventProcessor::rename_asset(const std::string& old_path, const std::string
         assets_[index].full_path = new_path;
         assets_[index].name = fs::path(new_path).filename().string();
         // Update relative path if needed
-        fs::path root("assets");
+        fs::path root(Config::ASSET_ROOT_DIRECTORY);
         try {
             assets_[index].relative_path = fs::relative(new_path, root).string();
         }

@@ -11,6 +11,7 @@
 #include <thread>
 #include <unordered_map>
 
+#include "config.h"
 #include "file_watcher.h"
 
 // Structure to track pending file events
@@ -47,8 +48,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
   std::thread timer_thread;
   std::atomic<bool> timer_should_stop;
 
-  // Timer configuration
-  static constexpr int DEBOUNCE_TIMEOUT_MS = 500;
+  // Timer configuration - use config constant
 
  public:
   WindowsFileWatcher()
@@ -165,7 +165,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
           auto time_since_activity =
               std::chrono::duration_cast<std::chrono::milliseconds>(now - pending.last_activity).count();
 
-          if (time_since_activity >= DEBOUNCE_TIMEOUT_MS) {
+          if (time_since_activity >= Config::FILE_WATCHER_DEBOUNCE_MS) {
             // Event has timed out, store it for processing
             events_to_process.push_back({it->first, pending});
             it = pending_events.erase(it);
