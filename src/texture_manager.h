@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -41,6 +43,10 @@ public:
   // SVG thumbnail generation (static - doesn't need instance state)
   static bool generate_svg_thumbnail(const std::string& svg_path, const std::string& filename);
 
+  // Texture cache invalidation (thread-safe)
+  void queue_texture_invalidation(const std::string& file_path);
+  void process_invalidation_queue();
+
   // 3D preview system
   bool initialize_preview_system();
   void cleanup_preview_system();
@@ -64,6 +70,10 @@ private:
   unsigned int preview_framebuffer_;
   unsigned int preview_shader_;
   bool preview_initialized_;
+
+  // Invalidation queue for thread-safe texture cache updates
+  std::queue<std::string> invalidation_queue_;
+  mutable std::mutex invalidation_mutex_;
 
   // Helper methods
   void cleanup_all_textures();

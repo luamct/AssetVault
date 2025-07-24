@@ -34,41 +34,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
-### Primary Build (CMake)
+### CMake Build (Windows Visual Studio)
 ```bash
 # Clean build (always run from project root)
 rm -rf build && mkdir build && cmake -B build && cmake --build build
 
 # Run application
 ./build/Debug/AssetInventory.exe
-
-# Run tests
-cmake --build build --target DatabaseTest
-./build/Debug/DatabaseTest.exe
-cmake --build build --target RenderingTest
-./build/Debug/RenderingTest.exe
-```
-
-### WSL Build (Recommended)
-```bash
-# Clean build with Ninja + Clang
-./build_wsl.bat
-
-# Manual WSL build
-wsl -d Ubuntu-22.04 --cd /home/luam/gamedev/AssetInventory -- cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Debug
-wsl -d Ubuntu-22.04 --cd /home/luam/gamedev/AssetInventory -- cmake --build build
-
-# Run application
-wsl -d Ubuntu-22.04 --cd /home/luam/gamedev/AssetInventory -- ./build/AssetInventory
-```
-
-### Dependency Management
-```bash
-# Download all dependencies
-./download_deps.bat
-
-# Download 3D dependencies specifically
-./download_3d_deps.bat
 ```
 
 ### Directory Management
@@ -78,12 +50,22 @@ wsl -d Ubuntu-22.04 --cd /home/luam/gamedev/AssetInventory -- ./build/AssetInven
 
 ## Architecture Overview
 
+### Unified Event-Driven System
+The application uses a unified event-driven architecture where both initial scanning and runtime file changes flow through the same processing pipeline:
+
+- **EventProcessor** (`src/event_processor.h/cpp`): Central hub that processes all asset events in batches
+- **Smart Initial Scan** (`src/main.cpp::perform_initial_scan()`): Compares filesystem state with database to generate events
+- **FileWatcher** (`src/file_watcher*.cpp/h`): Monitors filesystem changes and generates runtime events
+- **Batch Processing**: All events processed in configurable batches (default 100) for optimal performance
+
 ### Core Components
-- **main.cpp**: Entry point with ImGui-based UI, asset grid rendering, and texture management
-- **database.cpp/h**: SQLite-based asset storage with full CRUD operations and batch processing
-- **index.cpp/h**: Asset type detection, file scanning, and metadata extraction
-- **file_watcher*.cpp/h**: Cross-platform file system monitoring with real-time updates
+- **main.cpp**: Entry point with ImGui-based UI, smart initial scanning, and event coordination
+- **event_processor.cpp/h**: Unified event processing with batch database operations and progress tracking
+- **database.cpp/h**: SQLite-based asset storage with batch operations (insert_assets_batch, update_assets_batch, delete_assets_batch)
+- **index.cpp/h**: Asset type detection, file metadata extraction, and processing logic
+- **file_watcher*.cpp/h**: Cross-platform file system monitoring with real-time event generation
 - **3d.cpp/h**: OpenGL-based 3D model rendering with multi-material support via Assimp
+- **texture_manager.cpp/h**: Texture loading, caching, and thumbnail generation including SVG support
 - **utils.cpp/h**: String formatting, file operations, and utility functions
 - **theme.h**: Centralized UI color management system
 
@@ -94,13 +76,31 @@ The `AssetType` enum in `index.h` defines supported asset categories. When addin
 3. Update `get_asset_type_from_string()` in `index.cpp`
 4. Add texture icon mapping in `load_type_textures()` in `main.cpp`
 5. Add file extension mapping in `get_asset_type()` in `index.cpp` if needed
+- **Never manually convert strings to enums** - always use `get_asset_type_from_string()`
+
+### Event Processing Flow
+1. **Initial Scan** (main thread):
+   - `perform_initial_scan()` compares filesystem state with database
+   - Generates FileEvents: Created (file not in DB), Modified (newer timestamp), Deleted (in DB but not filesystem)
+   - Publishes events to EventProcessor queue with timing measurement
+
+2. **Runtime File Watching** (background thread):
+   - FileWatcher detects filesystem changes
+   - Generates FileEvents for Created/Modified/Deleted/Renamed operations
+   - Queues events to EventProcessor
+
+3. **Event Processing** (EventProcessor background thread):
+   - Processes events in batches by type for optimal database performance
+   - Updates database using batch operations (insert_assets_batch, update_assets_batch, delete_assets_batch)
+   - Updates in-memory assets vector with thread-safe mutex protection
+   - Provides real-time progress tracking with atomic counters
 
 ### Database Schema
-SQLite database at `db/assets.db` stores asset metadata with the following key operations:
-- Initial scan clears database to avoid duplicates
-- Real-time file monitoring updates database automatically
-- Batch operations for performance during large scans
-- Full-text search capabilities for asset discovery
+SQLite database at `db/assets.db` stores asset metadata with the following characteristics:
+- Smart incremental updates - only processes actual changes, not full rescans
+- Batch database operations minimize round-trips for performance
+- Thread-safe access with mutex protection during updates
+- Windows-specific file timestamp handling using FILETIME API
 
 ### 3D Rendering Pipeline
 OpenGL-based rendering system with:
@@ -110,10 +110,10 @@ OpenGL-based rendering system with:
 - Automatic model bounds calculation for camera positioning
 
 ### Threading Model
-- Main UI thread handles ImGui rendering and user interaction
-- Background thread for initial asset scanning with progress reporting
-- File watcher runs on separate thread with thread-safe event queue
-- Atomic variables for cross-thread communication
+- **Main UI thread**: ImGui rendering, user interaction, and initial scan coordination
+- **EventProcessor background thread**: Unified event processing with batch operations and progress tracking
+- **FileWatcher background thread**: Real-time filesystem monitoring with thread-safe event queue
+- **Thread synchronization**: Mutex protection for shared data, atomic counters for progress, condition variables for event queuing
 
 ## Development Guidelines
 
@@ -126,19 +126,19 @@ OpenGL-based rendering system with:
   - Use existing constants (e.g., `Theme::BACKGROUND_LIGHT_BLUE_1`, `Theme::ACCENT_BLUE_1`)
   - Add new colors with descriptive names using numbered suffixes
 
-### Asset Type System Management
-When adding new `AssetType` enum values:
-1. Add to enum in `index.h`
-2. Add case to `get_asset_type_string()` in `index.cpp`
-3. Add case to `get_asset_type_from_string()` in `index.cpp`
-4. Add texture icon mapping in `load_type_textures()` in `main.cpp`
-5. Add file extension mapping in `get_asset_type()` in `index.cpp` if needed
-- **Never manually convert strings to enums** - always use `get_asset_type_from_string()`
+### EventProcessor System
+The `EventProcessor` class is the core of the unified event system:
+- **Initialization**: `EventProcessor(database, assets, search_update_needed, batch_size)`
+- **Event queuing**: `queue_event()` for single events, `queue_events()` for batches
+- **Progress tracking**: `get_progress()`, `get_total_queued()`, `get_total_processed()`
+- **Thread safety**: All asset vector access must use `get_assets_mutex()` for locking
+- **Static helpers**: `get_file_timestamp_for_comparison()` for Windows file timestamp handling
 
 ### Database Management
 - SQLite database located at `db/assets.db`
-- Database cleared on startup to avoid duplicates
-- Application performs initial scans and watches for file changes
+- Smart incremental scanning - no database clearing on startup
+- All database updates flow through EventProcessor batch operations
+- Use batch methods: `insert_assets_batch()`, `update_assets_batch()`, `delete_assets_batch()`
 
 ### ImGui Configuration
 - `imgui.ini` file disabled to avoid persistent window state
@@ -148,17 +148,19 @@ When adding new `AssetType` enum values:
 - Uses C++17 standard with CMake 3.16+
 - MSVC runtime library settings configured to avoid linker conflicts
 - External dependencies are precompiled binaries in `external/` directory
-- Generates `compile_commands.json` for Clangd integration
+- Windows-focused development with Visual Studio 2022
 
 ### Directory Structure
 ```
 src/               # Source files with clear separation of concerns
-  ├── main.cpp     # Main application entry point and UI logic
-  ├── utils.cpp/h  # Utility functions for string formatting, file operations
-  ├── database.cpp/h # Database operations and asset storage
-  ├── index.cpp/h  # Asset indexing and file type detection
+  ├── main.cpp     # Main application entry point, UI logic, and smart initial scanning
+  ├── event_processor.cpp/h # Unified event processing with batch operations and progress tracking
+  ├── database.cpp/h # Database operations with batch methods for EventProcessor
+  ├── index.cpp/h  # Asset type detection, file metadata extraction, and processing logic
+  ├── file_watcher*.cpp/h # Cross-platform file system monitoring with event generation
+  ├── texture_manager.cpp/h # Texture loading, caching, and thumbnail generation including SVG
   ├── 3d.cpp/h     # 3D model rendering and viewport functionality
-  ├── file_watcher*.cpp/h # File system monitoring
+  ├── utils.cpp/h  # Utility functions for string formatting, file operations
   └── theme.h      # UI theming configuration
 external/          # Downloaded dependencies (GLFW, ImGui, Assimp, SQLite, etc.)
 assets/            # Asset files for monitoring and indexing
@@ -169,9 +171,7 @@ readmes/           # Component-specific documentation
 ```
 
 ### Platform Support
-- **Windows**: Visual Studio 2022 with precompiled binaries
-- **WSL/Linux**: Clang + Ninja build system (recommended for development)
-- **WSL Integration**: Terminal uses WSL Ubuntu-22.04, IntelliSense uses Clang configuration
+- **Windows**: Visual Studio 2022 with precompiled binaries (primary platform)
 - Cross-platform file watching with platform-specific implementations
 
 ## Critical Development Notes
@@ -182,23 +182,33 @@ readmes/           # Component-specific documentation
 - This ensures consistency across all future sessions
 
 ### Dependency Management
-- Use `download_deps.bat` and `download_3d_deps.bat` for automated setup
-- Don't manually download dependencies unless necessary
-- Batch files handle GLFW, ImGui, SQLite, and 3D libraries
+- All dependencies are pre-included in the `external/` directory
+- No additional downloads or setup required for development
+- Dependencies include: GLFW, ImGui, GLM, Assimp, SQLite, GLAD, STB, NanoSVG
 
 ### Asset Management
-- Database is cleared on application startup to ensure consistency
+- Smart incremental scanning compares filesystem state with database - no clearing on startup
+- Unified event-driven processing handles both initial scan and runtime file changes
+- EventProcessor provides batch operations and real-time progress tracking
 - File watcher provides real-time updates without requiring manual refresh
 - Texture cache system prevents redundant loading of image assets
-- Asset thumbnails are generated dynamically for supported formats
+- Asset thumbnails are generated dynamically for supported formats including SVG pre-rasterization
 
-### WSL Development Setup
-- **Install WSL**: `wsl --install -d Ubuntu-22.04`
-- **Setup script**: `wsl -d Ubuntu-22.04 -- bash -c "cd /home/luam/gamedev/AssetInventory && chmod +x setup_wsl.sh && ./setup_wsl.sh"`
-- **VS Code Integration**: Terminal uses WSL Ubuntu-22.04, build tasks use "WSL: CMake Build (Ninja)"
-- **C++ Configuration**: Set to "WSL-Clang" for best IntelliSense
+### Event-Driven Architecture Patterns
+- **All asset changes flow through EventProcessor** - never directly manipulate database or assets vector
+- **Batch processing preferred** - use `queue_events()` for multiple events rather than individual `queue_event()` calls
+- **Thread-safe asset access** - always acquire `get_assets_mutex()` when reading/filtering assets
+- **Smart scanning logic** - initial scan generates events based on filesystem vs database comparison
+- **Progress tracking** - use EventProcessor atomic counters for real-time progress updates
+- **Static method optimization** - methods that don't use instance state should be static (e.g., `generate_svg_thumbnail`)
+
+### File Event Processing Guidelines
+- **Created events**: Generated when files exist in filesystem but not in database
+- **Modified events**: Generated when files exist in both but have newer timestamps (uses Windows FILETIME API)
+- **Deleted events**: Generated when files exist in database but not in filesystem
+- **Event publishing timing**: Include debug output for event publishing performance measurement
+- **FileEvent constructor**: Always use parameterized constructor `FileEvent(type, path)` - no default constructor available
 
 ### Git Integration and Version Control
 - **Never perform git operations unless explicitly requested by user**
 - **Never assume user wants to commit changes** - always wait for explicit instruction
-- Build system generates `compile_commands.json` for IDE integration

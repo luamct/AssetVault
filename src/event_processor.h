@@ -17,8 +17,8 @@ class TextureManager;
 // Unified event processor for both initial scan and runtime file events
 class EventProcessor {
 public:
-    EventProcessor(AssetDatabase& database, std::vector<FileInfo>& assets, 
-                  std::atomic<bool>& search_update_needed, size_t batch_size = 100);
+    EventProcessor(AssetDatabase& database, std::vector<FileInfo>& assets,
+        std::atomic<bool>& search_update_needed, TextureManager& texture_manager, size_t batch_size = 100);
     ~EventProcessor();
 
     // Start/stop the background processing thread
@@ -42,7 +42,7 @@ public:
     float get_progress() const {
         size_t queued = total_events_queued_.load();
         size_t processed = total_events_processed_.load();
-        return queued > 0 ? (float)processed / queued : 1.0f;
+        return queued > 0 ? (float) processed / queued : 1.0f;
     }
     bool has_pending_work() const { return total_events_queued_ > total_events_processed_; }
     void reset_progress_counters() {
@@ -54,6 +54,9 @@ public:
 
     // Access to assets mutex for thread-safe filtering
     std::mutex& get_assets_mutex() { return assets_mutex_; }
+
+    // Static helper for file timestamp comparison (Windows-specific)
+    static uint32_t get_file_timestamp_for_comparison(const std::string& path);
 
 private:
     // Background thread function
@@ -81,6 +84,7 @@ private:
     AssetDatabase& database_;
     std::vector<FileInfo>& assets_;
     std::atomic<bool>& search_update_needed_;
+    TextureManager& texture_manager_;
 
     // Processing thread and synchronization
     std::thread processing_thread_;
@@ -99,6 +103,9 @@ private:
     std::atomic<size_t> total_events_queued_;
     std::atomic<size_t> total_events_processed_;
 
-    // Asset indexer for file processing
-    AssetIndexer indexer_;
+    // Root path for asset scanning
+    std::string root_path_;
+
+    // Process individual file/directory into FileInfo
+    FileInfo process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);
 };

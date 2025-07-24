@@ -11,11 +11,11 @@
 namespace fs = std::filesystem;
 
 EventProcessor::EventProcessor(AssetDatabase& database, std::vector<FileInfo>& assets,
-    std::atomic<bool>& search_update_needed, size_t batch_size)
+    std::atomic<bool>& search_update_needed, TextureManager& texture_manager, size_t batch_size)
     : database_(database), assets_(assets), search_update_needed_(search_update_needed),
-    batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
+    texture_manager_(texture_manager), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
-    indexer_("assets") {
+    root_path_("assets") {
 }
 
 EventProcessor::~EventProcessor() {
@@ -172,7 +172,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
     // Process all files first and increment progress per file
     for (const auto& event : events) {
         try {
-            FileInfo file_info = indexer_.process_file(event.path, event.timestamp);
+            FileInfo file_info = process_file(event.path, event.timestamp);
             files_to_insert.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
         }
@@ -208,9 +208,14 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
                 continue;
             }
 
-            FileInfo file_info = indexer_.process_file(event.path, event.timestamp);
+            FileInfo file_info = process_file(event.path, event.timestamp);
             files_to_update.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
+            
+            // Queue texture invalidation for modified texture assets
+            if (file_info.type == AssetType::Texture) {
+                texture_manager_.queue_texture_invalidation(event.path);
+            }
         }
         catch (const std::exception& e) {
             std::cerr << "Error processing modified event for " << event.path << ": " << e.what() << std::endl;
@@ -245,6 +250,9 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     for (const auto& event : events) {
         paths_to_delete.push_back(event.path);
         total_events_processed_++;  // Increment per file processed
+        
+        // Queue texture invalidation for deleted assets
+        texture_manager_.queue_texture_invalidation(event.path);
     }
 
     // Batch delete from database
@@ -280,9 +288,16 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
     for (const auto& event : events) {
         try {
             old_paths.push_back(event.old_path);
-            FileInfo file_info = indexer_.process_file(event.path, event.timestamp);
+            FileInfo file_info = process_file(event.path, event.timestamp);
             new_files.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
+            
+            // Queue texture invalidation for both old and new paths
+            texture_manager_.queue_texture_invalidation(event.old_path);
+            // Only invalidate new path if it's a texture asset
+            if (file_info.type == AssetType::Texture) {
+                texture_manager_.queue_texture_invalidation(event.path);
+            }
         }
         catch (const std::exception& e) {
             std::cerr << "Error processing renamed event for " << event.old_path << " -> " << event.path
@@ -386,4 +401,170 @@ int EventProcessor::find_asset_index(const std::string& path) {
         }
     }
     return -1;
+}
+
+// Helper functions for file time processing (Windows-specific)
+#ifdef _WIN32
+#include <windows.h>
+
+// Convert Windows FILETIME to seconds since January 1, 2000
+static uint32_t filetime_to_seconds_since_2000(const FILETIME& ft) {
+    // January 1, 2000 as Windows FILETIME (100-nanosecond intervals since January 1, 1601)
+    const uint64_t EPOCH_2000 = 125911584000000000ULL;
+
+    // Convert FILETIME to 64-bit value
+    uint64_t ft_as_uint64 = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+
+    // Calculate difference from Jan 1, 2000
+    if (ft_as_uint64 < EPOCH_2000) {
+        return 0; // File time is before our epoch
+    }
+
+    uint64_t intervals_since_2000 = ft_as_uint64 - EPOCH_2000;
+    uint64_t seconds_since_2000 = intervals_since_2000 / 10000000ULL; // Convert to seconds
+
+    // Clamp to uint32_t max
+    return (uint32_t)std::min(seconds_since_2000, (uint64_t)UINT32_MAX);
+}
+
+static uint32_t get_max_creation_or_modification_seconds(const fs::path& path) {
+    HANDLE hFile = CreateFileW(
+        path.wstring().c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        std::cerr << "Warning: Could not open file for time reading: " << path << std::endl;
+        return 0;
+    }
+
+    FILETIME ftCreated, ftModified;
+    if (!GetFileTime(hFile, &ftCreated, nullptr, &ftModified)) {
+        std::cerr << "Warning: Could not get file times for: " << path << std::endl;
+        CloseHandle(hFile);
+        return 0;
+    }
+
+    CloseHandle(hFile);
+
+    // Convert both times to seconds since Jan 1, 2000
+    uint32_t creation_seconds = filetime_to_seconds_since_2000(ftCreated);
+    uint32_t modification_seconds = filetime_to_seconds_since_2000(ftModified);
+
+    // Return the more recent time
+    return std::max(creation_seconds, modification_seconds);
+}
+#endif
+
+// Public static method for file timestamp comparison
+uint32_t EventProcessor::get_file_timestamp_for_comparison(const std::string& path) {
+#ifdef _WIN32
+    return get_max_creation_or_modification_seconds(fs::path(path));
+#else
+    // TODO: Implement for other platforms
+    return 0;
+#endif
+}
+
+FileInfo EventProcessor::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
+    FileInfo file_info;
+
+    try {
+        fs::path path(full_path);
+        fs::path root(root_path_);
+
+        // Basic file information
+        file_info.full_path = full_path;
+        file_info.name = path.filename().string();
+        file_info.is_directory = fs::is_directory(path);
+
+        // Relative path from root
+        try {
+            file_info.relative_path = fs::relative(path, root).string();
+        }
+        catch (const fs::filesystem_error& e) {
+            // Fallback to full path if relative path calculation fails
+            file_info.relative_path = full_path;
+            std::cerr << "Warning: Could not calculate relative path for " << full_path << ": " << e.what() << std::endl;
+        }
+
+        if (!file_info.is_directory) {
+            // File-specific information
+            file_info.extension = path.extension().string();
+            file_info.type = get_asset_type(file_info.extension);
+
+            try {
+                file_info.size = fs::file_size(path);
+
+#ifdef _WIN32
+                // Get both creation and modification time using Windows API
+                file_info.created_or_modified_seconds = get_max_creation_or_modification_seconds(path);
+#else
+                // TODO: Implement for other platforms
+                file_info.created_or_modified_seconds = 0;
+#endif
+
+                // Store display time as modification time (for user-facing display)
+                try {
+                    auto ftime = fs::last_write_time(path);
+                    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                        ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
+                    );
+                    file_info.last_modified = sctp;
+                }
+                catch (const fs::filesystem_error& e) {
+                    // Fallback to provided timestamp for display
+                    file_info.last_modified = timestamp;
+                    std::cerr << "Warning: Using provided timestamp for display for " << full_path << ": " << e.what() << std::endl;
+                }
+            }
+            catch (const fs::filesystem_error& e) {
+                std::cerr << "Warning: Could not get file info for " << file_info.full_path << ": " << e.what() << std::endl;
+                file_info.size = 0;
+                file_info.last_modified = timestamp;
+            }
+
+            // Generate SVG thumbnail if this is an SVG file
+            if (file_info.extension == ".svg" && file_info.type == AssetType::Texture) {
+                TextureManager::generate_svg_thumbnail(file_info.full_path, file_info.name);
+            }
+        }
+        else {
+            // Directory-specific information
+            file_info.type = AssetType::Directory;
+            file_info.extension = "";
+            file_info.size = 0;
+
+            // Directories don't need timestamp tracking - we track individual files instead
+            file_info.created_or_modified_seconds = 0;
+
+            // Store display time as modification time (for user-facing display)
+            try {
+                auto ftime = fs::last_write_time(path);
+                auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                    ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
+                );
+                file_info.last_modified = sctp;
+            }
+            catch (const fs::filesystem_error& e) {
+                std::cerr << "Warning: Could not get modification time for directory " << file_info.full_path << ": "
+                          << e.what() << std::endl;
+                file_info.last_modified = timestamp; // Fallback to provided timestamp
+            }
+        }
+    }
+    catch (const fs::filesystem_error& e) {
+        std::cerr << "Error creating file info for " << full_path << ": " << e.what() << std::endl;
+        // Return minimal file info on error
+        file_info.full_path = full_path;
+        file_info.name = fs::path(full_path).filename().string();
+        file_info.last_modified = timestamp;
+    }
+
+    return file_info;
 }

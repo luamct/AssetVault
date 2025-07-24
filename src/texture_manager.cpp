@@ -581,3 +581,27 @@ void TextureManager::cleanup_preview_system() {
     preview_initialized_ = false;
   }
 }
+
+void TextureManager::queue_texture_invalidation(const std::string& file_path) {
+  std::lock_guard<std::mutex> lock(invalidation_mutex_);
+  invalidation_queue_.push(file_path);
+}
+
+void TextureManager::process_invalidation_queue() {
+  std::lock_guard<std::mutex> lock(invalidation_mutex_);
+  
+  while (!invalidation_queue_.empty()) {
+    const std::string& file_path = invalidation_queue_.front();
+    
+    // Remove from texture cache if present
+    auto cache_it = texture_cache_.find(file_path);
+    if (cache_it != texture_cache_.end()) {
+      if (cache_it->second.texture_id != 0) {
+        glDeleteTextures(1, &cache_it->second.texture_id);
+      }
+      texture_cache_.erase(cache_it);
+    }
+    
+    invalidation_queue_.pop();
+  }
+}
