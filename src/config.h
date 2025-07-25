@@ -36,6 +36,7 @@ namespace Config {
 
     // Search & UI limits
     constexpr size_t MAX_SEARCH_RESULTS = 1000; // Limit results to prevent UI blocking
+    constexpr int SEARCH_DEBOUNCE_MS = 250;      // Delay before executing search (milliseconds)
     
     // Asset types to exclude from search results (O(1) lookup)
     inline const std::unordered_set<AssetType> IGNORED_ASSET_TYPES = {

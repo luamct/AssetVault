@@ -47,17 +47,6 @@
 
 // All constants now defined in config.h
 
-// Temporary color definitions while migrating to Theme:: namespace
-constexpr ImVec4 COLOR_HEADER_TEXT = ImVec4(0.2f, 0.7f, 0.9f, 1.0f);
-constexpr ImVec4 COLOR_LABEL_TEXT = ImVec4(0.2f, 0.2f, 0.8f, 1.0f);
-constexpr ImVec4 COLOR_SECONDARY_TEXT = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
-constexpr ImVec4 COLOR_DISABLED_TEXT = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
-constexpr ImVec4 COLOR_WARNING_TEXT = ImVec4(0.9f, 0.7f, 0.2f, 1.0f);
-constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.0f, 0.0f, 0.0f, 0.3f);
-constexpr ImU32 COLOR_WHITE = IM_COL32(255, 255, 255, 255);
-constexpr ImU32 COLOR_TRANSPARENT_32 = IM_COL32(0, 0, 0, 0);
-constexpr ImU32 COLOR_BORDER_GRAY = IM_COL32(150, 150, 150, 255);
 
 // Global variables
 std::vector<FileInfo> g_assets;
@@ -148,6 +137,11 @@ struct SearchState {
 
   char buffer[256] = "";
   std::string last_buffer = "";
+  std::string input_tracking = ""; // Track input to detect real changes
+
+  // Debouncing state
+  std::chrono::steady_clock::time_point last_keypress_time;
+  bool pending_search = false;
 
   // UI state
   std::vector<FileInfo> filtered_assets;
@@ -187,6 +181,14 @@ void filter_assets(SearchState& search_state) {
       }
     }
   }
+
+  // Measure and print search time
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+
+  std::cout << "[SEARCH] Filtered " << total_assets << " assets, found " << filtered_count
+    << " matches for '" << search_state.buffer << "' in "
+    << duration.count() / 1000.0 << "ms\n";
 }
 
 // File event callback function (runs on background thread)
@@ -447,6 +449,20 @@ int main() {
     // Process texture invalidation queue (thread-safe, once per frame)
     g_texture_manager.process_invalidation_queue();
 
+    // Process pending debounced search
+    if (search_state.pending_search) {
+      auto now = std::chrono::steady_clock::now();
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - search_state.last_keypress_time).count();
+
+      if (elapsed >= Config::SEARCH_DEBOUNCE_MS) {
+        // Execute the search
+        filter_assets(search_state);
+        search_state.last_buffer = search_state.buffer;
+        search_state.pending_search = false;
+      }
+    }
+
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -468,6 +484,7 @@ int main() {
     if (!search_state.initial_filter_applied && !g_assets.empty()) {
       filter_assets(search_state);
       search_state.last_buffer = search_state.buffer;
+      search_state.input_tracking = search_state.buffer;
       search_state.initial_filter_applied = true;
     }
 
@@ -510,7 +527,7 @@ int main() {
     // Draw capsule background
     ImGui::GetWindowDrawList()->AddRectFilled(
       capsule_min, capsule_max,
-      COLOR_WHITE, // White background
+      Theme::COLOR_WHITE_U32, // White background
       25.0f        // Rounded corners
     );
 
@@ -523,18 +540,29 @@ int main() {
 
     // Remove borders from text input
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR_TRANSPARENT_32); // Transparent background
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT_U32); // Transparent background
 
-    ImGui::InputText("##Search", search_state.buffer, sizeof(search_state.buffer), ImGuiInputTextFlags_EnterReturnsTrue);
+    bool enter_pressed = ImGui::InputText("##Search", search_state.buffer, sizeof(search_state.buffer), ImGuiInputTextFlags_EnterReturnsTrue);
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
     ImGui::PopItemWidth();
 
-    // Only filter if search terms have changed
-    if (std::string(search_state.buffer) != search_state.last_buffer) {
+    // Handle search input
+    std::string current_input(search_state.buffer);
+
+    if (enter_pressed) {
+      // Immediate search on Enter key
       filter_assets(search_state);
-      search_state.last_buffer = search_state.buffer;
+      search_state.last_buffer = current_input;
+      search_state.input_tracking = current_input;
+      search_state.pending_search = false;
+    }
+    else if (current_input != search_state.input_tracking) {
+      // Debounced search: only mark as pending if input actually changed
+      search_state.input_tracking = current_input;
+      search_state.last_keypress_time = std::chrono::steady_clock::now();
+      search_state.pending_search = true;
     }
 
     ImGui::EndChild();
@@ -547,7 +575,7 @@ int main() {
     bool show_progress = (g_event_processor && g_event_processor->has_pending_work());
 
     if (show_progress) {
-      ImGui::TextColored(COLOR_HEADER_TEXT, "Processing Assets");
+      ImGui::TextColored(Theme::TEXT_HEADER, "Processing Assets");
 
       // Progress bar data from event processor
       float progress = g_event_processor->get_progress();
@@ -570,7 +598,7 @@ int main() {
         progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
         progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
 
-      ImGui::GetWindowDrawList()->AddText(text_pos, COLOR_WHITE, progress_text);
+      ImGui::GetWindowDrawList()->AddText(text_pos, Theme::COLOR_WHITE_U32, progress_text);
     }
     // No "Ready" text - keep panel empty when not indexing
 
@@ -636,9 +664,9 @@ int main() {
       float image_y_offset = (Config::THUMBNAIL_SIZE - display_size.y) * 0.5f;
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
 
-      ImGui::PushStyleColor(ImGuiCol_Button, COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_ButtonActive, COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, COLOR_SEMI_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
 
       // Display thumbnail image
       if (asset_texture != 0) {
@@ -681,16 +709,16 @@ int main() {
     // Show message if no assets found
     if (search_state.filtered_assets.empty()) {
       if (g_assets.empty()) {
-        ImGui::TextColored(COLOR_DISABLED_TEXT, "No assets found. Add files to the 'assets' directory.");
+        ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets found. Add files to the 'assets' directory.");
       }
       else {
-        ImGui::TextColored(COLOR_DISABLED_TEXT, "No assets match your search.");
+        ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets match your search.");
       }
     }
     else if (search_state.filtered_assets.size() >= 1000) {
       // Show truncation message
       ImGui::Spacing();
-      ImGui::TextColored(COLOR_WARNING_TEXT, "Showing first 1000 results. Use search to narrow down.");
+      ImGui::TextColored(Theme::TEXT_WARNING, "Showing first 1000 results. Use search to narrow down.");
     }
 
     ImGui::EndChild();
@@ -739,7 +767,7 @@ int main() {
         // Draw border around the viewport
         ImVec2 border_min = image_pos;
         ImVec2 border_max(border_min.x + viewport_size.x, border_min.y + viewport_size.y);
-        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, COLOR_BORDER_GRAY, 8.0f, 0, 1.0f);
+        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
         // Display the 3D viewport
         ImGui::Image((ImTextureID) (intptr_t) g_texture_manager.get_preview_texture(), viewport_size);
@@ -753,19 +781,19 @@ int main() {
         ImGui::Spacing();
 
         // 3D Model information
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Path: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
         ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path).c_str());
 
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Extension: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
         ImGui::SameLine();
         ImGui::Text("%s", selected_asset.extension.c_str());
 
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Type: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Type: ");
         ImGui::SameLine();
         ImGui::Text("%s", get_asset_type_string(selected_asset.type).c_str());
 
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Size: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Size: ");
         ImGui::SameLine();
         ImGui::Text("%s", format_file_size(selected_asset.size).c_str());
 
@@ -775,11 +803,11 @@ int main() {
             static_cast<int>(current_model.vertices.size() / 8);             // 8 floats per vertex (3 pos + 3 normal + 2 tex)
           int face_count = static_cast<int>(current_model.indices.size() / 3); // 3 indices per triangle
 
-          ImGui::TextColored(COLOR_LABEL_TEXT, "Vertices: ");
+          ImGui::TextColored(Theme::TEXT_LABEL, "Vertices: ");
           ImGui::SameLine();
           ImGui::Text("%d", vertex_count);
 
-          ImGui::TextColored(COLOR_LABEL_TEXT, "Faces: ");
+          ImGui::TextColored(Theme::TEXT_LABEL, "Faces: ");
           ImGui::SameLine();
           ImGui::Text("%d", face_count);
         }
@@ -790,7 +818,7 @@ int main() {
         localtime_s(&tm_buf, &time_t);
         std::stringstream ss;
         ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Modified: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Modified: ");
         ImGui::SameLine();
         ImGui::Text("%s", ss.str().c_str());
       }
@@ -822,7 +850,7 @@ int main() {
           // Draw border around the image
           ImVec2 border_min = image_pos;
           ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
-          ImGui::GetWindowDrawList()->AddRect(border_min, border_max, COLOR_BORDER_GRAY, 8.0f, 0, 1.0f);
+          ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
           ImGui::Image((ImTextureID) (intptr_t) preview_texture, preview_size);
 
@@ -836,19 +864,19 @@ int main() {
         ImGui::Spacing();
 
         // Asset information
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Name: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Name: ");
         ImGui::SameLine();
         ImGui::Text("%s", selected_asset.name.c_str());
 
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Type: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Type: ");
         ImGui::SameLine();
         ImGui::Text("%s", get_asset_type_string(selected_asset.type).c_str());
 
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Size: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Size: ");
         ImGui::SameLine();
         ImGui::Text("%s", format_file_size(selected_asset.size).c_str());
 
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Extension: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
         ImGui::SameLine();
         ImGui::Text("%s", selected_asset.extension.c_str());
 
@@ -856,13 +884,13 @@ int main() {
         if (selected_asset.type == AssetType::Texture) {
           int width, height;
           if (g_texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
-            ImGui::TextColored(COLOR_LABEL_TEXT, "Dimensions: ");
+            ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
             ImGui::SameLine();
             ImGui::Text("%dx%d", width, height);
           }
         }
 
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Path: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
         ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path).c_str());
 
@@ -872,14 +900,14 @@ int main() {
         localtime_s(&tm_buf, &time_t);
         std::stringstream ss;
         ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
-        ImGui::TextColored(COLOR_LABEL_TEXT, "Modified: ");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Modified: ");
         ImGui::SameLine();
         ImGui::Text("%s", ss.str().c_str());
       }
     }
     else {
-      ImGui::TextColored(COLOR_DISABLED_TEXT, "No asset selected");
-      ImGui::TextColored(COLOR_DISABLED_TEXT, "Click on an asset to preview");
+      ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No asset selected");
+      ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "Click on an asset to preview");
     }
 
     ImGui::EndChild();

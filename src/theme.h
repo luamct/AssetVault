@@ -17,8 +17,7 @@ inline ImU32 ToImU32(const ImVec4& color) {
 
 // === TEXT COLORS ===
 constexpr ImVec4 TEXT_DARK = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);          // Primary dark text
-constexpr ImVec4 TEXT_DISABLED = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);      // Disabled/secondary text (light gray)
-constexpr ImVec4 TEXT_SECONDARY = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);     // Secondary text (same as disabled)
+constexpr ImVec4 TEXT_SECONDARY = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);     // Disabled/secondary text (light gray)
 constexpr ImVec4 TEXT_DISABLED_DARK = ImVec4(0.50f, 0.50f, 0.50f, 1.00f); // Darker disabled text
 constexpr ImVec4 TEXT_HEADER = ImVec4(0.20f, 0.70f, 0.90f, 1.00f);        // Light blue for headers
 constexpr ImVec4 TEXT_LABEL = ImVec4(0.20f, 0.20f, 0.80f, 1.00f);         // Blue for labels
@@ -41,11 +40,14 @@ constexpr ImVec4 FRAME_LIGHT_BLUE_6 = ImVec4(0.75f, 0.80f, 0.85f, 1.00f); // Dar
 constexpr ImVec4 BORDER_LIGHT_BLUE_1 = ImVec4(0.80f, 0.85f, 0.90f, 0.50f); // Standard border
 constexpr ImVec4 BORDER_LIGHT_BLUE_2 = ImVec4(0.70f, 0.80f, 0.90f, 0.75f); // Hovered border
 constexpr ImVec4 BORDER_GRAY = ImVec4(0.588f, 0.588f, 0.588f, 1.00f);     // Gray border (was IM_COL32(150,150,150,255))
-constexpr ImVec4 BORDER_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.00f); // Invisible border
-
 // === TRANSPARENCY COLORS ===
-constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);      // Fully transparent
+constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);      // Fully transparent / Invisible border
 constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.30f); // Semi-transparent black
+
+// === ImU32 COLORS (for immediate drawing) ===
+constexpr ImU32 COLOR_WHITE_U32 = IM_COL32(255, 255, 255, 255);        // Pure white
+constexpr ImU32 COLOR_TRANSPARENT_U32 = IM_COL32(0, 0, 0, 0);          // Fully transparent
+constexpr ImU32 COLOR_BORDER_GRAY_U32 = IM_COL32(150, 150, 150, 255);  // Gray border
 
 // === ACCENT COLORS (Blue Theme) ===
 constexpr ImVec4 ACCENT_BLUE_1 = ImVec4(0.15f, 0.55f, 0.75f, 1.00f); // Primary accent
@@ -84,7 +86,7 @@ inline void setup_light_fun_theme() {
 
   // Text colors
   colors[ImGuiCol_Text] = TEXT_DARK;
-  colors[ImGuiCol_TextDisabled] = TEXT_DISABLED;
+  colors[ImGuiCol_TextDisabled] = TEXT_SECONDARY;
   colors[ImGuiCol_InputTextCursor] = TEXT_DARK;
 
   // Background colors
@@ -98,7 +100,7 @@ inline void setup_light_fun_theme() {
 
   // Borders and separators
   colors[ImGuiCol_Border] = BORDER_LIGHT_BLUE_1;
-  colors[ImGuiCol_BorderShadow] = BORDER_TRANSPARENT;
+  colors[ImGuiCol_BorderShadow] = COLOR_TRANSPARENT;
   colors[ImGuiCol_Separator] = BORDER_LIGHT_BLUE_1;
   colors[ImGuiCol_SeparatorHovered] = BORDER_LIGHT_BLUE_2;
   colors[ImGuiCol_SeparatorActive] = ACCENT_BLUE_1_ALPHA_95;

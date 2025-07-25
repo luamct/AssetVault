@@ -6,7 +6,8 @@
       "Bash(cmake:*)",
       "Bash(./build/Debug/AssetInventory.exe)",
       "Bash(ls:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": []
   }
