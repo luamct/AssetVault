@@ -17,12 +17,12 @@ namespace Config {
     constexpr float SEARCH_BOX_HEIGHT = 60.0f;
 
     // Grid layout
-    constexpr float THUMBNAIL_SIZE = 180.0f;
+    constexpr float THUMBNAIL_SIZE = 240.0f;
     constexpr float GRID_SPACING = 30.0f;
     constexpr float TEXT_MARGIN = 20.0f;         // Space below thumbnail for text positioning
     constexpr float TEXT_HEIGHT = 20.0f;         // Height reserved for text
     constexpr float ICON_SCALE = 0.5f;           // Icon occupies 50% of the thumbnail area
-    
+
     // 3D model thumbnail generation
     constexpr int MODEL_THUMBNAIL_SIZE = 180;    // Size for generated 3D model thumbnails
 
@@ -40,7 +40,7 @@ namespace Config {
     // Search & UI limits
     constexpr size_t MAX_SEARCH_RESULTS = 1000; // Limit results to prevent UI blocking
     constexpr int SEARCH_DEBOUNCE_MS = 250;      // Delay before executing search (milliseconds)
-    
+
     // Asset types to exclude from search results (O(1) lookup)
     inline const std::unordered_set<AssetType> IGNORED_ASSET_TYPES = {
         AssetType::Auxiliary,  // System/helper files (.mtl, .log, .cache, .tmp, .bak, etc.)

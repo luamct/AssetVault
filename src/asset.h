@@ -10,7 +10,7 @@ constexpr int SVG_THUMBNAIL_SIZE = 240;
 // Asset type enum
 enum class AssetType { Texture, Model, Sound, Font, Shader, Document, Archive, Directory, Auxiliary, Unknown };
 
-// Asset information struct (renamed from FileInfo)
+// Asset information struct
 struct Asset {
   std::string name;          // File name (without path)
   std::string extension;     // File extension (lowercase)

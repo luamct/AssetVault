@@ -542,12 +542,8 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
                 file_info.last_modified = timestamp;
             }
 
-            // Generate SVG thumbnail if this is an SVG file
-            if (file_info.extension == ".svg" && file_info.type == AssetType::Texture) {
-                TextureManager::generate_svg_thumbnail(file_info.full_path, file_info.name);
-            }
 
-            // Note: 3D model thumbnail generation is handled on-demand in get_asset_texture()
+            // Note: SVG and 3D model thumbnail generation is handled on-demand in get_asset_texture()
             // to avoid OpenGL context issues when called from background threads
         }
         else {

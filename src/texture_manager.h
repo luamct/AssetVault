@@ -30,7 +30,7 @@ public:
 
   // Asset texture management
   unsigned int load_texture(const char* filename);
-  unsigned int load_svg_texture(const char* filename, int target_width, int target_height);
+  unsigned int load_svg_texture(const char* filename, int target_width, int target_height, int* actual_width = nullptr, int* actual_height = nullptr);
   unsigned int get_asset_texture(const Asset& asset);
   void load_type_textures();
   void cleanup_texture_cache(const std::string& path);
@@ -40,8 +40,6 @@ public:
   unsigned int load_texture_for_model(const std::string& filepath);
   unsigned int create_solid_color_texture(float r, float g, float b);
 
-  // SVG thumbnail generation (static - doesn't need instance state)
-  static bool generate_svg_thumbnail(const std::string& svg_path, const std::string& filename);
 
   // 3D model thumbnail generation
   static bool generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);

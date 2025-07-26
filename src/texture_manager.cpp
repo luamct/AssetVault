@@ -102,7 +102,7 @@ unsigned int TextureManager::load_texture(const char* filename) {
 }
 
 unsigned int TextureManager::load_svg_texture(
-  const char* filename, int target_width, int target_height) {
+  const char* filename, int target_width, int target_height, int* actual_width, int* actual_height) {
   std::cout << "Loading SVG: " << filename << std::endl;
 
   // Parse SVG directly from file like the nanosvg examples do
@@ -120,16 +120,16 @@ unsigned int TextureManager::load_svg_texture(
     return 0;
   }
 
-  // Use target dimensions for rasterization to match thumbnail size
-  int w = target_width;
-  int h = target_height;
-
   // Calculate scale factor to fit SVG into target dimensions while preserving aspect ratio
   float scale_x = static_cast<float>(target_width) / image->width;
   float scale_y = static_cast<float>(target_height) / image->height;
   float scale = std::min(scale_x, scale_y);
 
-  std::cout << "Rasterizing at target size: " << w << "x" << h << " (scale: " << scale << ")" << std::endl;
+  // Calculate actual output dimensions maintaining aspect ratio
+  int w = static_cast<int>(image->width * scale);
+  int h = static_cast<int>(image->height * scale);
+
+  std::cout << "Rasterizing at actual size: " << w << "x" << h << " (scale: " << scale << ")" << std::endl;
 
   if (w <= 0 || h <= 0) {
     std::cerr << "Invalid raster dimensions: " << w << "x" << h << std::endl;
@@ -172,6 +172,10 @@ unsigned int TextureManager::load_svg_texture(
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data);
 
   std::cout << "OpenGL texture created successfully with ID: " << texture_id << std::endl;
+
+  // Return actual dimensions if requested
+  if (actual_width) *actual_width = w;
+  if (actual_height) *actual_height = h;
 
   // Cleanup
   free(img_data);
@@ -286,34 +290,9 @@ unsigned int TextureManager::get_asset_texture(const Asset& asset) {
   unsigned int texture_id = 0;
   int width = 0, height = 0;
 
-  // Check if this is an SVG file
+  // Handle SVG files - render on-demand directly to OpenGL texture
   if (asset.extension == ".svg") {
-    // Load cached PNG thumbnail - should always exist if properly indexed
-    std::filesystem::path asset_path(asset.full_path);
-    std::string png_filename = asset_path.stem().string() + ".png";
-    std::filesystem::path thumbnail_path = std::filesystem::path("thumbnails") / png_filename;
-
-    if (std::filesystem::exists(thumbnail_path)) {
-      // Load cached PNG thumbnail
-      texture_id = load_texture(thumbnail_path.string().c_str());
-      if (texture_id != 0) {
-        // Get thumbnail dimensions
-        int channels;
-        unsigned char* data = stbi_load(thumbnail_path.string().c_str(), &width, &height, &channels, 4);
-        if (data) {
-          stbi_image_free(data);
-        }
-        else {
-          width = 0;
-          height = 0;
-        }
-      }
-    }
-    else {
-      // No cached thumbnail found - this indicates indexing issue
-      std::cerr << "Warning: No cached thumbnail found for SVG: " << asset.full_path << std::endl;
-      texture_id = 0; // Will fallback to default unknown texture below
-    }
+    texture_id = load_svg_texture(asset.full_path.c_str(), Config::SVG_THUMBNAIL_SIZE, Config::SVG_THUMBNAIL_SIZE, &width, &height);
   }
   else {
     // Load regular texture using stb_image
@@ -367,86 +346,6 @@ bool TextureManager::get_texture_dimensions(const std::string& file_path, int& w
   return false;
 }
 
-bool TextureManager::generate_svg_thumbnail(const std::string& svg_path, const std::string& filename) {
-  constexpr int MAX_THUMBNAIL_SIZE = SVG_THUMBNAIL_SIZE;
-
-  // Create thumbnails directory if it doesn't exist
-  std::filesystem::path thumbnails_dir = "thumbnails";
-  if (!std::filesystem::exists(thumbnails_dir)) {
-    try {
-      std::filesystem::create_directory(thumbnails_dir);
-    }
-    catch (const std::filesystem::filesystem_error& e) {
-      std::cerr << "Failed to create thumbnails directory: " << e.what() << std::endl;
-      return false;
-    }
-  }
-
-  // Parse SVG file
-  NSVGimage* image = nsvgParseFromFile(svg_path.c_str(), "px", 96.0f);
-  if (!image) {
-    std::cerr << "Failed to parse SVG: " << svg_path << std::endl;
-    return false;
-  }
-
-  if (image->width <= 0 || image->height <= 0) {
-    std::cerr << "Invalid SVG dimensions: " << image->width << "x" << image->height << std::endl;
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Calculate scale factor and actual output dimensions
-  // The largest dimension should be MAX_THUMBNAIL_SIZE, maintaining aspect ratio
-  float scale_x = static_cast<float>(MAX_THUMBNAIL_SIZE) / image->width;
-  float scale_y = static_cast<float>(MAX_THUMBNAIL_SIZE) / image->height;
-  float scale = std::min(scale_x, scale_y);
-
-  // Calculate actual output dimensions maintaining aspect ratio
-  int output_width = static_cast<int>(image->width * scale);
-  int output_height = static_cast<int>(image->height * scale);
-
-  // Create rasterizer
-  NSVGrasterizer* rast = nsvgCreateRasterizer();
-  if (!rast) {
-    std::cerr << "Failed to create SVG rasterizer for: " << svg_path << std::endl;
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Allocate image buffer with actual dimensions (RGBA format)
-  unsigned char* img_data = static_cast<unsigned char*>(malloc(output_width * output_height * 4));
-  if (!img_data) {
-    std::cerr << "Failed to allocate image buffer for: " << svg_path << std::endl;
-    nsvgDeleteRasterizer(rast);
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Clear buffer to transparent
-  memset(img_data, 0, output_width * output_height * 4);
-
-  // Rasterize SVG at calculated scale with proper dimensions
-  nsvgRasterize(rast, image, 0, 0, scale, img_data, output_width, output_height, output_width * 4);
-
-  // Generate output PNG path
-  std::filesystem::path svg_file_path(filename);
-  std::string png_filename = svg_file_path.stem().string() + ".png";
-  std::filesystem::path output_path = thumbnails_dir / png_filename;
-
-  // Write PNG file with actual dimensions
-  int result = stbi_write_png(output_path.string().c_str(), output_width, output_height, 4, img_data, output_width * 4);
-
-  if (!result) {
-    std::cerr << "Failed to write PNG thumbnail: " << output_path.string() << std::endl;
-  }
-
-  // Cleanup
-  free(img_data);
-  nsvgDeleteRasterizer(rast);
-  nsvgDelete(image);
-
-  return result != 0;
-}
 
 // TODO: Make this method not static and remove texture_manager from argument (just use this if needed)
 bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager) {
