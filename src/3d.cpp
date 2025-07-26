@@ -171,6 +171,11 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
     material.diffuse_color = glm::vec3(diffuse_color.r, diffuse_color.g, diffuse_color.b);
     material.ambient_color = glm::vec3(ambient_color.r, ambient_color.g, ambient_color.b);
     material.specular_color = glm::vec3(specular_color.r, specular_color.g, specular_color.b);
+    
+    // Check if material color is black (0,0,0) and set a default if so
+    if (material.diffuse_color.x == 0.0f && material.diffuse_color.y == 0.0f && material.diffuse_color.z == 0.0f) {
+      material.diffuse_color = glm::vec3(0.8f, 0.8f, 0.8f);
+    }
 
     // If no texture, create solid color texture
     if (!material.has_texture) {

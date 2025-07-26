@@ -7,7 +7,9 @@
       "Bash(./build/Debug/AssetInventory.exe)",
       "Bash(ls:*)",
       "Bash(mv:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(grep:*)",
+      "Bash(tasklist)"
     ],
     "deny": []
   }

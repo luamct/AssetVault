@@ -1,22 +1,13 @@
-#ifdef _WIN32
-#include <windows.h>
-#endif
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <mutex>
-#include <queue>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -24,8 +15,8 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
-#include "theme.h"
 
+#include "theme.h"
 #include "event_processor.h"
 #include "database.h"
 #include "file_watcher.h"
@@ -35,30 +26,8 @@
 #include "3d.h"
 #include "config.h"
 
-// Include stb_image for PNG loading
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-
-// Include NanoSVG for SVG support
-#define NANOSVG_IMPLEMENTATION
-#include "nanosvg.h"
-#define NANOSVGRAST_IMPLEMENTATION
-#include "nanosvgrast.h"
-
-// All constants now defined in config.h
-
-
-// Global variables
-std::vector<FileInfo> g_assets;
-std::atomic<bool> g_assets_updated(false);
-std::atomic<bool> g_initial_scan_complete(false);
-AssetDatabase g_database;
-FileWatcher g_file_watcher;
-TextureManager g_texture_manager;
-
-// Unified event processor for both initial scan and runtime events
-EventProcessor* g_event_processor = nullptr;
-std::atomic<bool> g_search_update_needed(false);
+// Global callback state (needed for callback functions)
+static EventProcessor* g_event_processor = nullptr;
 
 bool load_roboto_font(ImGuiIO& io) {
   // Load embedded Roboto font from external/fonts directory
@@ -152,7 +121,7 @@ struct SearchState {
 };
 
 // Function to filter assets based on search query
-void filter_assets(SearchState& search_state) {
+void filter_assets(SearchState& search_state, const std::vector<FileInfo>& assets) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   search_state.filtered_assets.clear();
@@ -164,8 +133,8 @@ void filter_assets(SearchState& search_state) {
   // Lock assets during filtering to prevent race conditions
   std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
 
-  total_assets = g_assets.size();
-  for (const auto& asset : g_assets) {
+  total_assets = assets.size();
+  for (const auto& asset : assets) {
     // Skip ignored asset types (O(1) lookup) - they should never appear in search results
     if (Config::IGNORED_ASSET_TYPES.count(asset.type) > 0) {
       continue;
@@ -198,14 +167,14 @@ void on_file_event(const FileEvent& event) {
 }
 
 // Perform initial scan and generate events for EventProcessor
-void perform_initial_scan() {
+void perform_initial_scan(AssetDatabase& database, std::vector<FileInfo>& assets, EventProcessor* event_processor) {
   namespace fs = std::filesystem;
   auto scan_start = std::chrono::high_resolution_clock::now();
 
   std::cout << "Starting smart incremental asset scanning...\n";
 
   // Get current database state
-  std::vector<FileInfo> db_assets = g_database.get_all_assets();
+  std::vector<FileInfo> db_assets = database.get_all_assets();
   std::cout << "Database contains " << db_assets.size() << " assets\n";
   std::unordered_map<std::string, FileInfo> db_map;
   for (const auto& asset : db_assets) {
@@ -218,7 +187,6 @@ void perform_initial_scan() {
     fs::path root(Config::ASSET_ROOT_DIRECTORY);
     if (!fs::exists(root) || !fs::is_directory(root)) {
       std::cerr << "Error: Path does not exist or is not a directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
-      g_initial_scan_complete = true;
       return;
     }
 
@@ -240,7 +208,6 @@ void perform_initial_scan() {
   }
   catch (const fs::filesystem_error& e) {
     std::cerr << "Error scanning directory: " << e.what() << '\n';
-    g_initial_scan_complete = true;
     return;
   }
 
@@ -302,10 +269,17 @@ void perform_initial_scan() {
   std::cout << "Filesystem scan completed in " << scan_duration.count() << "ms\n";
   std::cout << "Found " << events_to_queue.size() << " changes to process\n";
 
-  // Queue all events to the EventProcessor
+  // Always load existing assets from database first
+  {
+    std::lock_guard<std::mutex> lock(event_processor->get_assets_mutex());
+    assets = db_assets; // Load existing database assets into assets
+    std::cout << "Loaded " << assets.size() << " existing assets from database\n";
+  }
+
+  // Then queue any detected changes to update from that baseline
   if (!events_to_queue.empty()) {
     auto queue_start = std::chrono::high_resolution_clock::now();
-    g_event_processor->queue_events(events_to_queue);
+    event_processor->queue_events(events_to_queue);
     auto queue_end = std::chrono::high_resolution_clock::now();
     auto queue_duration = std::chrono::duration_cast<std::chrono::milliseconds>(queue_end - queue_start);
 
@@ -313,21 +287,21 @@ void perform_initial_scan() {
       << queue_duration.count() << "ms\n";
   }
   else {
-    // No events to process, but we still need to load existing assets from database
-    std::cout << "No changes detected, loading existing assets from database\n";
-    std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
-    g_assets = db_assets; // Load existing database assets into g_assets
-    std::cout << "Loaded " << g_assets.size() << " existing assets\n";
+    std::cout << "No changes detected\n";
   }
-
-  // Mark initial scan as complete
-  g_initial_scan_complete = true;
 }
 
 int main() {
+  // Local variables
+  std::vector<FileInfo> assets;
+  AssetDatabase database;
+  FileWatcher file_watcher;
+  TextureManager texture_manager;
+  std::atomic<bool> search_update_needed(false);
+
   // Initialize database
   std::cout << "Initializing database...\n";
-  if (!g_database.initialize(Config::DATABASE_PATH)) {
+  if (!database.initialize(Config::DATABASE_PATH)) {
     std::cerr << "Failed to initialize database\n";
     return -1;
   }
@@ -335,11 +309,11 @@ int main() {
   // Debug: Force clear database if flag is set
   if (Config::DEBUG_FORCE_DB_CLEAR) {
     std::cout << "DEBUG: Forcing database clear for testing...\n";
-    g_database.clear_all_assets();
+    database.clear_all_assets();
   }
 
   // Initialize unified event processor for both initial scan and runtime events
-  g_event_processor = new EventProcessor(g_database, g_assets, g_search_update_needed, g_texture_manager, Config::EVENT_PROCESSOR_BATCH_SIZE);
+  g_event_processor = new EventProcessor(database, assets, search_update_needed, texture_manager, Config::EVENT_PROCESSOR_BATCH_SIZE);
   if (!g_event_processor->start()) {
     std::cerr << "Failed to start EventProcessor\n";
     return -1;
@@ -347,7 +321,16 @@ int main() {
 
   // Perform initial scan synchronously before starting UI
   // This ensures all events are queued before the main loop begins
-  perform_initial_scan();
+  perform_initial_scan(database, assets, g_event_processor);
+
+  // Start file watcher after initial scan
+  std::cout << "Starting file watcher...\n";
+  if (file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event)) {
+    std::cout << "File watcher started successfully\n";
+  }
+  else {
+    std::cerr << "Failed to start file watcher\n";
+  }
 
   // Initialize GLFW
   if (!glfwInit()) {
@@ -399,13 +382,13 @@ int main() {
   ImGui_ImplOpenGL3_Init("#version 330");
 
   // Initialize texture manager
-  if (!g_texture_manager.initialize()) {
+  if (!texture_manager.initialize()) {
     std::cerr << "Failed to initialize texture manager\n";
     return -1;
   }
 
   // Initialize 3D preview system
-  if (!g_texture_manager.initialize_preview_system()) {
+  if (!texture_manager.initialize_preview_system()) {
     std::cerr << "Warning: Failed to initialize 3D preview system\n";
   }
 
@@ -421,19 +404,8 @@ int main() {
 
     glfwPollEvents();
 
-    // Start file watcher after initial scan completes
-    if (g_initial_scan_complete && !g_file_watcher.is_watching()) {
-      std::cout << "Starting file watcher...\n";
-      if (g_file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event)) {
-        std::cout << "File watcher started successfully\n";
-      }
-      else {
-        std::cerr << "Failed to start file watcher\n";
-      }
-    }
-
     // Render 3D preview to framebuffer BEFORE starting ImGui frame
-    if (g_texture_manager.is_preview_initialized()) {
+    if (texture_manager.is_preview_initialized()) {
       // Calculate the size for the right panel (same as 2D previews)
       float right_panel_width = (ImGui::GetIO().DisplaySize.x * 0.25f) - Config::PREVIEW_RIGHT_MARGIN;
       float avail_width = right_panel_width - Config::PREVIEW_INTERNAL_PADDING;
@@ -443,11 +415,11 @@ int main() {
       int fb_height = static_cast<int>(avail_height);
 
       // Render the 3D preview
-      render_3d_preview(fb_width, fb_height, search_state.current_model, g_texture_manager);
+      render_3d_preview(fb_width, fb_height, search_state.current_model, texture_manager);
     }
 
     // Process texture invalidation queue (thread-safe, once per frame)
-    g_texture_manager.process_invalidation_queue();
+    texture_manager.process_invalidation_queue();
 
     // Process pending debounced search
     if (search_state.pending_search) {
@@ -457,7 +429,7 @@ int main() {
 
       if (elapsed >= Config::SEARCH_DEBOUNCE_MS) {
         // Execute the search
-        filter_assets(search_state);
+        filter_assets(search_state, assets);
         search_state.last_buffer = search_state.buffer;
         search_state.pending_search = false;
       }
@@ -469,20 +441,14 @@ int main() {
     ImGui::NewFrame();
 
     // Check if search needs to be updated due to asset changes
-    if (g_search_update_needed.exchange(false)) {
+    if (search_update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
-      filter_assets(search_state);
-    }
-
-    // Keep old asset reload for initial scan compatibility (for now)
-    if (g_assets_updated.exchange(false)) {
-      g_assets = g_database.get_all_assets();
-      filter_assets(search_state);
+      filter_assets(search_state, assets);
     }
 
     // Apply initial filter when we first have assets
-    if (!search_state.initial_filter_applied && !g_assets.empty()) {
-      filter_assets(search_state);
+    if (!search_state.initial_filter_applied && !assets.empty()) {
+      filter_assets(search_state, assets);
       search_state.last_buffer = search_state.buffer;
       search_state.input_tracking = search_state.buffer;
       search_state.initial_filter_applied = true;
@@ -553,7 +519,7 @@ int main() {
 
     if (enter_pressed) {
       // Immediate search on Enter key
-      filter_assets(search_state);
+      filter_assets(search_state, assets);
       search_state.last_buffer = current_input;
       search_state.input_tracking = current_input;
       search_state.pending_search = false;
@@ -632,14 +598,14 @@ int main() {
       ImGui::BeginGroup();
 
       // Get texture for this asset
-      unsigned int asset_texture = g_texture_manager.get_asset_texture(search_state.filtered_assets[i]);
+      unsigned int asset_texture = texture_manager.get_asset_texture(search_state.filtered_assets[i]);
 
       // Calculate display size based on asset type
       ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
       bool is_texture = (search_state.filtered_assets[i].type == AssetType::Texture && asset_texture != 0);
       if (is_texture) {
         int width, height;
-        if (g_texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height)) {
+        if (texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height)) {
           display_size =
             calculate_thumbnail_size(width, height, Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE, Config::MAX_THUMBNAIL_UPSCALE_FACTOR); // upscaling for grid
         }
@@ -708,7 +674,7 @@ int main() {
 
     // Show message if no assets found
     if (search_state.filtered_assets.empty()) {
-      if (g_assets.empty()) {
+      if (assets.empty()) {
         ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets found. Add files to the 'assets' directory.");
       }
       else {
@@ -735,13 +701,13 @@ int main() {
       const FileInfo& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
 
       // Check if selected asset is a model
-      if (selected_asset.type == AssetType::Model && g_texture_manager.is_preview_initialized()) {
+      if (selected_asset.type == AssetType::Model && texture_manager.is_preview_initialized()) {
         // Load the model if it's different from the currently loaded one
         if (selected_asset.full_path != search_state.current_model.path) {
           std::cout << "=== Loading Model in Main ===" << std::endl;
           std::cout << "Selected asset: " << selected_asset.full_path << std::endl;
           Model model;
-          if (load_model(selected_asset.full_path, model, g_texture_manager)) {
+          if (load_model(selected_asset.full_path, model, texture_manager)) {
             set_current_model(search_state.current_model, model);
             std::cout << "Model loaded successfully in main" << std::endl;
           }
@@ -770,7 +736,7 @@ int main() {
         ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
         // Display the 3D viewport
-        ImGui::Image((ImTextureID) (intptr_t) g_texture_manager.get_preview_texture(), viewport_size);
+        ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_preview_texture(), viewport_size);
 
         // Restore cursor for info below
         ImGui::SetCursorScreenPos(container_pos);
@@ -824,13 +790,13 @@ int main() {
       }
       else {
         // 2D Preview for non-model assets
-        unsigned int preview_texture = g_texture_manager.get_asset_texture(selected_asset);
+        unsigned int preview_texture = texture_manager.get_asset_texture(selected_asset);
         if (preview_texture != 0) {
           ImVec2 preview_size(avail_width, avail_height);
 
           if (selected_asset.type == AssetType::Texture) {
             int width, height;
-            if (g_texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
+            if (texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
               preview_size = calculate_thumbnail_size(width, height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
             }
           }
@@ -883,7 +849,7 @@ int main() {
         // Display dimensions for texture assets
         if (selected_asset.type == AssetType::Texture) {
           int width, height;
-          if (g_texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
+          if (texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
             ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
             ImGui::SameLine();
             ImGui::Text("%dx%d", width, height);
@@ -930,7 +896,7 @@ int main() {
   }
 
   // Cleanup texture manager
-  g_texture_manager.cleanup();
+  texture_manager.cleanup();
 
   // Cleanup 3D preview resources
   cleanup_model(search_state.current_model);
@@ -941,13 +907,13 @@ int main() {
   ImGui::DestroyContext();
 
   // Stop file watcher and close database
-  g_file_watcher.stop_watching();
+  file_watcher.stop_watching();
 
   // Cleanup event processor
   g_event_processor->stop();
   delete g_event_processor;
 
-  g_database.close();
+  database.close();
 
   glfwDestroyWindow(window);
   glfwTerminate();

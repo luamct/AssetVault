@@ -6,13 +6,18 @@
 #include <sstream>
 
 #include <glad/glad.h>
-#include <stb_image.h>
 
-// SVG support
-#include "nanosvg.h"
-#include "nanosvgrast.h"
+// Include stb_image for PNG loading
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+// Include NanoSVG for SVG support
+#define NANOSVG_IMPLEMENTATION
+#include "nanosvg.h"
+#define NANOSVGRAST_IMPLEMENTATION
+#include "nanosvgrast.h"
 
 #include "asset.h" // For SVG_THUMBNAIL_SIZE
 
@@ -473,24 +478,53 @@ bool TextureManager::initialize_preview_system() {
 
   const char* fragment_shader_source = R"(
     #version 330 core
-    out vec4 FragColor;
-
     in vec3 FragPos;
     in vec3 Normal;
     in vec2 TexCoord;
 
-    uniform sampler2D texture_diffuse1;
-    uniform bool has_texture;
-    uniform vec3 material_color;
+    uniform vec3 lightPos;
+    uniform vec3 viewPos;
+    uniform vec3 lightColor;
+    uniform sampler2D diffuseTexture;
+    uniform bool useTexture;
+    uniform vec3 materialColor;
+
+    out vec4 FragColor;
 
     void main()
     {
-        vec3 result;
-        if(has_texture) {
-            result = texture(texture_diffuse1, TexCoord).rgb;
-        } else {
-            result = material_color;
-        }
+        // Sample texture color or use material color
+        vec3 objectColor = useTexture ? texture(diffuseTexture, TexCoord).rgb : materialColor;
+
+        vec3 norm = normalize(Normal);
+        vec3 viewDir = normalize(viewPos - FragPos);
+
+        // Moderate ambient lighting to allow for some shadows
+        float ambientStrength = 0.25;
+        vec3 ambient = ambientStrength * lightColor;
+
+        // Main key light (from camera direction)
+        vec3 lightDir = normalize(lightPos - FragPos);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * lightColor * 0.7; // Slightly stronger main light
+
+        // Add subtle fill light from opposite direction to soften shadows
+        vec3 fillLightDir = normalize(-lightPos); // Opposite direction
+        float fillDiff = max(dot(norm, fillLightDir), 0.0);
+        vec3 fillLight = fillDiff * lightColor * 0.15; // Gentler fill light
+
+        // Softer specular highlights
+        float specularStrength = 0.2; // Reduced from 0.5
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64); // Higher for softer highlights
+        vec3 specular = specularStrength * spec * lightColor;
+
+        // Add subtle rim lighting for better shape definition
+        float rimStrength = 0.3;
+        float rimFactor = 1.0 - max(dot(viewDir, norm), 0.0);
+        vec3 rimLight = rimStrength * pow(rimFactor, 3.0) * lightColor;
+
+        vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor;
         FragColor = vec4(result, 1.0);
     }
   )";
@@ -589,10 +623,10 @@ void TextureManager::queue_texture_invalidation(const std::string& file_path) {
 
 void TextureManager::process_invalidation_queue() {
   std::lock_guard<std::mutex> lock(invalidation_mutex_);
-  
+
   while (!invalidation_queue_.empty()) {
     const std::string& file_path = invalidation_queue_.front();
-    
+
     // Remove from texture cache if present
     auto cache_it = texture_cache_.find(file_path);
     if (cache_it != texture_cache_.end()) {
@@ -601,7 +635,7 @@ void TextureManager::process_invalidation_queue() {
       }
       texture_cache_.erase(cache_it);
     }
-    
+
     invalidation_queue_.pop();
   }
 }
