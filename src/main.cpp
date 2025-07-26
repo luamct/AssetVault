@@ -63,11 +63,12 @@ ImVec2 calculate_thumbnail_size(
     calculated_height = original_height * scale_factor;
   }
 
+
   return ImVec2(calculated_width, calculated_height);
 }
 
 // Function to check if asset matches search terms
-bool asset_matches_search(const FileInfo& asset, const std::string& search_query) {
+bool asset_matches_search(const Asset& asset, const std::string& search_query) {
   if (search_query.empty()) {
     return true; // Show all assets when search is empty
   }
@@ -113,7 +114,7 @@ struct SearchState {
   bool pending_search = false;
 
   // UI state
-  std::vector<FileInfo> filtered_assets;
+  std::vector<Asset> filtered_assets;
   int selected_asset_index = -1; // -1 means no selection
 
   // Model preview state
@@ -121,7 +122,7 @@ struct SearchState {
 };
 
 // Function to filter assets based on search query
-void filter_assets(SearchState& search_state, const std::vector<FileInfo>& assets) {
+void filter_assets(SearchState& search_state, const std::vector<Asset>& assets) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   search_state.filtered_assets.clear();
@@ -167,16 +168,16 @@ void on_file_event(const FileEvent& event) {
 }
 
 // Perform initial scan and generate events for EventProcessor
-void perform_initial_scan(AssetDatabase& database, std::vector<FileInfo>& assets, EventProcessor* event_processor) {
+void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, EventProcessor* event_processor) {
   namespace fs = std::filesystem;
   auto scan_start = std::chrono::high_resolution_clock::now();
 
   std::cout << "Starting smart incremental asset scanning...\n";
 
   // Get current database state
-  std::vector<FileInfo> db_assets = database.get_all_assets();
+  std::vector<Asset> db_assets = database.get_all_assets();
   std::cout << "Database contains " << db_assets.size() << " assets\n";
-  std::unordered_map<std::string, FileInfo> db_map;
+  std::unordered_map<std::string, Asset> db_map;
   for (const auto& asset : db_assets) {
     db_map[asset.full_path] = asset;
   }
@@ -232,7 +233,7 @@ void perform_initial_scan(AssetDatabase& database, std::vector<FileInfo>& assets
     }
     else {
       // File exists in database - check if modified
-      const FileInfo& db_asset = db_it->second;
+      const Asset& db_asset = db_it->second;
 
       // Skip timestamp comparison for directories
       if (fs::is_directory(path)) {
@@ -293,7 +294,7 @@ void perform_initial_scan(AssetDatabase& database, std::vector<FileInfo>& assets
 
 int main() {
   // Local variables
-  std::vector<FileInfo> assets;
+  std::vector<Asset> assets;
   AssetDatabase database;
   FileWatcher file_watcher;
   TextureManager texture_manager;
@@ -603,13 +604,24 @@ int main() {
 
       // Calculate display size based on asset type
       ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
-      bool is_texture = (search_state.filtered_assets[i].type == AssetType::Texture && asset_texture != 0);
-      if (is_texture) {
-        int width, height;
-        if (texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height)) {
-          display_size =
-            calculate_thumbnail_size(width, height, Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE, Config::MAX_THUMBNAIL_UPSCALE_FACTOR); // upscaling for grid
-        }
+
+      // Check if this asset has actual thumbnail dimensions (textures or 3D model thumbnails)
+      bool has_thumbnail_dimensions = false;
+      int width = 0, height = 0;
+      if (search_state.filtered_assets[i].type == AssetType::Texture && asset_texture != 0) {
+        has_thumbnail_dimensions = texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height);
+      }
+      else if (search_state.filtered_assets[i].type == AssetType::Model && asset_texture != 0) {
+        // For 3D models, check if we have a thumbnail (will have dimensions in cache)
+        has_thumbnail_dimensions = texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height);
+      }
+
+      if (has_thumbnail_dimensions) {
+        display_size = calculate_thumbnail_size(
+          width, height,
+          Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE,
+          Config::MAX_THUMBNAIL_UPSCALE_FACTOR
+        ); // upscaling for grid
       }
       else {
         // For type icons, use a fixed fraction of the thumbnail size
@@ -699,7 +711,7 @@ int main() {
     float avail_height = avail_width;                           // Square aspect ratio for preview area
 
     if (search_state.selected_asset_index >= 0) {
-      const FileInfo& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
+      const Asset& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
 
       // Check if selected asset is a model
       if (selected_asset.type == AssetType::Model && texture_manager.is_preview_initialized()) {

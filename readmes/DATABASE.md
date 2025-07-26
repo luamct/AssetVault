@@ -54,11 +54,11 @@ if (!db.initialize("asset_inventory.db")) {
 }
 
 // Scan and store assets
-std::vector<FileInfo> files = scan_directory("assets");
+std::vector<Asset> files = scan_directory("assets");
 db.insert_assets_batch(files);
 
 // Query all assets
-std::vector<FileInfo> all_assets = db.get_all_assets();
+std::vector<Asset> all_assets = db.get_all_assets();
 
 // Get statistics
 int total_count = db.get_total_asset_count();
@@ -69,16 +69,16 @@ uint64_t total_size = db.get_total_size();
 
 ```cpp
 // Get all textures
-std::vector<FileInfo> textures = db.get_assets_by_type(AssetType::Texture);
+std::vector<Asset> textures = db.get_assets_by_type(AssetType::Texture);
 
 // Search by name
-std::vector<FileInfo> results = db.search_assets_by_name("texture");
+std::vector<Asset> results = db.search_assets_by_name("texture");
 
 // Get assets in specific directory
-std::vector<FileInfo> icon_files = db.get_assets_by_directory("icons");
+std::vector<Asset> icon_files = db.get_assets_by_directory("icons");
 
 // Get specific asset
-FileInfo asset = db.get_asset_by_path("/path/to/asset.png");
+Asset asset = db.get_asset_by_path("/path/to/asset.png");
 ```
 
 ### Statistics and Reporting
@@ -105,7 +105,7 @@ for (auto type : types) {
 
 ```cpp
 // Update an asset (e.g., after file modification)
-FileInfo updated_file = /* ... */;
+Asset updated_file = /* ... */;
 db.update_asset(updated_file);
 
 // Delete specific asset
@@ -126,7 +126,7 @@ For large numbers of files, always use batch operations:
 
 ```cpp
 // Good: Batch insert
-std::vector<FileInfo> files = scan_directory("large_assets_folder");
+std::vector<Asset> files = scan_directory("large_assets_folder");
 db.insert_assets_batch(files);
 
 // Avoid: Individual inserts for large datasets
@@ -219,7 +219,7 @@ void on_file_changed(const std::string& path, FileChangeType change_type) {
     switch (change_type) {
         case FileChangeType::Added:
         case FileChangeType::Modified:
-            FileInfo file = get_file_info(path);
+            Asset file = get_file_info(path);
             db.insert_asset(file); // INSERT OR REPLACE
             break;
         case FileChangeType::Deleted:

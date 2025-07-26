@@ -17,7 +17,7 @@ class TextureManager;
 // Unified event processor for both initial scan and runtime file events
 class EventProcessor {
 public:
-    EventProcessor(AssetDatabase& database, std::vector<FileInfo>& assets,
+    EventProcessor(AssetDatabase& database, std::vector<Asset>& assets,
         std::atomic<bool>& search_update_needed, TextureManager& texture_manager, size_t batch_size = 100);
     ~EventProcessor();
 
@@ -72,8 +72,8 @@ private:
     void process_renamed_events(const std::vector<FileEvent>& events);
 
     // Asset manipulation methods (thread-safe)
-    void add_asset(const FileInfo& asset);
-    void update_asset(const FileInfo& asset);
+    void add_asset(const Asset& asset);
+    void update_asset(const Asset& asset);
     void remove_asset(const std::string& path);
     void rename_asset(const std::string& old_path, const std::string& new_path);
 
@@ -82,7 +82,7 @@ private:
 
     // References to global state
     AssetDatabase& database_;
-    std::vector<FileInfo>& assets_;
+    std::vector<Asset>& assets_;
     std::atomic<bool>& search_update_needed_;
     TextureManager& texture_manager_;
 
@@ -106,6 +106,6 @@ private:
     // Root path for asset scanning
     std::string root_path_;
 
-    // Process individual file/directory into FileInfo
-    FileInfo process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);
+    // Process individual file/directory into Asset
+    Asset process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);
 };

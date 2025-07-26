@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "asset.h" // For AssetType and FileInfo
+#include "asset.h" // For AssetType and Asset
 
 // Texture cache entry structure
 struct TextureCacheEntry {
@@ -31,7 +31,7 @@ public:
   // Asset texture management
   unsigned int load_texture(const char* filename);
   unsigned int load_svg_texture(const char* filename, int target_width, int target_height);
-  unsigned int get_asset_texture(const FileInfo& asset);
+  unsigned int get_asset_texture(const Asset& asset);
   void load_type_textures();
   void cleanup_texture_cache(const std::string& path);
   bool get_texture_dimensions(const std::string& file_path, int& width, int& height);
@@ -42,7 +42,7 @@ public:
 
   // SVG thumbnail generation (static - doesn't need instance state)
   static bool generate_svg_thumbnail(const std::string& svg_path, const std::string& filename);
-  
+
   // 3D model thumbnail generation
   static bool generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);
 

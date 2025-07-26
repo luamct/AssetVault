@@ -204,16 +204,17 @@ void TextureManager::load_type_textures() {
   }
 }
 
-unsigned int TextureManager::get_asset_texture(const FileInfo& asset) {
+unsigned int TextureManager::get_asset_texture(const Asset& asset) {
   // Handle 3D models - check for thumbnails first, generate on-demand if needed
   if (asset.type == AssetType::Model) {
     // Generate thumbnail path using full relative path structure
+    // TODO: Move this logic to Asset::thumbnail_path()
     std::filesystem::path thumbnail_path = "thumbnails" / std::filesystem::path(asset.relative_path).replace_extension(".png");
 
     // Check if thumbnail exists and load it
     if (std::filesystem::exists(thumbnail_path)) {
-      // Check if thumbnail is already cached
-      auto it = texture_cache_.find(thumbnail_path.string());
+      // Check if thumbnail is already cached using original asset path as key
+      auto it = texture_cache_.find(asset.full_path);
       if (it != texture_cache_.end()) {
         return it->second.texture_id;
       }
@@ -221,8 +222,8 @@ unsigned int TextureManager::get_asset_texture(const FileInfo& asset) {
       // Load thumbnail
       unsigned int texture_id = load_texture(thumbnail_path.string().c_str());
       if (texture_id != 0) {
-        // Cache the thumbnail
-        TextureCacheEntry& entry = texture_cache_[thumbnail_path.string()];
+        // Cache the thumbnail using original asset path as key
+        TextureCacheEntry& entry = texture_cache_[asset.full_path];
         entry.texture_id = texture_id;
         entry.file_path = thumbnail_path.string();
         entry.width = Config::MODEL_THUMBNAIL_SIZE;
@@ -239,8 +240,8 @@ unsigned int TextureManager::get_asset_texture(const FileInfo& asset) {
           if (std::filesystem::exists(thumbnail_path)) {
             unsigned int texture_id = load_texture(thumbnail_path.string().c_str());
             if (texture_id != 0) {
-              // Cache the thumbnail
-              TextureCacheEntry& entry = texture_cache_[thumbnail_path.string()];
+              // Cache the thumbnail using original asset path as key
+              TextureCacheEntry& entry = texture_cache_[asset.full_path];
               entry.texture_id = texture_id;
               entry.file_path = thumbnail_path.string();
               entry.width = Config::MODEL_THUMBNAIL_SIZE;
@@ -447,6 +448,7 @@ bool TextureManager::generate_svg_thumbnail(const std::string& svg_path, const s
   return result != 0;
 }
 
+// TODO: Make this method not static and remove texture_manager from argument (just use this if needed)
 bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager) {
   // Check if preview system is initialized
   if (!texture_manager.is_preview_initialized()) {

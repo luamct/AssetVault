@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-EventProcessor::EventProcessor(AssetDatabase& database, std::vector<FileInfo>& assets,
+EventProcessor::EventProcessor(AssetDatabase& database, std::vector<Asset>& assets,
     std::atomic<bool>& search_update_needed, TextureManager& texture_manager, size_t batch_size)
     : database_(database), assets_(assets), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
@@ -180,13 +180,13 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
 // Batch processing methods for better performance
 
 void EventProcessor::process_created_events(const std::vector<FileEvent>& events) {
-    std::vector<FileInfo> files_to_insert;
+    std::vector<Asset> files_to_insert;
     files_to_insert.reserve(events.size());
 
     // Process all files first and increment progress per file
     for (const auto& event : events) {
         try {
-            FileInfo file_info = process_file(event.path, event.timestamp);
+            Asset file_info = process_file(event.path, event.timestamp);
             files_to_insert.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
         }
@@ -210,7 +210,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
 }
 
 void EventProcessor::process_modified_events(const std::vector<FileEvent>& events) {
-    std::vector<FileInfo> files_to_update;
+    std::vector<Asset> files_to_update;
     files_to_update.reserve(events.size());
 
     // Process all files first and increment progress per file
@@ -222,7 +222,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
                 continue;
             }
 
-            FileInfo file_info = process_file(event.path, event.timestamp);
+            Asset file_info = process_file(event.path, event.timestamp);
             files_to_update.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
 
@@ -281,7 +281,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
 
         // Partition: move elements to delete to the end
         auto new_end = std::partition(assets_.begin(), assets_.end(),
-            [&paths_set](const FileInfo& asset) {
+            [&paths_set](const Asset& asset) {
                 return paths_set.find(asset.full_path) == paths_set.end();
             });
 
@@ -294,7 +294,7 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
     // For renames, we still need to handle them individually since they involve
     // both delete and create operations with different paths
     std::vector<std::string> old_paths;
-    std::vector<FileInfo> new_files;
+    std::vector<Asset> new_files;
 
     old_paths.reserve(events.size());
     new_files.reserve(events.size());
@@ -302,7 +302,7 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
     for (const auto& event : events) {
         try {
             old_paths.push_back(event.old_path);
-            FileInfo file_info = process_file(event.path, event.timestamp);
+            Asset file_info = process_file(event.path, event.timestamp);
             new_files.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
 
@@ -335,7 +335,7 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
         // Remove old paths
         std::unordered_set<std::string> old_paths_set(old_paths.begin(), old_paths.end());
         auto new_end = std::partition(assets_.begin(), assets_.end(),
-            [&old_paths_set](const FileInfo& asset) {
+            [&old_paths_set](const Asset& asset) {
                 return old_paths_set.find(asset.full_path) == old_paths_set.end();
             });
         assets_.erase(new_end, assets_.end());
@@ -350,7 +350,7 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
 
 // Individual asset manipulation methods (still used by batch processing)
 
-void EventProcessor::add_asset(const FileInfo& asset) {
+void EventProcessor::add_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
 
     // Check if asset already exists (avoid duplicates)
@@ -363,7 +363,7 @@ void EventProcessor::add_asset(const FileInfo& asset) {
     }
 }
 
-void EventProcessor::update_asset(const FileInfo& asset) {
+void EventProcessor::update_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
 
     int index = find_asset_index(asset.full_path);
@@ -485,8 +485,8 @@ uint32_t EventProcessor::get_file_timestamp_for_comparison(const std::string& pa
 #endif
 }
 
-FileInfo EventProcessor::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
-    FileInfo file_info;
+Asset EventProcessor::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
+    Asset file_info;
 
     try {
         fs::path path(full_path);
@@ -546,7 +546,7 @@ FileInfo EventProcessor::process_file(const std::string& full_path, const std::c
             if (file_info.extension == ".svg" && file_info.type == AssetType::Texture) {
                 TextureManager::generate_svg_thumbnail(file_info.full_path, file_info.name);
             }
-            
+
             // Note: 3D model thumbnail generation is handled on-demand in get_asset_texture()
             // to avoid OpenGL context issues when called from background threads
         }

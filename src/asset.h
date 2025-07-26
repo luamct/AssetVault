@@ -25,9 +25,6 @@ struct Asset {
   Asset() : size(0), type(AssetType::Unknown) {}
 };
 
-// Type alias for backward compatibility during transition
-using FileInfo = Asset;
-
 // Asset type utility functions
 AssetType get_asset_type(const std::string& extension);
 std::string get_asset_type_string(AssetType type);

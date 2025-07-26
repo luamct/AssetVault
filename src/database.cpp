@@ -82,7 +82,7 @@ bool AssetDatabase::drop_tables() {
   return execute_sql(drop_table_sql);
 }
 
-bool AssetDatabase::insert_asset(const FileInfo& file) {
+bool AssetDatabase::insert_asset(const Asset& file) {
   const std::string sql = R"(
         INSERT OR REPLACE INTO assets
         (name, extension, full_path, relative_path, size, last_modified, created_or_modified_seconds, is_directory, asset_type, updated_at)
@@ -107,7 +107,7 @@ bool AssetDatabase::insert_asset(const FileInfo& file) {
   return success;
 }
 
-bool AssetDatabase::update_asset(const FileInfo& file) {
+bool AssetDatabase::update_asset(const Asset& file) {
   const std::string sql = R"(
         UPDATE assets SET
         name = ?, extension = ?, relative_path = ?, size = ?,
@@ -137,15 +137,15 @@ bool AssetDatabase::update_asset(const FileInfo& file) {
   uint32_t time_seconds = file.created_or_modified_seconds;
 
   bool success =
-      (sqlite3_bind_text(stmt, 1, file.name.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-       sqlite3_bind_text(stmt, 2, file.extension.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-       sqlite3_bind_text(stmt, 3, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-       sqlite3_bind_int64(stmt, 4, file.size) == SQLITE_OK &&
-       sqlite3_bind_text(stmt, 5, time_str.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-       sqlite3_bind_int(stmt, 6, time_seconds) == SQLITE_OK &&
-       sqlite3_bind_int(stmt, 7, file.is_directory ? 1 : 0) == SQLITE_OK &&
-       sqlite3_bind_text(stmt, 8, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-       sqlite3_bind_text(stmt, 9, file.full_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
+    (sqlite3_bind_text(stmt, 1, file.name.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 2, file.extension.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 3, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_int64(stmt, 4, file.size) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 5, time_str.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_int(stmt, 6, time_seconds) == SQLITE_OK &&
+      sqlite3_bind_int(stmt, 7, file.is_directory ? 1 : 0) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 8, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 9, file.full_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
 
   if (!success) {
     print_sqlite_error("binding parameters for update");
@@ -204,9 +204,9 @@ bool AssetDatabase::delete_assets_by_directory(const std::string& directory_path
   return success;
 }
 
-std::vector<FileInfo> AssetDatabase::get_all_assets() {
+std::vector<Asset> AssetDatabase::get_all_assets() {
   const std::string sql = "SELECT * FROM assets ORDER BY relative_path";
-  std::vector<FileInfo> assets;
+  std::vector<Asset> assets;
 
   sqlite3_stmt* stmt;
   if (!prepare_statement(sql, &stmt)) {
@@ -221,9 +221,9 @@ std::vector<FileInfo> AssetDatabase::get_all_assets() {
   return assets;
 }
 
-std::vector<FileInfo> AssetDatabase::get_assets_by_type(AssetType type) {
+std::vector<Asset> AssetDatabase::get_assets_by_type(AssetType type) {
   const std::string sql = "SELECT * FROM assets WHERE asset_type = ? ORDER BY relative_path";
-  std::vector<FileInfo> assets;
+  std::vector<Asset> assets;
 
   sqlite3_stmt* stmt;
   if (!prepare_statement(sql, &stmt)) {
@@ -241,10 +241,10 @@ std::vector<FileInfo> AssetDatabase::get_assets_by_type(AssetType type) {
   return assets;
 }
 
-std::vector<FileInfo> AssetDatabase::get_assets_by_directory(const std::string& directory_path) {
+std::vector<Asset> AssetDatabase::get_assets_by_directory(const std::string& directory_path) {
   const std::string sql = "SELECT * FROM assets WHERE relative_path LIKE ? || '%' ORDER BY "
-                          "relative_path";
-  std::vector<FileInfo> assets;
+    "relative_path";
+  std::vector<Asset> assets;
 
   sqlite3_stmt* stmt;
   if (!prepare_statement(sql, &stmt)) {
@@ -261,9 +261,9 @@ std::vector<FileInfo> AssetDatabase::get_assets_by_directory(const std::string& 
   return assets;
 }
 
-FileInfo AssetDatabase::get_asset_by_path(const std::string& full_path) {
+Asset AssetDatabase::get_asset_by_path(const std::string& full_path) {
   const std::string sql = "SELECT * FROM assets WHERE full_path = ?";
-  FileInfo file;
+  Asset file;
 
   sqlite3_stmt* stmt;
   if (!prepare_statement(sql, &stmt)) {
@@ -280,9 +280,9 @@ FileInfo AssetDatabase::get_asset_by_path(const std::string& full_path) {
   return file;
 }
 
-std::vector<FileInfo> AssetDatabase::search_assets_by_name(const std::string& search_term) {
+std::vector<Asset> AssetDatabase::search_assets_by_name(const std::string& search_term) {
   const std::string sql = "SELECT * FROM assets WHERE name LIKE ? ORDER BY relative_path";
-  std::vector<FileInfo> assets;
+  std::vector<Asset> assets;
 
   sqlite3_stmt* stmt;
   if (!prepare_statement(sql, &stmt)) {
@@ -374,7 +374,7 @@ uint64_t AssetDatabase::get_size_by_type(AssetType type) {
   return total_size;
 }
 
-bool AssetDatabase::insert_assets_batch(const std::vector<FileInfo>& files) {
+bool AssetDatabase::insert_assets_batch(const std::vector<Asset>& files) {
   if (files.empty()) {
     return true;
   }
@@ -394,14 +394,15 @@ bool AssetDatabase::insert_assets_batch(const std::vector<FileInfo>& files) {
 
   if (success) {
     execute_sql("COMMIT");
-  } else {
+  }
+  else {
     execute_sql("ROLLBACK");
   }
 
   return success;
 }
 
-bool AssetDatabase::update_assets_batch(const std::vector<FileInfo>& files) {
+bool AssetDatabase::update_assets_batch(const std::vector<Asset>& files) {
   if (files.empty()) {
     return true;
   }
@@ -421,7 +422,8 @@ bool AssetDatabase::update_assets_batch(const std::vector<FileInfo>& files) {
 
   if (success) {
     execute_sql("COMMIT");
-  } else {
+  }
+  else {
     execute_sql("ROLLBACK");
   }
 
@@ -448,7 +450,8 @@ bool AssetDatabase::delete_assets_batch(const std::vector<std::string>& paths) {
 
   if (success) {
     execute_sql("COMMIT");
-  } else {
+  }
+  else {
     execute_sql("ROLLBACK");
   }
 
@@ -489,7 +492,7 @@ void AssetDatabase::finalize_statement(sqlite3_stmt* stmt) {
   }
 }
 
-bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const FileInfo& file) {
+bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const Asset& file) {
   int param = 1;
 
   // Convert time_point to string for storage
@@ -511,14 +514,14 @@ bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const FileIn
 
   // Use SQLITE_TRANSIENT instead of SQLITE_STATIC for better string handling
   if (sqlite3_bind_text(stmt, param++, file.name.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-      sqlite3_bind_text(stmt, param++, file.extension.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-      sqlite3_bind_text(stmt, param++, file.full_path.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-      sqlite3_bind_text(stmt, param++, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-      sqlite3_bind_int64(stmt, param++, file.size) != SQLITE_OK ||
-      sqlite3_bind_text(stmt, param++, time_str.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-      sqlite3_bind_int(stmt, param++, time_seconds) != SQLITE_OK ||
-      sqlite3_bind_int(stmt, param++, file.is_directory ? 1 : 0) != SQLITE_OK ||
-      sqlite3_bind_text(stmt, param++, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK) {
+    sqlite3_bind_text(stmt, param++, file.extension.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+    sqlite3_bind_text(stmt, param++, file.full_path.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+    sqlite3_bind_text(stmt, param++, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+    sqlite3_bind_int64(stmt, param++, file.size) != SQLITE_OK ||
+    sqlite3_bind_text(stmt, param++, time_str.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+    sqlite3_bind_int(stmt, param++, time_seconds) != SQLITE_OK ||
+    sqlite3_bind_int(stmt, param++, file.is_directory ? 1 : 0) != SQLITE_OK ||
+    sqlite3_bind_text(stmt, param++, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK) {
     print_sqlite_error("binding parameters");
     return false;
   }
@@ -526,8 +529,8 @@ bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const FileIn
   return true;
 }
 
-FileInfo AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
-  FileInfo file;
+Asset AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
+  Asset file;
 
   file.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
   file.extension = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
