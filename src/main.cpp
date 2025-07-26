@@ -319,19 +319,6 @@ int main() {
     return -1;
   }
 
-  // Perform initial scan synchronously before starting UI
-  // This ensures all events are queued before the main loop begins
-  perform_initial_scan(database, assets, g_event_processor);
-
-  // Start file watcher after initial scan
-  std::cout << "Starting file watcher...\n";
-  if (file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event)) {
-    std::cout << "File watcher started successfully\n";
-  }
-  else {
-    std::cerr << "Failed to start file watcher\n";
-  }
-
   // Initialize GLFW
   if (!glfwInit()) {
     std::cerr << "Failed to initialize GLFW\n";
@@ -390,6 +377,20 @@ int main() {
   // Initialize 3D preview system
   if (!texture_manager.initialize_preview_system()) {
     std::cerr << "Warning: Failed to initialize 3D preview system\n";
+  }
+
+  // Now that OpenGL and preview system are ready, perform initial scan
+  // This ensures thumbnail generation can work properly
+  std::cout << "Performing initial asset scan...\n";
+  perform_initial_scan(database, assets, g_event_processor);
+
+  // Start file watcher after initial scan
+  std::cout << "Starting file watcher...\n";
+  if (file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event)) {
+    std::cout << "File watcher started successfully\n";
+  }
+  else {
+    std::cerr << "Failed to start file watcher\n";
   }
 
   // Search state

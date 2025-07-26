@@ -22,6 +22,9 @@ namespace Config {
     constexpr float TEXT_MARGIN = 20.0f;         // Space below thumbnail for text positioning
     constexpr float TEXT_HEIGHT = 20.0f;         // Height reserved for text
     constexpr float ICON_SCALE = 0.5f;           // Icon occupies 50% of the thumbnail area
+    
+    // 3D model thumbnail generation
+    constexpr int MODEL_THUMBNAIL_SIZE = 180;    // Size for generated 3D model thumbnails
 
     // Preview panel layout
     constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;     // Margin from window right edge

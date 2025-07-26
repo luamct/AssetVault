@@ -20,6 +20,8 @@
 #include "nanosvgrast.h"
 
 #include "asset.h" // For SVG_THUMBNAIL_SIZE
+#include "config.h" // For MODEL_THUMBNAIL_SIZE
+#include "3d.h" // For Model, load_model, render_model, cleanup_model
 
 TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
@@ -203,7 +205,62 @@ void TextureManager::load_type_textures() {
 }
 
 unsigned int TextureManager::get_asset_texture(const FileInfo& asset) {
-  // For non-texture assets, return type-specific icon
+  // Handle 3D models - check for thumbnails first, generate on-demand if needed
+  if (asset.type == AssetType::Model) {
+    // Generate thumbnail path using full relative path structure
+    std::filesystem::path thumbnail_path = "thumbnails" / std::filesystem::path(asset.relative_path).replace_extension(".png");
+
+    // Check if thumbnail exists and load it
+    if (std::filesystem::exists(thumbnail_path)) {
+      // Check if thumbnail is already cached
+      auto it = texture_cache_.find(thumbnail_path.string());
+      if (it != texture_cache_.end()) {
+        return it->second.texture_id;
+      }
+
+      // Load thumbnail
+      unsigned int texture_id = load_texture(thumbnail_path.string().c_str());
+      if (texture_id != 0) {
+        // Cache the thumbnail
+        TextureCacheEntry& entry = texture_cache_[thumbnail_path.string()];
+        entry.texture_id = texture_id;
+        entry.file_path = thumbnail_path.string();
+        entry.width = Config::MODEL_THUMBNAIL_SIZE;
+        entry.height = Config::MODEL_THUMBNAIL_SIZE;
+        return texture_id;
+      }
+    }
+    else {
+      // Thumbnail doesn't exist - try to generate it on-demand
+      // This only works if we're in the main thread with OpenGL context
+      if (is_preview_initialized() && std::filesystem::exists(asset.full_path)) {
+        if (generate_3d_model_thumbnail(asset.full_path, asset.relative_path, *this)) {
+          // Thumbnail was successfully generated, try to load it
+          if (std::filesystem::exists(thumbnail_path)) {
+            unsigned int texture_id = load_texture(thumbnail_path.string().c_str());
+            if (texture_id != 0) {
+              // Cache the thumbnail
+              TextureCacheEntry& entry = texture_cache_[thumbnail_path.string()];
+              entry.texture_id = texture_id;
+              entry.file_path = thumbnail_path.string();
+              entry.width = Config::MODEL_THUMBNAIL_SIZE;
+              entry.height = Config::MODEL_THUMBNAIL_SIZE;
+              return texture_id;
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback to model icon if no thumbnail or generation failed
+    auto it = type_icons_.find(asset.type);
+    if (it != type_icons_.end()) {
+      return it->second;
+    }
+    return default_texture_;
+  }
+
+  // For other non-texture assets, return type-specific icon
   if (asset.type != AssetType::Texture) {
     auto it = type_icons_.find(asset.type);
     if (it != type_icons_.end()) {
@@ -388,6 +445,104 @@ bool TextureManager::generate_svg_thumbnail(const std::string& svg_path, const s
   nsvgDelete(image);
 
   return result != 0;
+}
+
+bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager) {
+  // Check if preview system is initialized
+  if (!texture_manager.is_preview_initialized()) {
+    std::cerr << "Cannot generate 3D model thumbnail: preview system not initialized" << std::endl;
+    return false;
+  }
+
+  // Create thumbnail directory path
+  std::filesystem::path thumbnail_path = "thumbnails" / std::filesystem::path(relative_path).replace_extension(".png");
+
+  // Create directory structure if it doesn't exist
+  std::filesystem::path thumbnail_dir = thumbnail_path.parent_path();
+  if (!std::filesystem::exists(thumbnail_dir)) {
+    try {
+      std::filesystem::create_directories(thumbnail_dir);
+    }
+    catch (const std::filesystem::filesystem_error& e) {
+      std::cerr << "Failed to create thumbnail directory " << thumbnail_dir << ": " << e.what() << std::endl;
+      return false;
+    }
+  }
+
+  // Load the 3D model
+  Model model;
+  if (!load_model(model_path, model, texture_manager)) {
+    std::cerr << "Failed to load 3D model for thumbnail generation: " << model_path << std::endl;
+    return false;
+  }
+
+  // Create temporary framebuffer for thumbnail rendering
+  unsigned int temp_framebuffer, temp_texture, temp_depth_texture;
+  const int thumbnail_size = Config::MODEL_THUMBNAIL_SIZE;
+
+  // Create framebuffer
+  glGenFramebuffers(1, &temp_framebuffer);
+  glBindFramebuffer(GL_FRAMEBUFFER, temp_framebuffer);
+
+  // Create color texture
+  glGenTextures(1, &temp_texture);
+  glBindTexture(GL_TEXTURE_2D, temp_texture);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, thumbnail_size, thumbnail_size, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, temp_texture, 0);
+
+  // Create depth texture
+  glGenTextures(1, &temp_depth_texture);
+  glBindTexture(GL_TEXTURE_2D, temp_depth_texture);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, thumbnail_size, thumbnail_size, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, temp_depth_texture, 0);
+
+  // Check framebuffer completeness
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    std::cerr << "Thumbnail framebuffer is not complete!" << std::endl;
+    glDeleteFramebuffers(1, &temp_framebuffer);
+    glDeleteTextures(1, &temp_texture);
+    glDeleteTextures(1, &temp_depth_texture);
+    cleanup_model(model);
+    return false;
+  }
+
+  // Render model to framebuffer
+  glViewport(0, 0, thumbnail_size, thumbnail_size);
+  glClearColor(0.0f, 0.0f, 0.0f, 0.0f); // Transparent background for thumbnails
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  // Render the model using existing render_model function
+  render_model(model, texture_manager);
+
+  // Read pixels from framebuffer (no flipping needed - already correct orientation)
+  std::vector<unsigned char> pixels(thumbnail_size * thumbnail_size * 4);
+  glReadPixels(0, 0, thumbnail_size, thumbnail_size, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+  // Save as PNG
+  int result = stbi_write_png(
+    thumbnail_path.string().c_str(),
+    thumbnail_size, thumbnail_size, 4,
+    pixels.data(),
+    thumbnail_size * 4
+  );
+
+  // Cleanup OpenGL resources
+  glDeleteFramebuffers(1, &temp_framebuffer);
+  glDeleteTextures(1, &temp_texture);
+  glDeleteTextures(1, &temp_depth_texture);
+  cleanup_model(model);
+
+  // Restore original framebuffer
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+  if (!result) {
+    std::cerr << "Failed to write 3D model thumbnail: " << thumbnail_path.string() << std::endl;
+    return false;
+  }
+
+  return true;
 }
 
 unsigned int TextureManager::load_texture_for_model(const std::string& filepath) {

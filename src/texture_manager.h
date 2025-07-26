@@ -42,6 +42,9 @@ public:
 
   // SVG thumbnail generation (static - doesn't need instance state)
   static bool generate_svg_thumbnail(const std::string& svg_path, const std::string& filename);
+  
+  // 3D model thumbnail generation
+  static bool generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);
 
   // Texture cache invalidation (thread-safe)
   void queue_texture_invalidation(const std::string& file_path);

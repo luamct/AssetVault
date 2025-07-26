@@ -546,6 +546,9 @@ FileInfo EventProcessor::process_file(const std::string& full_path, const std::c
             if (file_info.extension == ".svg" && file_info.type == AssetType::Texture) {
                 TextureManager::generate_svg_thumbnail(file_info.full_path, file_info.name);
             }
+            
+            // Note: 3D model thumbnail generation is handled on-demand in get_asset_texture()
+            // to avoid OpenGL context issues when called from background threads
         }
         else {
             // Directory-specific information
