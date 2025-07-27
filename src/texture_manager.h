@@ -30,8 +30,10 @@ public:
 
   // Asset texture management
   unsigned int load_texture(const char* filename);
+  unsigned int load_texture(const char* filename, int* out_width, int* out_height);
   unsigned int load_svg_texture(const char* filename, int target_width, int target_height, int* actual_width = nullptr, int* actual_height = nullptr);
   unsigned int get_asset_texture(const Asset& asset);
+  const std::string& u8_path(const Asset& asset);
   void load_type_textures();
   void cleanup_texture_cache(const std::string& path);
   bool get_texture_dimensions(const std::string& file_path, int& width, int& height);
@@ -47,6 +49,7 @@ public:
   // Texture cache invalidation (thread-safe)
   void queue_texture_invalidation(const std::string& file_path);
   void process_invalidation_queue();
+  void clear_texture_cache(); // Clear all cached textures (for path encoding changes)
 
   // 3D preview system
   bool initialize_preview_system();

@@ -17,14 +17,14 @@
 // Structure to track pending file events
 struct PendingFileEvent {
   FileEventType original_type;
-  std::string path;
-  std::string old_path;  // For rename events
+  std::filesystem::path path;
+  std::filesystem::path old_path;  // For rename events
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
   PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
 
-  PendingFileEvent(FileEventType type, const std::string& p, const std::string& old = "")
+  PendingFileEvent(FileEventType type, const std::filesystem::path& p, const std::filesystem::path& old = std::filesystem::path())
       : original_type(type), path(p), old_path(old), last_activity(std::chrono::steady_clock::now()), is_active(true) {}
 };
 
@@ -43,7 +43,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
   DWORD bytes_returned;
 
   // Timer-based event tracking
-  std::unordered_map<std::string, PendingFileEvent> pending_events;
+  std::unordered_map<std::filesystem::path, PendingFileEvent> pending_events;
   std::mutex pending_events_mutex;
   std::thread timer_thread;
   std::atomic<bool> timer_should_stop;
@@ -148,7 +148,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
   void timer_loop() {
     while (!timer_should_stop.load()) {
       auto now = std::chrono::steady_clock::now();
-      std::vector<std::pair<std::string, PendingFileEvent>> events_to_process;
+      std::vector<std::pair<std::filesystem::path, PendingFileEvent>> events_to_process;
 
       {
         std::lock_guard<std::mutex> lock(pending_events_mutex);
@@ -196,7 +196,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
     }
   }
 
-  void process_raw_file_event(FileEventType raw_type, const std::string& full_path, const std::string& old_path = "") {
+  void process_raw_file_event(FileEventType raw_type, const std::filesystem::path& full_path, const std::filesystem::path& old_path = std::filesystem::path()) {
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
     // For Deleted and Renamed, process immediately
@@ -262,12 +262,11 @@ class WindowsFileWatcher : public FileWatcherImpl {
     const FILE_NOTIFY_INFORMATION* p_notify = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(change_buffer);
 
     while (p_notify) {
-      // Convert wide string to UTF-8 properly
+      // Convert wide string to fs::path directly (preserves Unicode correctly)
       std::wstring wide_name(p_notify->FileName, p_notify->FileNameLength / sizeof(WCHAR));
-      std::string file_name = wide_string_to_utf8(wide_name);
-
-      // Create full path
-      std::string full_path = watched_path + "\\" + file_name;
+      
+      // Create full path using fs::path to handle Unicode properly
+      std::filesystem::path full_path = std::filesystem::path(watched_path) / wide_name;
 
       // Determine raw event type
       FileEventType raw_event_type = FileEventType::Modified;  // Default

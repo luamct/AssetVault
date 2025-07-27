@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <filesystem>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -56,7 +57,7 @@ public:
     std::mutex& get_assets_mutex() { return assets_mutex_; }
 
     // Static helper for file timestamp comparison (Windows-specific)
-    static uint32_t get_file_timestamp_for_comparison(const std::string& path);
+    static uint32_t get_file_timestamp_for_comparison(const std::filesystem::path& path);
 
 private:
     // Background thread function
@@ -107,5 +108,5 @@ private:
     std::string root_path_;
 
     // Process individual file/directory into Asset
-    Asset process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);
+    Asset process_file(const std::filesystem::path& full_path, const std::chrono::system_clock::time_point& timestamp);
 };

@@ -77,12 +77,21 @@ void TextureManager::cleanup_all_textures() {
 }
 
 unsigned int TextureManager::load_texture(const char* filename) {
+  int width, height;
+  return load_texture(filename, &width, &height);
+}
+
+unsigned int TextureManager::load_texture(const char* filename, int* out_width, int* out_height) {
   int width, height, channels;
   unsigned char* data = stbi_load(filename, &width, &height, &channels, 4);
   if (!data) {
     std::cerr << "Failed to load texture: " << filename << '\n';
     return 0;
   }
+
+  // Return dimensions if requested
+  if (out_width) *out_width = width;
+  if (out_height) *out_height = height;
 
   unsigned int texture_id;
   glGenTextures(1, &texture_id);
@@ -209,16 +218,20 @@ void TextureManager::load_type_textures() {
 }
 
 unsigned int TextureManager::get_asset_texture(const Asset& asset) {
+  const auto u8_path = asset.full_path.u8string();
+
   // Handle 3D models - check for thumbnails first, generate on-demand if needed
   if (asset.type == AssetType::Model) {
     // Generate thumbnail path using full relative path structure
     // TODO: Move this logic to Asset::thumbnail_path()
-    std::filesystem::path thumbnail_path = "thumbnails" / std::filesystem::path(asset.relative_path).replace_extension(".png");
+    std::filesystem::path asset_root(Config::ASSET_ROOT_DIRECTORY);
+    std::filesystem::path relative_path = std::filesystem::relative(asset.full_path, asset_root);
+    std::filesystem::path thumbnail_path = "thumbnails" / relative_path.replace_extension(".png");
 
     // Check if thumbnail exists and load it
     if (std::filesystem::exists(thumbnail_path)) {
       // Check if thumbnail is already cached using original asset path as key
-      auto it = texture_cache_.find(asset.full_path);
+      auto it = texture_cache_.find(u8_path);
       if (it != texture_cache_.end()) {
         return it->second.texture_id;
       }
@@ -227,7 +240,7 @@ unsigned int TextureManager::get_asset_texture(const Asset& asset) {
       unsigned int texture_id = load_texture(thumbnail_path.string().c_str());
       if (texture_id != 0) {
         // Cache the thumbnail using original asset path as key
-        TextureCacheEntry& entry = texture_cache_[asset.full_path];
+        TextureCacheEntry& entry = texture_cache_[u8_path];
         entry.texture_id = texture_id;
         entry.file_path = thumbnail_path.string();
         entry.width = Config::MODEL_THUMBNAIL_SIZE;
@@ -239,13 +252,13 @@ unsigned int TextureManager::get_asset_texture(const Asset& asset) {
       // Thumbnail doesn't exist - try to generate it on-demand
       // This only works if we're in the main thread with OpenGL context
       if (is_preview_initialized() && std::filesystem::exists(asset.full_path)) {
-        if (generate_3d_model_thumbnail(asset.full_path, asset.relative_path, *this)) {
+        if (generate_3d_model_thumbnail(u8_path, relative_path.u8string(), *this)) {
           // Thumbnail was successfully generated, try to load it
           if (std::filesystem::exists(thumbnail_path)) {
             unsigned int texture_id = load_texture(thumbnail_path.string().c_str());
             if (texture_id != 0) {
               // Cache the thumbnail using original asset path as key
-              TextureCacheEntry& entry = texture_cache_[asset.full_path];
+              TextureCacheEntry& entry = texture_cache_[u8_path];
               entry.texture_id = texture_id;
               entry.file_path = thumbnail_path.string();
               entry.width = Config::MODEL_THUMBNAIL_SIZE;
@@ -275,14 +288,13 @@ unsigned int TextureManager::get_asset_texture(const Asset& asset) {
   }
 
   // Check if texture is already cached
-  auto it = texture_cache_.find(asset.full_path);
+  auto it = texture_cache_.find(u8_path);
   if (it != texture_cache_.end()) {
     return it->second.texture_id;
   }
 
   // Check if file exists before attempting to load (defensive check for deleted files)
   if (!std::filesystem::exists(asset.full_path)) {
-    // Return type icon for missing texture files (no error spam)
     auto icon_it = type_icons_.find(asset.type);
     return (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
   }
@@ -292,34 +304,24 @@ unsigned int TextureManager::get_asset_texture(const Asset& asset) {
 
   // Handle SVG files - render on-demand directly to OpenGL texture
   if (asset.extension == ".svg") {
-    texture_id = load_svg_texture(asset.full_path.c_str(), Config::SVG_THUMBNAIL_SIZE, Config::SVG_THUMBNAIL_SIZE, &width, &height);
+    texture_id = load_svg_texture(asset.full_path.string().c_str(), Config::SVG_THUMBNAIL_SIZE, Config::SVG_THUMBNAIL_SIZE, &width, &height);
   }
   else {
     // Load regular texture using stb_image
-    texture_id = load_texture(asset.full_path.c_str());
-    if (texture_id != 0) {
-      // Get texture dimensions
-      int channels;
-      unsigned char* data = stbi_load(asset.full_path.c_str(), &width, &height, &channels, 4);
-      if (data) {
-        stbi_image_free(data);
-      }
-      else {
-        width = 0;
-        height = 0;
-      }
-    }
+    texture_id = load_texture(asset.full_path.string().c_str(), &width, &height);
   }
 
   if (texture_id == 0) {
-    std::cerr << "Failed to load texture: " << asset.full_path << '\n';
-    return 0;
+    std::cerr << "[TextureManager] Failed to load texture, returning default icon for: " << u8_path << '\n';
+    // Return type icon instead of 0
+    auto icon_it = type_icons_.find(asset.type);
+    return (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
   }
 
   // Cache the result
-  TextureCacheEntry& entry = texture_cache_[asset.full_path];
+  TextureCacheEntry& entry = texture_cache_[u8_path];
   entry.texture_id = texture_id;
-  entry.file_path = asset.full_path;
+  entry.file_path = u8_path;
   entry.width = width;
   entry.height = height;
 
@@ -694,4 +696,16 @@ void TextureManager::process_invalidation_queue() {
 
     invalidation_queue_.pop();
   }
+}
+
+void TextureManager::clear_texture_cache() {
+  std::lock_guard<std::mutex> lock(invalidation_mutex_);
+
+  // Clean up all cached textures (but preserve type icons and default texture)
+  for (auto& entry : texture_cache_) {
+    if (entry.second.texture_id != 0) {
+      glDeleteTextures(1, &entry.second.texture_id);
+    }
+  }
+  texture_cache_.clear();
 }

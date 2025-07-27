@@ -12,6 +12,10 @@
 #include <unordered_set>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -30,10 +34,17 @@
 static EventProcessor* g_event_processor = nullptr;
 
 bool load_roboto_font(ImGuiIO& io) {
-  // Load embedded Roboto font from external/fonts directory
-  ImFont* font = io.Fonts->AddFontFromFileTTF(Config::FONT_PATH, Config::FONT_SIZE);
+  // Load embedded Roboto font from external/fonts directory with Unicode support
+  ImFontConfig font_config;
+  font_config.OversampleH = 3;
+  font_config.OversampleV = 3;
+  
+  // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
+  const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
+  
+  ImFont* font = io.Fonts->AddFontFromFileTTF(Config::FONT_PATH, Config::FONT_SIZE, &font_config, glyph_ranges);
   if (font) {
-    std::cout << "Roboto font loaded successfully!\n";
+    std::cout << "Roboto font loaded successfully with Unicode support!\n";
     return true;
   }
 
@@ -76,7 +87,7 @@ bool asset_matches_search(const Asset& asset, const std::string& search_query) {
   std::string query_lower = to_lowercase(search_query);
   std::string name_lower = to_lowercase(asset.name);
   std::string extension_lower = to_lowercase(asset.extension);
-  std::string path_lower = to_lowercase(asset.full_path);
+  std::string path_lower = to_lowercase(asset.full_path.u8string());
 
   // Split search query into terms (space-separated)
   std::vector<std::string> search_terms;
@@ -187,7 +198,7 @@ void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, E
   std::cout << "Database contains " << db_assets.size() << " assets\n";
   std::unordered_map<std::string, Asset> db_map;
   for (const auto& asset : db_assets) {
-    db_map[asset.full_path] = asset;
+    db_map[asset.full_path.u8string()] = asset;
   }
 
   // Phase 1: Get filesystem paths (fast scan)
@@ -263,10 +274,10 @@ void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, E
 
   // Find files in database that no longer exist on filesystem
   for (const auto& db_asset : db_assets) {
-    if (found_paths.find(db_asset.full_path) == found_paths.end()) {
+    if (found_paths.find(db_asset.full_path.u8string()) == found_paths.end()) {
       // File no longer exists - create a Deleted event
       FileEventType event_type = db_asset.is_directory ? FileEventType::DirectoryDeleted : FileEventType::Deleted;
-      FileEvent event(event_type, db_asset.full_path);
+      FileEvent event(event_type, db_asset.full_path.u8string());
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
@@ -301,6 +312,13 @@ void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, E
 }
 
 int main() {
+#ifdef _WIN32
+  // Set console to UTF-8 mode for proper Unicode display
+  SetConsoleOutputCP(CP_UTF8);
+  SetConsoleCP(CP_UTF8);
+  std::cout << "Console set to UTF-8 mode for Unicode support\n";
+#endif
+
   // Local variables
   std::vector<Asset> assets;
   AssetDatabase database;
@@ -661,11 +679,11 @@ int main() {
       bool has_thumbnail_dimensions = false;
       int width = 0, height = 0;
       if (search_state.filtered_assets[i].type == AssetType::Texture && asset_texture != 0) {
-        has_thumbnail_dimensions = texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height);
+        has_thumbnail_dimensions = texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path.u8string(), width, height);
       }
       else if (search_state.filtered_assets[i].type == AssetType::Model && asset_texture != 0) {
         // For 3D models, check if we have a thumbnail (will have dimensions in cache)
-        has_thumbnail_dimensions = texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path, width, height);
+        has_thumbnail_dimensions = texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path.u8string(), width, height);
       }
 
       if (has_thumbnail_dimensions) {
@@ -764,11 +782,11 @@ int main() {
       // Check if selected asset is a model
       if (selected_asset.type == AssetType::Model && texture_manager.is_preview_initialized()) {
         // Load the model if it's different from the currently loaded one
-        if (selected_asset.full_path != search_state.current_model.path) {
+        if (selected_asset.full_path.u8string() != search_state.current_model.path) {
           std::cout << "=== Loading Model in Main ===" << std::endl;
-          std::cout << "Selected asset: " << selected_asset.full_path << std::endl;
+          std::cout << "Selected asset: " << selected_asset.full_path.u8string() << std::endl;
           Model model;
-          if (load_model(selected_asset.full_path, model, texture_manager)) {
+          if (load_model(selected_asset.full_path.u8string(), model, texture_manager)) {
             set_current_model(search_state.current_model, model);
             std::cout << "Model loaded successfully in main" << std::endl;
           }
@@ -810,7 +828,7 @@ int main() {
         // 3D Model information
         ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
-        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path).c_str());
+        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path.u8string()).c_str());
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
         ImGui::SameLine();
@@ -857,7 +875,7 @@ int main() {
 
           if (selected_asset.type == AssetType::Texture) {
             int width, height;
-            if (texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
+            if (texture_manager.get_texture_dimensions(selected_asset.full_path.u8string(), width, height)) {
               preview_size = calculate_thumbnail_size(width, height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
             }
           }
@@ -910,7 +928,7 @@ int main() {
         // Display dimensions for texture assets
         if (selected_asset.type == AssetType::Texture) {
           int width, height;
-          if (texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
+          if (texture_manager.get_texture_dimensions(selected_asset.full_path.u8string(), width, height)) {
             ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
             ImGui::SameLine();
             ImGui::Text("%dx%d", width, height);
@@ -919,7 +937,7 @@ int main() {
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
-        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path).c_str());
+        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path.u8string()).c_str());
 
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);

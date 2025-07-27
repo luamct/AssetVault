@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <filesystem>
 #include <string>
 
 using time_point = std::chrono::system_clock::time_point;
@@ -14,8 +15,7 @@ enum class AssetType { Texture, Model, Sound, Font, Shader, Document, Archive, D
 struct Asset {
   std::string name;          // File name (without path)
   std::string extension;     // File extension (lowercase)
-  std::string full_path;     // Full path to the file
-  std::string relative_path; // Path relative to the scanned directory
+  std::filesystem::path full_path; // Full path to the file
   uint64_t size;             // File size in bytes
   time_point last_modified;  // Last modification time (system clock - for user display)
   uint32_t created_or_modified_seconds; // Max of creation/modification time as seconds since Jan 1, 2000 (for fast comparison)

@@ -58,7 +58,6 @@ bool AssetDatabase::create_tables() {
             name TEXT NOT NULL,
             extension TEXT,
             full_path TEXT UNIQUE NOT NULL,
-            relative_path TEXT NOT NULL,
             size INTEGER NOT NULL,
             last_modified TEXT NOT NULL,
             created_or_modified_seconds INTEGER,
@@ -69,7 +68,6 @@ bool AssetDatabase::create_tables() {
         );
 
         CREATE INDEX IF NOT EXISTS idx_assets_full_path ON assets(full_path);
-        CREATE INDEX IF NOT EXISTS idx_assets_relative_path ON assets(relative_path);
         CREATE INDEX IF NOT EXISTS idx_assets_asset_type ON assets(asset_type);
         CREATE INDEX IF NOT EXISTS idx_assets_extension ON assets(extension);
     )";
@@ -85,8 +83,8 @@ bool AssetDatabase::drop_tables() {
 bool AssetDatabase::insert_asset(const Asset& file) {
   const std::string sql = R"(
         INSERT OR REPLACE INTO assets
-        (name, extension, full_path, relative_path, size, last_modified, created_or_modified_seconds, is_directory, asset_type, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (name, extension, full_path, size, last_modified, created_or_modified_seconds, is_directory, asset_type, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     )";
 
   sqlite3_stmt* stmt;
@@ -110,7 +108,7 @@ bool AssetDatabase::insert_asset(const Asset& file) {
 bool AssetDatabase::update_asset(const Asset& file) {
   const std::string sql = R"(
         UPDATE assets SET
-        name = ?, extension = ?, relative_path = ?, size = ?,
+        name = ?, extension = ?, size = ?,
         last_modified = ?, created_or_modified_seconds = ?, is_directory = ?, asset_type = ?, updated_at = CURRENT_TIMESTAMP
         WHERE full_path = ?
     )";
@@ -136,16 +134,18 @@ bool AssetDatabase::update_asset(const Asset& file) {
   // Use uint32_t seconds since Jan 1, 2000 directly
   uint32_t time_seconds = file.created_or_modified_seconds;
 
+  // Convert path to UTF-8 string for database storage
+  std::string full_path_utf8 = file.full_path.u8string();
+
   bool success =
     (sqlite3_bind_text(stmt, 1, file.name.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
       sqlite3_bind_text(stmt, 2, file.extension.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 3, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_int64(stmt, 4, file.size) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 5, time_str.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_int(stmt, 6, time_seconds) == SQLITE_OK &&
-      sqlite3_bind_int(stmt, 7, file.is_directory ? 1 : 0) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 8, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 9, file.full_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
+      sqlite3_bind_int64(stmt, 3, file.size) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 4, time_str.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_int(stmt, 5, time_seconds) == SQLITE_OK &&
+      sqlite3_bind_int(stmt, 6, file.is_directory ? 1 : 0) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 7, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 8, full_path_utf8.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
 
   if (!success) {
     print_sqlite_error("binding parameters for update");
@@ -185,7 +185,7 @@ bool AssetDatabase::delete_asset(const std::string& full_path) {
 }
 
 bool AssetDatabase::delete_assets_by_directory(const std::string& directory_path) {
-  const std::string sql = "DELETE FROM assets WHERE relative_path LIKE ? || '%'";
+  const std::string sql = "DELETE FROM assets WHERE full_path LIKE ? || '%'";
 
   sqlite3_stmt* stmt;
   if (!prepare_statement(sql, &stmt)) {
@@ -205,7 +205,7 @@ bool AssetDatabase::delete_assets_by_directory(const std::string& directory_path
 }
 
 std::vector<Asset> AssetDatabase::get_all_assets() {
-  const std::string sql = "SELECT * FROM assets ORDER BY relative_path";
+  const std::string sql = "SELECT * FROM assets ORDER BY full_path";
   std::vector<Asset> assets;
 
   sqlite3_stmt* stmt;
@@ -222,7 +222,7 @@ std::vector<Asset> AssetDatabase::get_all_assets() {
 }
 
 std::vector<Asset> AssetDatabase::get_assets_by_type(AssetType type) {
-  const std::string sql = "SELECT * FROM assets WHERE asset_type = ? ORDER BY relative_path";
+  const std::string sql = "SELECT * FROM assets WHERE asset_type = ? ORDER BY full_path";
   std::vector<Asset> assets;
 
   sqlite3_stmt* stmt;
@@ -242,8 +242,8 @@ std::vector<Asset> AssetDatabase::get_assets_by_type(AssetType type) {
 }
 
 std::vector<Asset> AssetDatabase::get_assets_by_directory(const std::string& directory_path) {
-  const std::string sql = "SELECT * FROM assets WHERE relative_path LIKE ? || '%' ORDER BY "
-    "relative_path";
+  const std::string sql = "SELECT * FROM assets WHERE full_path LIKE ? || '%' ORDER BY "
+    "full_path";
   std::vector<Asset> assets;
 
   sqlite3_stmt* stmt;
@@ -281,7 +281,7 @@ Asset AssetDatabase::get_asset_by_path(const std::string& full_path) {
 }
 
 std::vector<Asset> AssetDatabase::search_assets_by_name(const std::string& search_term) {
-  const std::string sql = "SELECT * FROM assets WHERE name LIKE ? ORDER BY relative_path";
+  const std::string sql = "SELECT * FROM assets WHERE name LIKE ? ORDER BY full_path";
   std::vector<Asset> assets;
 
   sqlite3_stmt* stmt;
@@ -512,11 +512,13 @@ bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const Asset&
   // Use uint32_t seconds since Jan 1, 2000 directly
   uint32_t time_seconds = file.created_or_modified_seconds;
 
+  // Convert path to UTF-8 string for database storage
+  std::string full_path_utf8 = file.full_path.u8string();
+
   // Use SQLITE_TRANSIENT instead of SQLITE_STATIC for better string handling
   if (sqlite3_bind_text(stmt, param++, file.name.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
     sqlite3_bind_text(stmt, param++, file.extension.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-    sqlite3_bind_text(stmt, param++, file.full_path.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-    sqlite3_bind_text(stmt, param++, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+    sqlite3_bind_text(stmt, param++, full_path_utf8.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
     sqlite3_bind_int64(stmt, param++, file.size) != SQLITE_OK ||
     sqlite3_bind_text(stmt, param++, time_str.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
     sqlite3_bind_int(stmt, param++, time_seconds) != SQLITE_OK ||
@@ -534,23 +536,25 @@ Asset AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
 
   file.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
   file.extension = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-  file.full_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-  file.relative_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-  file.size = sqlite3_column_int64(stmt, 5);
+
+  // Convert UTF-8 string from database to filesystem::path
+  const char* path_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+  file.full_path = std::filesystem::u8path(path_str);
+  file.size = sqlite3_column_int64(stmt, 4);
 
   // Parse time string back to time_point
-  std::string time_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+  std::string time_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
   std::tm tm = {};
   std::istringstream ss(time_str);
   ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
   file.last_modified = std::chrono::system_clock::from_time_t(std::mktime(&tm));
 
   // Read uint32_t seconds since Jan 1, 2000
-  file.created_or_modified_seconds = sqlite3_column_int(stmt, 7);
+  file.created_or_modified_seconds = sqlite3_column_int(stmt, 6);
 
-  file.is_directory = sqlite3_column_int(stmt, 8) != 0;
+  file.is_directory = sqlite3_column_int(stmt, 7) != 0;
 
-  std::string type_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+  std::string type_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
 
   // Use centralized conversion function
   file.type = get_asset_type_from_string(type_str);

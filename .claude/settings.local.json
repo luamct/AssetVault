@@ -9,7 +9,8 @@
       "Bash(mv:*)",
       "Bash(taskkill:*)",
       "Bash(grep:*)",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(sqlite3:*)"
     ],
     "deny": []
   }

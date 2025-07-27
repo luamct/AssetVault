@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -15,11 +16,11 @@ enum class FileEventType { Created, Modified, Deleted, Renamed, DirectoryCreated
 // File event structure
 struct FileEvent {
   FileEventType type;
-  std::string path;
-  std::string old_path;  // For rename events
+  std::filesystem::path path;
+  std::filesystem::path old_path;  // For rename events
   std::chrono::system_clock::time_point timestamp;
 
-  FileEvent(FileEventType t, const std::string& p, const std::string& old = "")
+  FileEvent(FileEventType t, const std::filesystem::path& p, const std::filesystem::path& old = "")
       : type(t), path(p), old_path(old), timestamp(std::chrono::system_clock::now()) {}
 };
 

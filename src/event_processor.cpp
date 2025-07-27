@@ -191,7 +191,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
             total_events_processed_++;  // Increment per file processed
         }
         catch (const std::exception& e) {
-            std::cerr << "Error processing created event for " << event.path << ": " << e.what() << std::endl;
+            std::cerr << "Error processing created event for " << event.path.u8string() << ": " << e.what() << std::endl;
             total_events_processed_++;  // Count failed attempts too
         }
     }
@@ -228,11 +228,11 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
 
             // Queue texture invalidation for modified texture assets
             if (file_info.type == AssetType::Texture) {
-                texture_manager_.queue_texture_invalidation(event.path);
+                texture_manager_.queue_texture_invalidation(event.path.u8string());
             }
         }
         catch (const std::exception& e) {
-            std::cerr << "Error processing modified event for " << event.path << ": " << e.what() << std::endl;
+            std::cerr << "Error processing modified event for " << event.path.u8string() << ": " << e.what() << std::endl;
             total_events_processed_++;  // Count failed attempts too
         }
     }
@@ -244,7 +244,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
         // Batch update assets vector
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_update) {
-            int index = find_asset_index(file.full_path);
+            int index = find_asset_index(file.full_path.u8string());
             if (index >= 0) {
                 assets_[index] = file;
             }
@@ -262,11 +262,11 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
 
     // Collect all paths to delete and increment progress per file
     for (const auto& event : events) {
-        paths_to_delete.push_back(event.path);
+        paths_to_delete.push_back(event.path.u8string());
         total_events_processed_++;  // Increment per file processed
 
         // Queue texture invalidation for deleted assets
-        texture_manager_.queue_texture_invalidation(event.path);
+        texture_manager_.queue_texture_invalidation(event.path.u8string());
     }
 
     // Batch delete from database
@@ -282,7 +282,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
         // Partition: move elements to delete to the end
         auto new_end = std::partition(assets_.begin(), assets_.end(),
             [&paths_set](const Asset& asset) {
-                return paths_set.find(asset.full_path) == paths_set.end();
+                return paths_set.find(asset.full_path.u8string()) == paths_set.end();
             });
 
         // Erase elements from new_end to end
@@ -301,20 +301,20 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
 
     for (const auto& event : events) {
         try {
-            old_paths.push_back(event.old_path);
+            old_paths.push_back(event.old_path.u8string());
             Asset file_info = process_file(event.path, event.timestamp);
             new_files.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
 
             // Queue texture invalidation for both old and new paths
-            texture_manager_.queue_texture_invalidation(event.old_path);
+            texture_manager_.queue_texture_invalidation(event.old_path.u8string());
             // Only invalidate new path if it's a texture asset
             if (file_info.type == AssetType::Texture) {
-                texture_manager_.queue_texture_invalidation(event.path);
+                texture_manager_.queue_texture_invalidation(event.path.u8string());
             }
         }
         catch (const std::exception& e) {
-            std::cerr << "Error processing renamed event for " << event.old_path << " -> " << event.path
+            std::cerr << "Error processing renamed event for " << event.old_path.u8string() << " -> " << event.path.u8string()
                 << ": " << e.what() << std::endl;
             total_events_processed_++;  // Count failed attempts too
         }
@@ -336,7 +336,7 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
         std::unordered_set<std::string> old_paths_set(old_paths.begin(), old_paths.end());
         auto new_end = std::partition(assets_.begin(), assets_.end(),
             [&old_paths_set](const Asset& asset) {
-                return old_paths_set.find(asset.full_path) == old_paths_set.end();
+                return old_paths_set.find(asset.full_path.u8string()) == old_paths_set.end();
             });
         assets_.erase(new_end, assets_.end());
 
@@ -354,7 +354,7 @@ void EventProcessor::add_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
 
     // Check if asset already exists (avoid duplicates)
-    int existing_index = find_asset_index(asset.full_path);
+    int existing_index = find_asset_index(asset.full_path.u8string());
     if (existing_index >= 0) {
         assets_[existing_index] = asset; // Update existing
     }
@@ -366,14 +366,14 @@ void EventProcessor::add_asset(const Asset& asset) {
 void EventProcessor::update_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
 
-    int index = find_asset_index(asset.full_path);
+    int index = find_asset_index(asset.full_path.u8string());
     if (index >= 0) {
         assets_[index] = asset;
     }
     else {
         // Asset not found, add it
         assets_.push_back(asset);
-        std::cerr << "Warning: Updated asset not found in memory, adding: " << asset.full_path << std::endl;
+        std::cerr << "Warning: Updated asset not found in memory, adding: " << asset.full_path.u8string() << std::endl;
     }
 }
 
@@ -394,23 +394,15 @@ void EventProcessor::rename_asset(const std::string& old_path, const std::string
 
     int index = find_asset_index(old_path);
     if (index >= 0) {
-        assets_[index].full_path = new_path;
-        assets_[index].name = fs::path(new_path).filename().string();
-        // Update relative path if needed
-        fs::path root(Config::ASSET_ROOT_DIRECTORY);
-        try {
-            assets_[index].relative_path = fs::relative(new_path, root).string();
-        }
-        catch (const fs::filesystem_error&) {
-            assets_[index].relative_path = new_path;
-        }
+        assets_[index].full_path = fs::u8path(new_path);
+        assets_[index].name = fs::path(new_path).filename().u8string();
     }
 }
 
 int EventProcessor::find_asset_index(const std::string& path) {
     // Linear search for now - can optimize with hash map later if needed
     for (size_t i = 0; i < assets_.size(); ++i) {
-        if (assets_[i].full_path == path) {
+        if (assets_[i].full_path.u8string() == path) {
             return static_cast<int>(i);
         }
     }
@@ -476,55 +468,44 @@ static uint32_t get_max_creation_or_modification_seconds(const fs::path& path) {
 #endif
 
 // Public static method for file timestamp comparison
-uint32_t EventProcessor::get_file_timestamp_for_comparison(const std::string& path) {
+uint32_t EventProcessor::get_file_timestamp_for_comparison(const std::filesystem::path& path) {
 #ifdef _WIN32
-    return get_max_creation_or_modification_seconds(fs::path(path));
+    return get_max_creation_or_modification_seconds(path);
 #else
     // TODO: Implement for other platforms
     return 0;
 #endif
 }
 
-Asset EventProcessor::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
+Asset EventProcessor::process_file(const std::filesystem::path& full_path, const std::chrono::system_clock::time_point& timestamp) {
     Asset file_info;
 
     try {
-        fs::path path(full_path);
         fs::path root(root_path_);
 
-        // Basic file information
+        // Basic file information (keep as filesystem::path for proper Unicode handling)
         file_info.full_path = full_path;
-        file_info.name = path.filename().string();
-        file_info.is_directory = fs::is_directory(path);
-
-        // Relative path from root
-        try {
-            file_info.relative_path = fs::relative(path, root).string();
-        }
-        catch (const fs::filesystem_error& e) {
-            // Fallback to full path if relative path calculation fails
-            file_info.relative_path = full_path;
-            std::cerr << "Warning: Could not calculate relative path for " << full_path << ": " << e.what() << std::endl;
-        }
+        file_info.name = full_path.filename().u8string();
+        file_info.is_directory = fs::is_directory(full_path);
 
         if (!file_info.is_directory) {
             // File-specific information
-            file_info.extension = path.extension().string();
+            file_info.extension = full_path.extension().string();
             file_info.type = get_asset_type(file_info.extension);
 
             try {
-                file_info.size = fs::file_size(path);
+                file_info.size = fs::file_size(full_path);
 
 #ifdef _WIN32
                 // Get both creation and modification time using Windows API
-                file_info.created_or_modified_seconds = get_max_creation_or_modification_seconds(path);
+                file_info.created_or_modified_seconds = get_max_creation_or_modification_seconds(full_path);
 #else
                 // TODO: Implement for other platforms
                 file_info.created_or_modified_seconds = 0;
 #endif
                 // Store display time as modification time (for user-facing display)
                 try {
-                    auto ftime = fs::last_write_time(path);
+                    auto ftime = fs::last_write_time(full_path);
                     auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
                         ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
                     );
@@ -533,11 +514,11 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
                 catch (const fs::filesystem_error& e) {
                     // Fallback to provided timestamp for display
                     file_info.last_modified = timestamp;
-                    std::cerr << "Warning: Using provided timestamp for display for " << full_path << ": " << e.what() << std::endl;
+                    std::cerr << "Warning: Using provided timestamp for display for " << full_path.u8string() << ": " << e.what() << std::endl;
                 }
             }
             catch (const fs::filesystem_error& e) {
-                std::cerr << "Warning: Could not get file info for " << file_info.full_path << ": " << e.what() << std::endl;
+                std::cerr << "Warning: Could not get file info for " << file_info.full_path.u8string() << ": " << e.what() << std::endl;
                 file_info.size = 0;
                 file_info.last_modified = timestamp;
             }
@@ -557,24 +538,24 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
 
             // Store display time as modification time (for user-facing display)
             try {
-                auto ftime = fs::last_write_time(path);
+                auto ftime = fs::last_write_time(full_path);
                 auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
                     ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
                 );
                 file_info.last_modified = sctp;
             }
             catch (const fs::filesystem_error& e) {
-                std::cerr << "Warning: Could not get modification time for directory " << file_info.full_path << ": "
+                std::cerr << "Warning: Could not get modification time for directory " << file_info.full_path.u8string() << ": "
                     << e.what() << std::endl;
                 file_info.last_modified = timestamp; // Fallback to provided timestamp
             }
         }
     }
     catch (const fs::filesystem_error& e) {
-        std::cerr << "Error creating file info for " << full_path << ": " << e.what() << std::endl;
+        std::cerr << "Error creating file info for " << full_path.u8string() << ": " << e.what() << std::endl;
         // Return minimal file info on error
         file_info.full_path = full_path;
-        file_info.name = fs::path(full_path).filename().string();
+        file_info.name = full_path.filename().u8string();
         file_info.last_modified = timestamp;
     }
 
