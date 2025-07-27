@@ -56,9 +56,6 @@ public:
     // Access to assets mutex for thread-safe filtering
     std::mutex& get_assets_mutex() { return assets_mutex_; }
 
-    // Static helper for file timestamp comparison (Windows-specific)
-    static uint32_t get_file_timestamp_for_comparison(const std::filesystem::path& path);
-
 private:
     // Background thread function
     void process_events();

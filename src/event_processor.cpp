@@ -166,14 +166,11 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     total_assets_processed += batch.size();
 
     // Calculate averages
-    double batch_avg = batch.size() > 0 ? (double) duration.count() / batch.size() : 0.0;
     double global_avg = total_assets_processed > 0 ? (double) total_processing_time_ms / total_assets_processed : 0.0;
 
     // Enhanced logging with both batch and global metrics
-    std::cout << "Batch of " << batch.size() << " assets completed in "
-        << duration.count() << "ms (" << std::fixed << std::setprecision(2)
-        << batch_avg << "ms per asset)" << std::endl;
-    std::cout << "Global average: " << global_avg << "ms per asset ("
+    std::cout << "Batch of " << batch.size() << " assets completed. " << std::fixed <<
+        std::setprecision(2) << "Running average of " << global_avg << "ms per asset ("
         << total_assets_processed << " total assets processed)" << std::endl;
 }
 
@@ -262,11 +259,12 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
 
     // Collect all paths to delete and increment progress per file
     for (const auto& event : events) {
-        paths_to_delete.push_back(event.path.u8string());
+        std::string path_utf8 = event.path.u8string();
+        paths_to_delete.push_back(path_utf8);
         total_events_processed_++;  // Increment per file processed
 
         // Queue texture invalidation for deleted assets
-        texture_manager_.queue_texture_invalidation(event.path.u8string());
+        texture_manager_.queue_texture_invalidation(path_utf8);
     }
 
     // Batch delete from database
@@ -409,73 +407,6 @@ int EventProcessor::find_asset_index(const std::string& path) {
     return -1;
 }
 
-// Helper functions for file time processing (Windows-specific)
-#ifdef _WIN32
-#include <windows.h>
-
-// Convert Windows FILETIME to seconds since January 1, 2000
-static uint32_t filetime_to_seconds_since_2000(const FILETIME& ft) {
-    // January 1, 2000 as Windows FILETIME (100-nanosecond intervals since January 1, 1601)
-    const uint64_t EPOCH_2000 = 125911584000000000ULL;
-
-    // Convert FILETIME to 64-bit value
-    uint64_t ft_as_uint64 = ((uint64_t) ft.dwHighDateTime << 32) | ft.dwLowDateTime;
-
-    // Calculate difference from Jan 1, 2000
-    if (ft_as_uint64 < EPOCH_2000) {
-        return 0; // File time is before our epoch
-    }
-
-    uint64_t intervals_since_2000 = ft_as_uint64 - EPOCH_2000;
-    uint64_t seconds_since_2000 = intervals_since_2000 / 10000000ULL; // Convert to seconds
-
-    // Clamp to uint32_t max
-    return (uint32_t) std::min(seconds_since_2000, (uint64_t) UINT32_MAX);
-}
-
-static uint32_t get_max_creation_or_modification_seconds(const fs::path& path) {
-    HANDLE hFile = CreateFileW(
-        path.wstring().c_str(),
-        GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr
-    );
-
-    if (hFile == INVALID_HANDLE_VALUE) {
-        std::cerr << "Warning: Could not open file for time reading: " << path << std::endl;
-        return 0;
-    }
-
-    FILETIME ftCreated, ftModified;
-    if (!GetFileTime(hFile, &ftCreated, nullptr, &ftModified)) {
-        std::cerr << "Warning: Could not get file times for: " << path << std::endl;
-        CloseHandle(hFile);
-        return 0;
-    }
-
-    CloseHandle(hFile);
-
-    // Convert both times to seconds since Jan 1, 2000
-    uint32_t creation_seconds = filetime_to_seconds_since_2000(ftCreated);
-    uint32_t modification_seconds = filetime_to_seconds_since_2000(ftModified);
-
-    // Return the more recent time
-    return std::max(creation_seconds, modification_seconds);
-}
-#endif
-
-// Public static method for file timestamp comparison
-uint32_t EventProcessor::get_file_timestamp_for_comparison(const std::filesystem::path& path) {
-#ifdef _WIN32
-    return get_max_creation_or_modification_seconds(path);
-#else
-    // TODO: Implement for other platforms
-    return 0;
-#endif
-}
 
 Asset EventProcessor::process_file(const std::filesystem::path& full_path, const std::chrono::system_clock::time_point& timestamp) {
     Asset file_info;
@@ -495,14 +426,6 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
 
             try {
                 file_info.size = fs::file_size(full_path);
-
-#ifdef _WIN32
-                // Get both creation and modification time using Windows API
-                file_info.created_or_modified_seconds = get_max_creation_or_modification_seconds(full_path);
-#else
-                // TODO: Implement for other platforms
-                file_info.created_or_modified_seconds = 0;
-#endif
                 // Store display time as modification time (for user-facing display)
                 try {
                     auto ftime = fs::last_write_time(full_path);
@@ -532,9 +455,6 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
             file_info.type = AssetType::Directory;
             file_info.extension = "";
             file_info.size = 0;
-
-            // Directories don't need timestamp tracking - we track individual files instead
-            file_info.created_or_modified_seconds = 0;
 
             // Store display time as modification time (for user-facing display)
             try {

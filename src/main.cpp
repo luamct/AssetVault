@@ -38,10 +38,10 @@ bool load_roboto_font(ImGuiIO& io) {
   ImFontConfig font_config;
   font_config.OversampleH = 3;
   font_config.OversampleV = 3;
-  
+
   // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
   const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
-  
+
   ImFont* font = io.Fonts->AddFontFromFileTTF(Config::FONT_PATH, Config::FONT_SIZE, &font_config, glyph_ranges);
   if (font) {
     std::cout << "Roboto font loaded successfully with Unicode support!\n";
@@ -196,13 +196,13 @@ void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, E
   // Get current database state
   std::vector<Asset> db_assets = database.get_all_assets();
   std::cout << "Database contains " << db_assets.size() << " assets\n";
-  std::unordered_map<std::string, Asset> db_map;
+  std::unordered_map<std::filesystem::path, Asset> db_map;
   for (const auto& asset : db_assets) {
-    db_map[asset.full_path.u8string()] = asset;
+    db_map[asset.full_path] = asset;
   }
 
   // Phase 1: Get filesystem paths (fast scan)
-  std::unordered_set<std::string> current_files;
+  std::unordered_set<std::filesystem::path> current_files;
   try {
     fs::path root(Config::ASSET_ROOT_DIRECTORY);
     if (!fs::exists(root) || !fs::is_directory(root)) {
@@ -215,11 +215,10 @@ void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, E
     // Single pass: Get all file paths
     for (const auto& entry : fs::recursive_directory_iterator(root)) {
       try {
-        std::string path_str = entry.path().string();
-        current_files.insert(path_str);
+        current_files.insert(entry.path());
       }
       catch (const fs::filesystem_error& e) {
-        std::cerr << "Warning: Could not access " << entry.path().string() << ": " << e.what() << '\n';
+        std::cerr << "Warning: Could not access " << entry.path().u8string() << ": " << e.what() << '\n';
         continue;
       }
     }
@@ -233,15 +232,12 @@ void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, E
 
   // Track what events need to be generated
   std::vector<FileEvent> events_to_queue;
-  std::unordered_set<std::string> found_paths;
 
   // Get current timestamp for all events
   auto current_time = std::chrono::system_clock::now();
 
-  // Compare filesystem state with database state
+  // Compare filesystem state with database state - only check for new files
   for (const auto& path : current_files) {
-    found_paths.insert(path);
-
     auto db_it = db_map.find(path);
     if (db_it == db_map.end()) {
       // File not in database - create a Created event
@@ -250,34 +246,17 @@ void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, E
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
-    else {
-      // File exists in database - check if modified
-      const Asset& db_asset = db_it->second;
-
-      // Skip timestamp comparison for directories
-      if (fs::is_directory(path)) {
-        continue;
-      }
-
-      // Get the max of creation and modification time for current file
-      uint32_t current_timestamp = EventProcessor::get_file_timestamp_for_comparison(path);
-
-      // Direct integer comparison
-      if (current_timestamp > db_asset.created_or_modified_seconds) {
-        // File has been modified - create a Modified event
-        FileEvent event(FileEventType::Modified, path);
-        event.timestamp = current_time;
-        events_to_queue.push_back(event);
-      }
-    }
+    // Skip expensive timestamp checks - file modifications will be caught by runtime file watcher
   }
+
+  std::cout << "Now looking for deleted files\n";
 
   // Find files in database that no longer exist on filesystem
   for (const auto& db_asset : db_assets) {
-    if (found_paths.find(db_asset.full_path.u8string()) == found_paths.end()) {
+    if (current_files.find(db_asset.full_path) == current_files.end()) {
       // File no longer exists - create a Deleted event
       FileEventType event_type = db_asset.is_directory ? FileEventType::DirectoryDeleted : FileEventType::Deleted;
-      FileEvent event(event_type, db_asset.full_path.u8string());
+      FileEvent event(event_type, db_asset.full_path);
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }

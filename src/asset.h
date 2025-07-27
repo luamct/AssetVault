@@ -18,7 +18,6 @@ struct Asset {
   std::filesystem::path full_path; // Full path to the file
   uint64_t size;             // File size in bytes
   time_point last_modified;  // Last modification time (system clock - for user display)
-  uint32_t created_or_modified_seconds; // Max of creation/modification time as seconds since Jan 1, 2000 (for fast comparison)
   bool is_directory = false; // Whether this is a directory
   AssetType type;            // Asset type enum
 

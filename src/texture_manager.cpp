@@ -111,17 +111,16 @@ unsigned int TextureManager::load_texture(const char* filename, int* out_width, 
 }
 
 unsigned int TextureManager::load_svg_texture(
-  const char* filename, int target_width, int target_height, int* actual_width, int* actual_height) {
-  std::cout << "Loading SVG: " << filename << std::endl;
-
+  const char* filename,
+  int target_width, int target_height,
+  int* actual_width, int* actual_height
+) {
   // Parse SVG directly from file like the nanosvg examples do
   NSVGimage* image = nsvgParseFromFile(filename, "px", 96.0f);
   if (!image) {
     std::cerr << "Failed to parse SVG: " << filename << '\n';
     return 0;
   }
-
-  std::cout << "SVG parsed successfully. Original size: " << image->width << "x" << image->height << std::endl;
 
   if (image->width <= 0 || image->height <= 0) {
     std::cerr << "Invalid SVG dimensions: " << image->width << "x" << image->height << std::endl;
@@ -137,8 +136,6 @@ unsigned int TextureManager::load_svg_texture(
   // Calculate actual output dimensions maintaining aspect ratio
   int w = static_cast<int>(image->width * scale);
   int h = static_cast<int>(image->height * scale);
-
-  std::cout << "Rasterizing at actual size: " << w << "x" << h << " (scale: " << scale << ")" << std::endl;
 
   if (w <= 0 || h <= 0) {
     std::cerr << "Invalid raster dimensions: " << w << "x" << h << std::endl;
@@ -179,8 +176,6 @@ unsigned int TextureManager::load_svg_texture(
 
   // Upload texture data at original size
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data);
-
-  std::cout << "OpenGL texture created successfully with ID: " << texture_id << std::endl;
 
   // Return actual dimensions if requested
   if (actual_width) *actual_width = w;
