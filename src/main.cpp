@@ -117,6 +117,11 @@ struct SearchState {
   std::vector<Asset> filtered_assets;
   int selected_asset_index = -1; // -1 means no selection
 
+  // Infinite scroll state
+  static constexpr int LOAD_BATCH_SIZE = 50;
+  int loaded_start_index = 0;    // Always 0, never changes
+  int loaded_end_index = 0;      // Grows as user scrolls down
+
   // Model preview state
   Model current_model;
 };
@@ -144,21 +149,24 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets) 
     if (asset_matches_search(asset, search_state.buffer)) {
       search_state.filtered_assets.push_back(asset);
       filtered_count++;
-
-      // Stop at maximum results until we have an infinite scroll implementation
-      if (search_state.filtered_assets.size() >= Config::MAX_SEARCH_RESULTS) {
-        break;
-      }
     }
   }
+
+  // Initialize loaded range for infinite scroll
+  search_state.loaded_start_index = 0;
+  search_state.loaded_end_index = std::min(
+    static_cast<int>(search_state.filtered_assets.size()),
+    SearchState::LOAD_BATCH_SIZE
+  );
 
   // Measure and print search time
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
 
-  std::cout << "[SEARCH] Filtered " << total_assets << " assets, found " << filtered_count
-    << " matches for '" << search_state.buffer << "' in "
-    << duration.count() / 1000.0 << "ms\n";
+  // std::cout << "[SEARCH] Filtered " << total_assets << " assets, found " << filtered_count
+  //   << " matches for '" << search_state.buffer << "' in "
+  //   << duration.count() / 1000.0 << "ms";
+  // std::cout << " (loaded first " << search_state.loaded_end_index << " items)" << std::endl;
 }
 
 // File event callback function (runs on background thread)
@@ -566,7 +574,7 @@ int main() {
         progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
         progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
 
-      ImGui::GetWindowDrawList()->AddText(text_pos, Theme::COLOR_WHITE_U32, progress_text);
+      ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(Theme::TEXT_DARK), progress_text);
     }
     // No "Ready" text - keep panel empty when not indexing
 
@@ -574,6 +582,12 @@ int main() {
 
     // ============ BOTTOM LEFT: Search Results ============
     ImGui::BeginChild("AssetGrid", ImVec2(left_width, bottom_height), true);
+
+    // Show total results count if we have results
+    if (!search_state.filtered_assets.empty()) {
+      ImGui::Text("Showing %d of %zu results", search_state.loaded_end_index, search_state.filtered_assets.size());
+      ImGui::Separator();
+    }
 
     // Calculate grid layout upfront since all items have the same size
     float available_width = left_width - 20.0f;                     // Account for padding
@@ -584,22 +598,60 @@ int main() {
     if (columns < 1)
       columns = 1;
 
-    // Display filtered assets in a proper grid
-    for (size_t i = 0; i < search_state.filtered_assets.size(); i++) {
+    // Calculate visible range
+    float current_scroll_y = ImGui::GetScrollY();
+    float viewport_height = ImGui::GetWindowHeight();
+
+    // Calculate visible range for lazy loading
+    float row_height = item_height + Config::GRID_SPACING;
+    int first_visible_row = static_cast<int>(current_scroll_y / row_height);
+    int last_visible_row = static_cast<int>((current_scroll_y + viewport_height) / row_height);
+
+    // Add margin for smooth scrolling (1 row above/below)
+    first_visible_row = std::max(0, first_visible_row - 1);
+    last_visible_row = last_visible_row + 1;
+
+    int first_visible_item = first_visible_row * columns;
+    int last_visible_item = std::min(search_state.loaded_end_index,
+      (last_visible_row + 1) * columns);
+
+    // Check if we need to load more items (when approaching the end of loaded items)
+    int load_threshold_row = (search_state.loaded_end_index - SearchState::LOAD_BATCH_SIZE / 2) / columns;
+    if (last_visible_row >= load_threshold_row && search_state.loaded_end_index < static_cast<int>(search_state.filtered_assets.size())) {
+      // Load more items
+      search_state.loaded_end_index = std::min(
+        search_state.loaded_end_index + SearchState::LOAD_BATCH_SIZE,
+        static_cast<int>(search_state.filtered_assets.size())
+      );
+    }
+
+
+    // Reserve space for all loaded items to enable proper scrolling
+    int total_loaded_rows = (search_state.loaded_end_index + columns - 1) / columns;
+    float total_content_height = total_loaded_rows * row_height;
+
+    // Save current cursor position
+    ImVec2 grid_start_pos = ImGui::GetCursorPos();
+
+    // Reserve space for the entire loaded content
+    ImGui::Dummy(ImVec2(0, total_content_height));
+
+    // Display filtered assets in a proper grid - only process visible items within loaded range
+    for (int i = first_visible_item; i < last_visible_item && i < search_state.loaded_end_index; i++) {
       // Calculate grid position
       int row = static_cast<int>(i) / columns;
       int col = static_cast<int>(i) % columns;
 
-      // Calculate absolute position for this grid item
-      float x_pos = col * (Config::THUMBNAIL_SIZE + Config::GRID_SPACING);
-      float y_pos = row * (item_height + Config::GRID_SPACING);
+      // Calculate absolute position for this grid item relative to grid start
+      float x_pos = grid_start_pos.x + col * (Config::THUMBNAIL_SIZE + Config::GRID_SPACING);
+      float y_pos = grid_start_pos.y + row * (item_height + Config::GRID_SPACING);
 
       // Set cursor to the calculated position
       ImGui::SetCursorPos(ImVec2(x_pos, y_pos));
 
       ImGui::BeginGroup();
 
-      // Get texture for this asset
+      // Load texture (all items in loop are visible now)
       unsigned int asset_texture = texture_manager.get_asset_texture(search_state.filtered_assets[i]);
 
       // Calculate display size based on asset type
@@ -694,11 +746,7 @@ int main() {
         ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets match your search.");
       }
     }
-    else if (search_state.filtered_assets.size() >= 1000) {
-      // Show truncation message
-      ImGui::Spacing();
-      ImGui::TextColored(Theme::TEXT_WARNING, "Showing first 1000 results. Use search to narrow down.");
-    }
+
 
     ImGui::EndChild();
 

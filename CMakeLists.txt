@@ -266,9 +266,9 @@ add_custom_command(TARGET AssetInventory POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Copying Assimp DLL to executable directory"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/bin/x64/assimp-vc143-mt.dll
-    ${CMAKE_BINARY_DIR}/Debug/assimp-vc143-mt.dll
+    $<TARGET_FILE_DIR:AssetInventory>/assimp-vc143-mt.dll
     COMMAND ${CMAKE_COMMAND} -E echo "Copying GLFW DLL to executable directory"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib-vc2022/glfw3.dll
-    ${CMAKE_BINARY_DIR}/Debug/glfw3.dll
+    $<TARGET_FILE_DIR:AssetInventory>/glfw3.dll
 )
