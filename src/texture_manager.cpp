@@ -246,6 +246,16 @@ unsigned int TextureManager::get_asset_texture(const Asset& asset) {
     else {
       // Thumbnail doesn't exist - try to generate it on-demand
       // This only works if we're in the main thread with OpenGL context
+      // Check if this model previously failed to load
+      if (failed_models_cache_.find(u8_path) != failed_models_cache_.end()) {
+        // Model failed before, skip thumbnail generation
+        auto it = type_icons_.find(asset.type);
+        if (it != type_icons_.end()) {
+          return it->second;
+        }
+        return default_texture_;
+      }
+      
       if (is_preview_initialized() && std::filesystem::exists(asset.full_path)) {
         if (generate_3d_model_thumbnail(u8_path, relative_path.u8string(), *this)) {
           // Thumbnail was successfully generated, try to load it
@@ -261,6 +271,10 @@ unsigned int TextureManager::get_asset_texture(const Asset& asset) {
               return texture_id;
             }
           }
+        }
+        else {
+          // Thumbnail generation failed, add to failed cache to prevent retry
+          failed_models_cache_.insert(u8_path);
         }
       }
     }

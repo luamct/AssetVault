@@ -304,14 +304,25 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
     filepath, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace
   );
 
-  if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
-    std::cout << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
+  if (!scene || !scene->mRootNode) {
+    std::cout << "ERROR::ASSIMP:: " << importer.GetErrorString() << std::endl;
     return false;
+  }
+  
+  // Handle incomplete scenes (common with FBX files containing animations)
+  if (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
+    std::cout << "WARNING: Scene marked as incomplete (possibly due to animations), but proceeding with mesh data" << std::endl;
   }
 
   // Process the scene hierarchy starting from root node
   glm::mat4 identity = glm::mat4(1.0f);
   process_node(scene->mRootNode, scene, model, identity);
+  
+  // Check if the model has any visible geometry
+  if (model.vertices.empty() || model.indices.empty()) {
+    std::cout << "WARNING: Model has no visible geometry (possibly animation-only FBX)" << std::endl;
+    return false;
+  }
 
   // Calculate bounds
   if (!model.vertices.empty()) {
@@ -333,16 +344,34 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   glGenVertexArrays(1, &model.vao);
   glGenBuffers(1, &model.vbo);
   glGenBuffers(1, &model.ebo);
+  
+  if (model.vao == 0 || model.vbo == 0 || model.ebo == 0) {
+    std::cout << "ERROR: Failed to generate OpenGL buffers!" << std::endl;
+    return false;
+  }
 
   glBindVertexArray(model.vao);
 
   glBindBuffer(GL_ARRAY_BUFFER, model.vbo);
   glBufferData(GL_ARRAY_BUFFER, model.vertices.size() * sizeof(float), model.vertices.data(), GL_STATIC_DRAW);
+  
+  // Check for OpenGL errors
+  GLenum error = glGetError();
+  if (error != GL_NO_ERROR) {
+    std::cout << "ERROR: OpenGL error after vertex buffer creation: " << error << std::endl;
+    return false;
+  }
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.ebo);
   glBufferData(
     GL_ELEMENT_ARRAY_BUFFER, model.indices.size() * sizeof(unsigned int), model.indices.data(), GL_STATIC_DRAW
   );
+  
+  error = glGetError();
+  if (error != GL_NO_ERROR) {
+    std::cout << "ERROR: OpenGL error after index buffer creation: " << error << std::endl;
+    return false;
+  }
 
   // Position attribute
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) 0);

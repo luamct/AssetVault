@@ -10,7 +10,8 @@
       "Bash(taskkill:*)",
       "Bash(grep:*)",
       "Bash(tasklist)",
-      "Bash(sqlite3:*)"
+      "Bash(sqlite3:*)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   }

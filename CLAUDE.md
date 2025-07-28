@@ -39,8 +39,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Clean build (always run from project root)
 rm -rf build && mkdir build && cmake -B build && cmake --build build
 
+# Quick rebuild (when only source files change)
+cmake --build build
+
 # Run application
 ./build/Debug/AssetInventory.exe
+
+# Run tests
+./build/Debug/RenderingTest.exe
 ```
 
 ### Directory Management
@@ -62,20 +68,21 @@ The application uses a unified event-driven architecture where both initial scan
 - **main.cpp**: Entry point with ImGui-based UI, smart initial scanning, and event coordination
 - **event_processor.cpp/h**: Unified event processing with batch database operations and progress tracking
 - **database.cpp/h**: SQLite-based asset storage with batch operations (insert_assets_batch, update_assets_batch, delete_assets_batch)
-- **index.cpp/h**: Asset type detection, file metadata extraction, and processing logic
+- **asset.cpp/h**: Asset type detection, file metadata extraction, and asset structure definitions
 - **file_watcher*.cpp/h**: Cross-platform file system monitoring with real-time event generation
 - **3d.cpp/h**: OpenGL-based 3D model rendering with multi-material support via Assimp
 - **texture_manager.cpp/h**: Texture loading, caching, and thumbnail generation including SVG support
 - **utils.cpp/h**: String formatting, file operations, and utility functions
 - **theme.h**: Centralized UI color management system
+- **config.h**: Configuration constants (window size, paths, performance settings)
 
 ### Asset Type System
-The `AssetType` enum in `index.h` defines supported asset categories. When adding new types:
-1. Add enum value to `AssetType` in `index.h`
-2. Update `get_asset_type_string()` in `index.cpp`
-3. Update `get_asset_type_from_string()` in `index.cpp`
-4. Add texture icon mapping in `load_type_textures()` in `main.cpp`
-5. Add file extension mapping in `get_asset_type()` in `index.cpp` if needed
+The `AssetType` enum in `asset.h` defines supported asset categories. When adding new types:
+1. Add enum value to `AssetType` in `asset.h`
+2. Update `get_asset_type_string()` in `asset.cpp`
+3. Update `get_asset_type_from_string()` in `asset.cpp`
+4. Add texture icon mapping in `load_type_textures()` in `texture_manager.cpp`
+5. Add file extension mapping in `get_asset_type()` in `asset.cpp`
 - **Never manually convert strings to enums** - always use `get_asset_type_from_string()`
 
 ### Event Processing Flow
@@ -100,14 +107,16 @@ SQLite database at `db/assets.db` stores asset metadata with the following chara
 - Smart incremental updates - only processes actual changes, not full rescans
 - Batch database operations minimize round-trips for performance
 - Thread-safe access with mutex protection during updates
-- Windows-specific file timestamp handling using FILETIME API
+- No expensive timestamp comparison system (removed for performance)
 
 ### 3D Rendering Pipeline
 OpenGL-based rendering system with:
 - Assimp integration for model loading (FBX, OBJ, GLTF, etc.)
 - Multi-material support with texture loading
-- Framebuffer-based preview rendering
+- Framebuffer-based preview rendering for thumbnails
 - Automatic model bounds calculation for camera positioning
+- Graceful handling of animation-only FBX files (no visible geometry)
+- Failed model cache to prevent infinite retry loops
 
 ### Threading Model
 - **Main UI thread**: ImGui rendering, user interaction, and initial scan coordination
@@ -132,7 +141,6 @@ The `EventProcessor` class is the core of the unified event system:
 - **Event queuing**: `queue_event()` for single events, `queue_events()` for batches
 - **Progress tracking**: `get_progress()`, `get_total_queued()`, `get_total_processed()`
 - **Thread safety**: All asset vector access must use `get_assets_mutex()` for locking
-- **Static helpers**: `get_file_timestamp_for_comparison()` for Windows file timestamp handling
 
 ### Database Management
 - SQLite database located at `db/assets.db`
@@ -204,11 +212,39 @@ readmes/           # Component-specific documentation
 
 ### File Event Processing Guidelines
 - **Created events**: Generated when files exist in filesystem but not in database
-- **Modified events**: Generated when files exist in both but have newer timestamps (uses Windows FILETIME API)
+- **Modified events**: Generated when files exist in both but have newer timestamps
 - **Deleted events**: Generated when files exist in database but not in filesystem
 - **Event publishing timing**: Include debug output for event publishing performance measurement
 - **FileEvent constructor**: Always use parameterized constructor `FileEvent(type, path)` - no default constructor available
 
+### 3D Model Loading Guidelines
+- **Failed model cache**: TextureManager maintains `failed_models_cache_` to prevent infinite retry loops
+- **Animation-only files**: FBX files with no geometry are handled gracefully
+- **Error handling**: Essential errors (Assimp failures, OpenGL errors) are preserved, verbose debugging removed
+- **Incomplete scenes**: FBX files with animations are accepted even if marked incomplete by Assimp
+
 ### Git Integration and Version Control
 - **Never perform git operations unless explicitly requested by user**
 - **Never assume user wants to commit changes** - always wait for explicit instruction
+
+### Current Architecture Status
+- **Timestamp optimization**: Removed expensive `created_or_modified_seconds` field and related Windows FILETIME operations
+- **3D debugging cleanup**: Verbose model loading output removed, only essential errors/warnings remain
+- **Failed model handling**: Added caching system to prevent infinite retry loops for problematic FBX files
+- **Unicode support**: Full UTF-8 filesystem path handling for international asset names
+- **Performance**: Initial scan optimized, no more 110-second delays on large asset directories
+
+### Supported Asset Types
+- **Texture**: .png, .jpg, .jpeg, .gif, .bmp, .tga, .hdr, .svg (with pre-rasterization)
+- **Model**: .fbx, .obj, .gltf, .glb, .dae, .blend, .3ds, .ply, .x, .md2, .md3, .mdl, .pk3
+- **Sound**: .wav, .mp3, .ogg, .flac, .aac, .m4a (detection only, no playback yet)
+- **Video**: .mp4, .avi, .mov, .mkv, .wmv, .webm (detection only)
+- **Script**: .cs, .js, .lua, .py, .sh, .bat, .json, .xml, .yml, .yaml
+- **Document**: .txt, .md, .pdf, .doc, .docx
+- **Auxiliary**: .mtl, .log, .cache, .tmp, .bak (excluded from search)
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.

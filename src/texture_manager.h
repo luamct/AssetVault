@@ -4,6 +4,7 @@
 #include <queue>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "asset.h" // For AssetType and Asset
@@ -78,6 +79,9 @@ private:
   // Invalidation queue for thread-safe texture cache updates
   std::queue<std::string> invalidation_queue_;
   mutable std::mutex invalidation_mutex_;
+
+  // Cache of failed model loads to prevent infinite retry loops
+  std::unordered_set<std::string> failed_models_cache_;
 
   // Helper methods
   void cleanup_all_textures();
