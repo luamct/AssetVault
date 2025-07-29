@@ -42,6 +42,11 @@ bool TextureManager::initialize() {
 
   // Load type-specific textures
   load_type_textures();
+  
+  // Load audio control icons
+  play_icon_ = load_texture("images/play.png");
+  pause_icon_ = load_texture("images/pause.png");
+  speaker_icon_ = load_texture("images/speaker.png");
 
   std::cout << "TextureManager initialized successfully\n";
   return true;
@@ -74,6 +79,11 @@ void TextureManager::cleanup_all_textures() {
     }
   }
   type_icons_.clear();
+  
+  // Clean up audio control icons
+  if (play_icon_ != 0) glDeleteTextures(1, &play_icon_);
+  if (pause_icon_ != 0) glDeleteTextures(1, &pause_icon_);
+  if (speaker_icon_ != 0) glDeleteTextures(1, &speaker_icon_);
 }
 
 unsigned int TextureManager::load_texture(const char* filename) {

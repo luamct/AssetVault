@@ -62,6 +62,11 @@ public:
   unsigned int get_preview_depth_texture() const { return preview_depth_texture_; }
   unsigned int get_preview_framebuffer() const { return preview_framebuffer_; }
   unsigned int get_preview_shader() const { return preview_shader_; }
+  
+  // Audio control icons
+  unsigned int get_play_icon() const { return play_icon_; }
+  unsigned int get_pause_icon() const { return pause_icon_; }
+  unsigned int get_speaker_icon() const { return speaker_icon_; }
 
 private:
   // Asset thumbnails and icons
@@ -82,6 +87,11 @@ private:
 
   // Cache of failed model loads to prevent infinite retry loops
   std::unordered_set<std::string> failed_models_cache_;
+  
+  // Audio control icons
+  unsigned int play_icon_;
+  unsigned int pause_icon_;
+  unsigned int speaker_icon_;
 
   // Helper methods
   void cleanup_all_textures();

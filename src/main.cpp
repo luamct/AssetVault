@@ -29,15 +29,91 @@
 #include "utils.h"
 #include "3d.h"
 #include "config.h"
+#include "audio_manager.h"
 
 // Global callback state (needed for callback functions)
 static EventProcessor* g_event_processor = nullptr;
 
+// Custom seek bar component
+bool CustomSeekBar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f) {
+  ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+
+  // Calculate dimensions
+  const float handle_radius = height * 2.0f; // Circle handle is ~4x the line height
+  const ImVec2 size(width, handle_radius * 2.0f);
+
+  // Create invisible button for interaction
+  ImGui::InvisibleButton(id, size);
+  bool hovered = ImGui::IsItemHovered();
+  bool active = ImGui::IsItemActive();
+
+  // Calculate value based on mouse position when dragging
+  bool value_changed = false;
+  if (active) {
+    ImVec2 mouse_pos = ImGui::GetMousePos();
+    float mouse_x = mouse_pos.x - cursor_pos.x;
+    float new_value = (mouse_x / width) * (max_value - min_value) + min_value;
+    if (new_value < min_value) new_value = min_value;
+    if (new_value > max_value) new_value = max_value;
+    if (*value != new_value) {
+      *value = new_value;
+      value_changed = true;
+    }
+  }
+
+  // Calculate current position
+  float position_ratio = (max_value > min_value) ? (*value - min_value) / (max_value - min_value) : 0.0f;
+  if (position_ratio < 0.0f) position_ratio = 0.0f;
+  if (position_ratio > 1.0f) position_ratio = 1.0f;
+  float handle_x = cursor_pos.x + position_ratio * width;
+
+  // Colors
+  const ImU32 line_color_played = ImGui::GetColorU32(ImVec4(0.3f, 0.3f, 0.3f, 1.0f));    // Darker line (played portion - before handle)
+  const ImU32 line_color_unplayed = ImGui::GetColorU32(ImVec4(0.7f, 0.7f, 0.7f, 1.0f));  // Lighter line (unplayed portion - after handle)
+  const ImU32 handle_color = hovered || active ?
+    ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)) :    // White when hovered/active
+    ImGui::GetColorU32(ImVec4(0.9f, 0.9f, 0.9f, 1.0f));     // Light gray normally
+
+  // Draw the seek bar
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+  // Line center Y position
+  float line_y = cursor_pos.y + size.y * 0.5f;
+
+  // Draw played portion (left of handle) - darker
+  if (position_ratio > 0.0f) {
+    draw_list->AddRectFilled(
+      ImVec2(cursor_pos.x, line_y - height * 0.5f),
+      ImVec2(handle_x, line_y + height * 0.5f),
+      line_color_played,
+      height * 0.5f
+    );
+  }
+
+  // Draw unplayed portion (right of handle) - lighter
+  if (position_ratio < 1.0f) {
+    draw_list->AddRectFilled(
+      ImVec2(handle_x, line_y - height * 0.5f),
+      ImVec2(cursor_pos.x + width, line_y + height * 0.5f),
+      line_color_unplayed,
+      height * 0.5f
+    );
+  }
+
+  // Draw circular handle
+  draw_list->AddCircleFilled(
+    ImVec2(handle_x, line_y),
+    handle_radius,
+    handle_color,
+    16  // Number of segments for smooth circle
+  );
+
+  return value_changed;
+}
+
 bool load_roboto_font(ImGuiIO& io) {
   // Load embedded Roboto font from external/fonts directory with Unicode support
   ImFontConfig font_config;
-  font_config.OversampleH = 3;
-  font_config.OversampleV = 3;
 
   // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
   const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
@@ -135,6 +211,9 @@ struct SearchState {
 
   // Model preview state
   Model current_model;
+
+  // Audio playback settings
+  bool auto_play_audio = true;
 };
 
 // Function to filter assets based on search query
@@ -303,6 +382,7 @@ int main() {
   AssetDatabase database;
   FileWatcher file_watcher;
   TextureManager texture_manager;
+  AudioManager audio_manager;
   std::atomic<bool> search_update_needed(false);
 
   // Initialize database
@@ -383,6 +463,12 @@ int main() {
   // Initialize 3D preview system
   if (!texture_manager.initialize_preview_system()) {
     std::cerr << "Warning: Failed to initialize 3D preview system\n";
+  }
+
+  // Initialize audio manager
+  if (!audio_manager.initialize()) {
+    std::cerr << "Warning: Failed to initialize audio system\n";
+    // Not critical - continue without audio support
   }
 
   // Now that OpenGL and preview system are ready, perform initial scan
@@ -755,6 +841,25 @@ int main() {
     float avail_width = right_width - Config::PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
     float avail_height = avail_width;                           // Square aspect ratio for preview area
 
+    // Track previously selected asset for cleanup
+    static int prev_selected_index = -1;
+    static AssetType prev_selected_type = AssetType::Unknown;
+
+    // Handle asset selection changes
+    if (search_state.selected_asset_index != prev_selected_index) {
+      // If we were playing audio and switched to a different asset, stop and unload
+      if (prev_selected_type == AssetType::Sound && audio_manager.has_audio_loaded()) {
+        audio_manager.unload_audio();
+      }
+      prev_selected_index = search_state.selected_asset_index;
+      if (search_state.selected_asset_index >= 0) {
+        prev_selected_type = search_state.filtered_assets[search_state.selected_asset_index].type;
+      }
+      else {
+        prev_selected_type = AssetType::Unknown;
+      }
+    }
+
     if (search_state.selected_asset_index >= 0) {
       const Asset& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
 
@@ -835,6 +940,197 @@ int main() {
           ImGui::SameLine();
           ImGui::Text("%d", face_count);
         }
+
+        // Format and display last modified time
+        auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
+        std::tm tm_buf;
+        localtime_s(&tm_buf, &time_t);
+        std::stringstream ss;
+        ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
+        ImGui::TextColored(Theme::TEXT_LABEL, "Modified: ");
+        ImGui::SameLine();
+        ImGui::Text("%s", ss.str().c_str());
+      }
+      else if (selected_asset.type == AssetType::Sound && audio_manager.is_initialized()) {
+        // Audio handling for sound assets
+
+        // Load the audio file if it's different from the currently loaded one
+        if (selected_asset.full_path.u8string() != audio_manager.get_current_file()) {
+          bool loaded = audio_manager.load_audio(selected_asset.full_path.u8string());
+          if (loaded) {
+            // Set initial volume to match our slider default
+            audio_manager.set_volume(0.5f);
+            // Auto-play if enabled
+            if (search_state.auto_play_audio) {
+              audio_manager.play();
+            }
+          }
+        }
+
+        // Display audio icon in preview area
+        unsigned int audio_icon = texture_manager.get_asset_texture(selected_asset);
+        if (audio_icon != 0) {
+          float icon_dim = Config::ICON_SCALE * std::min(avail_width, avail_height);
+          ImVec2 icon_size(icon_dim, icon_dim);
+
+          // Center the icon
+          ImVec2 container_pos = ImGui::GetCursorScreenPos();
+          float image_x_offset = (avail_width - icon_size.x) * 0.5f;
+          float image_y_offset = (avail_height - icon_size.y) * 0.5f;
+          ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+          ImGui::SetCursorScreenPos(image_pos);
+
+          ImGui::Image((ImTextureID) (intptr_t) audio_icon, icon_size);
+
+          // Restore cursor for controls below
+          ImGui::SetCursorScreenPos(container_pos);
+          ImGui::Dummy(ImVec2(0, avail_height + 10));
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Audio controls - single row layout
+        if (audio_manager.has_audio_loaded()) {
+          float duration = audio_manager.get_duration();
+          float position = audio_manager.get_position();
+          bool is_playing = audio_manager.is_playing();
+
+          // Format time helper lambda
+          auto format_time = [](float seconds) -> std::string {
+            int mins = static_cast<int>(seconds) / 60;
+            int secs = static_cast<int>(seconds) % 60;
+            char buffer[16];
+            snprintf(buffer, sizeof(buffer), "%02d:%02d", mins, secs);
+            return std::string(buffer);
+            };
+
+          // Create a single row with all controls
+          ImGui::BeginGroup();
+
+          // 1. Square Play/Pause button with transparent background
+          const float button_size = 32.0f;
+
+          // Store the baseline Y position BEFORE drawing the button for proper alignment
+          float baseline_y = ImGui::GetCursorPosY();
+
+          unsigned int icon_texture = is_playing ? texture_manager.get_pause_icon() : texture_manager.get_play_icon();
+
+          // Make button background transparent
+          ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.8f, 0.8f, 0.1f)); // Very light hover
+          ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.7f, 0.7f, 0.2f));  // Light press
+
+          if (ImGui::ImageButton("##PlayPause", (ImTextureID) (intptr_t) icon_texture, ImVec2(button_size, button_size))) {
+            if (is_playing) {
+              audio_manager.pause();
+            }
+            else {
+              audio_manager.play();
+            }
+          }
+
+          ImGui::PopStyleColor(3);
+
+          ImGui::SameLine(0, 8); // 8px spacing
+
+          // 2. Current timestamp
+          ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - 6.0);
+          ImGui::Text("%s", format_time(position).c_str());
+
+          ImGui::SameLine(0, 16);
+
+          // 3. Custom seek bar - thin line with circle handle
+          static bool seeking = false;
+          static float seek_position = 0.0f;
+
+          if (!seeking) {
+            seek_position = position;
+          }
+
+          const float seek_bar_width = 150.0f;
+          const float seek_bar_height = 4.0f; // Thin line height
+
+          // Use our custom seek bar - vertically centered
+          ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - seek_bar_height); // Center based on handle radius
+          bool seek_changed = CustomSeekBar("##CustomSeek", &seek_position, 0.0f, duration, seek_bar_width, seek_bar_height);
+
+          if (seek_changed) {
+            seeking = true;
+            audio_manager.set_position(seek_position);
+          }
+
+          // Reset seeking flag when not actively dragging
+          if (seeking && !ImGui::IsItemActive()) {
+            seeking = false;
+          }
+
+          ImGui::SameLine(0, 12);
+
+          // 4. Total duration
+          ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - 6.0f);
+          ImGui::Text("%s", format_time(duration).c_str());
+
+          ImGui::SameLine(0, 10);
+
+          // 5. Speaker icon - vertically centered
+          const float icon_size = 24.0f;
+          ImGui::SetCursorPosY(baseline_y + (button_size - 0.5 * icon_size) * 0.5f);
+          ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_speaker_icon(), ImVec2(icon_size, icon_size));
+
+          ImGui::SameLine(0, 10);
+
+          // 6. Volume slider - standard vertical ImGui slider
+          static float audio_volume = 0.5f; // Start at 50%
+          const float volume_slider_height = 60.0f;
+
+          ImGui::SetCursorPosY(baseline_y - 8.0); // Center approximately
+
+          // Make the slider grab black
+          ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.0f, 0.0f, 0.0f, 1.0f)); // Black grab
+          ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0.2f, 0.2f, 0.2f, 1.0f)); // Dark gray when active
+
+          ImGui::PushItemWidth(20.0f); // Narrow width for vertical slider
+          if (ImGui::VSliderFloat("##VolumeSlider", ImVec2(20.0f, volume_slider_height), &audio_volume, 0.0f, 1.0f, "")) {
+            audio_manager.set_volume(audio_volume);
+          }
+          ImGui::PopItemWidth();
+
+          ImGui::PopStyleColor(2);
+
+          // Show percentage on hover
+          if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Volume: %d%%", (int) (audio_volume * 100));
+          }
+
+          ImGui::EndGroup();
+
+          // Auto-play checkbox below the player
+          ImGui::Spacing();
+          ImGui::Checkbox("Auto-play", &search_state.auto_play_audio);
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // File info
+        ImGui::TextColored(Theme::TEXT_LABEL, "File: ");
+        ImGui::SameLine();
+        ImGui::Text("%s", selected_asset.name.c_str());
+
+        ImGui::TextColored(Theme::TEXT_LABEL, "Size: ");
+        ImGui::SameLine();
+        ImGui::Text("%s", format_file_size(selected_asset.size).c_str());
+
+        ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
+        ImGui::SameLine();
+        ImGui::Text("%s", selected_asset.extension.c_str());
+
+        ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path.u8string()).c_str());
 
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
@@ -952,6 +1248,9 @@ int main() {
     glfwSwapBuffers(window);
 
   }
+
+  // Cleanup audio manager
+  audio_manager.cleanup();
 
   // Cleanup texture manager
   texture_manager.cleanup();

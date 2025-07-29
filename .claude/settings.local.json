@@ -11,7 +11,9 @@
       "Bash(grep:*)",
       "Bash(tasklist)",
       "Bash(sqlite3:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(dir:*)",
+      "Bash(find assets -name \"*.wav\" -o -name \"*.mp3\" -o -name \"*.ogg\" -o -name \"*.flac\" -o -name \"*.m4a\" -o -name \"*.aac\")"
     ],
     "deny": []
   }
