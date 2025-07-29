@@ -30,12 +30,13 @@
 #include "3d.h"
 #include "config.h"
 #include "audio_manager.h"
+#include "search.h"
 
 // Global callback state (needed for callback functions)
-static EventProcessor* g_event_processor = nullptr;
+EventProcessor* g_event_processor = nullptr;
 
-// Custom seek bar component
-bool CustomSeekBar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f) {
+// Custom slider component for audio seek bar
+bool AudioSeekBar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f) {
   ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
 
   // Calculate dimensions
@@ -111,23 +112,6 @@ bool CustomSeekBar(const char* id, float* value, float min_value, float max_valu
   return value_changed;
 }
 
-bool load_roboto_font(ImGuiIO& io) {
-  // Load embedded Roboto font from external/fonts directory with Unicode support
-  ImFontConfig font_config;
-
-  // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
-  const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
-
-  ImFont* font = io.Fonts->AddFontFromFileTTF(Config::FONT_PATH, Config::FONT_SIZE, &font_config, glyph_ranges);
-  if (font) {
-    std::cout << "Roboto font loaded successfully with Unicode support!\n";
-    return true;
-  }
-
-  // If embedded font fails to load, log error and use default font
-  std::cerr << "Failed to load embedded Roboto font. Check that " << Config::FONT_PATH << " exists.\n";
-  return false;
-}
 
 // Function to calculate aspect-ratio-preserving dimensions with upscaling limit
 ImVec2 calculate_thumbnail_size(
@@ -154,110 +138,8 @@ ImVec2 calculate_thumbnail_size(
   return ImVec2(calculated_width, calculated_height);
 }
 
-// Function to check if asset matches search terms
-bool asset_matches_search(const Asset& asset, const std::string& search_query) {
-  if (search_query.empty()) {
-    return true; // Show all assets when search is empty
-  }
 
-  std::string query_lower = to_lowercase(search_query);
-  std::string name_lower = to_lowercase(asset.name);
-  std::string extension_lower = to_lowercase(asset.extension);
-  std::string path_lower = to_lowercase(asset.full_path.u8string());
 
-  // Split search query into terms (space-separated)
-  std::vector<std::string> search_terms;
-  std::stringstream ss(query_lower);
-  std::string search_term;
-  while (ss >> search_term) {
-    if (!search_term.empty()) {
-      search_terms.push_back(search_term);
-    }
-  }
-
-  // All terms must match (AND logic)
-  for (const auto& term : search_terms) {
-    bool term_matches = name_lower.find(term) != std::string::npos || extension_lower.find(term) != std::string::npos ||
-      path_lower.find(term) != std::string::npos;
-
-    if (!term_matches) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-// Search state structure
-struct SearchState {
-  bool initial_filter_applied = false;
-
-  char buffer[256] = "";
-  std::string last_buffer = "";
-  std::string input_tracking = ""; // Track input to detect real changes
-
-  // Debouncing state
-  std::chrono::steady_clock::time_point last_keypress_time;
-  bool pending_search = false;
-
-  // UI state
-  std::vector<Asset> filtered_assets;
-  int selected_asset_index = -1; // -1 means no selection
-
-  // Infinite scroll state
-  static constexpr int LOAD_BATCH_SIZE = 50;
-  int loaded_start_index = 0;    // Always 0, never changes
-  int loaded_end_index = 0;      // Grows as user scrolls down
-
-  // Model preview state
-  Model current_model;
-
-  // Audio playback settings
-  bool auto_play_audio = true;
-};
-
-// Function to filter assets based on search query
-void filter_assets(SearchState& search_state, const std::vector<Asset>& assets) {
-  auto start_time = std::chrono::high_resolution_clock::now();
-
-  search_state.filtered_assets.clear();
-  search_state.selected_asset_index = -1; // Clear selection when search results change
-
-  size_t total_assets = 0;
-  size_t filtered_count = 0;
-
-  // Lock assets during filtering to prevent race conditions
-  std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
-
-  total_assets = assets.size();
-  for (const auto& asset : assets) {
-    // Skip ignored asset types (O(1) lookup) - they should never appear in search results
-    if (Config::IGNORED_ASSET_TYPES.count(asset.type) > 0) {
-      continue;
-    }
-
-    if (asset_matches_search(asset, search_state.buffer)) {
-      search_state.filtered_assets.push_back(asset);
-      filtered_count++;
-    }
-  }
-
-  // Initialize loaded range for infinite scroll
-  search_state.loaded_start_index = 0;
-  search_state.loaded_end_index = std::min(
-    static_cast<int>(search_state.filtered_assets.size()),
-    SearchState::LOAD_BATCH_SIZE
-  );
-
-  // Measure and print search time
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-
-  // std::cout << "[SEARCH] Filtered " << total_assets << " assets, found " << filtered_count
-  //   << " matches for '" << search_state.buffer << "' in "
-  //   << duration.count() / 1000.0 << "ms";
-  // std::cout << " (loaded first " << search_state.loaded_end_index << " items)" << std::endl;
-}
 
 // File event callback function (runs on background thread)
 // Queues events for unified processing
@@ -266,11 +148,11 @@ void on_file_event(const FileEvent& event) {
 }
 
 // Perform initial scan and generate events for EventProcessor
-void perform_initial_scan(AssetDatabase& database, std::vector<Asset>& assets, EventProcessor* event_processor) {
+void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, EventProcessor* event_processor) {
   namespace fs = std::filesystem;
   auto scan_start = std::chrono::high_resolution_clock::now();
 
-  std::cout << "Starting smart incremental asset scanning...\n";
+  std::cout << "Starting scan for changes...\n";
 
   // Get current database state
   std::vector<Asset> db_assets = database.get_all_assets();
@@ -383,7 +265,7 @@ int main() {
   FileWatcher file_watcher;
   TextureManager texture_manager;
   AudioManager audio_manager;
-  std::atomic<bool> search_update_needed(false);
+  SearchState search_state;
 
   // Initialize database
   std::cout << "Initializing database...\n";
@@ -399,7 +281,7 @@ int main() {
   }
 
   // Initialize unified event processor for both initial scan and runtime events
-  g_event_processor = new EventProcessor(database, assets, search_update_needed, texture_manager, Config::EVENT_PROCESSOR_BATCH_SIZE);
+  g_event_processor = new EventProcessor(database, assets, search_state.update_needed, texture_manager, Config::EVENT_PROCESSOR_BATCH_SIZE);
   if (!g_event_processor->start()) {
     std::cerr << "Failed to start EventProcessor\n";
     return -1;
@@ -429,8 +311,6 @@ int main() {
     return -1;
   }
 
-  // 3D preview initialization now handled by TextureManager
-
   // Initialize Dear ImGui
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -441,11 +321,8 @@ int main() {
   // Disable imgui.ini file - we'll handle window positioning in code
   io.IniFilename = nullptr;
 
-  // Ensure proper input handling for cursor blinking
-  io.ConfigInputTextCursorBlink = true;
-
   // Load Roboto font
-  load_roboto_font(io);
+  Theme::load_roboto_font(io);
 
   // Setup light and fun theme
   Theme::setup_light_fun_theme();
@@ -463,6 +340,7 @@ int main() {
   // Initialize 3D preview system
   if (!texture_manager.initialize_preview_system()) {
     std::cerr << "Warning: Failed to initialize 3D preview system\n";
+    return -1;
   }
 
   // Initialize audio manager
@@ -471,10 +349,7 @@ int main() {
     // Not critical - continue without audio support
   }
 
-  // Now that OpenGL and preview system are ready, perform initial scan
-  // This ensures thumbnail generation can work properly
-  std::cout << "Performing initial asset scan...\n";
-  perform_initial_scan(database, assets, g_event_processor);
+  scan_for_changes(database, assets, g_event_processor);
 
   // Start file watcher after initial scan
   std::cout << "Starting file watcher...\n";
@@ -484,9 +359,6 @@ int main() {
   else {
     std::cerr << "Failed to start file watcher\n";
   }
-
-  // Search state
-  SearchState search_state;
 
   // Main loop
   double last_time = glfwGetTime();
@@ -498,7 +370,7 @@ int main() {
     glfwPollEvents();
 
     // Render 3D preview to framebuffer BEFORE starting ImGui frame
-    if (texture_manager.is_preview_initialized()) {
+    {
       // Calculate the size for the right panel (same as 2D previews)
       float right_panel_width = (ImGui::GetIO().DisplaySize.x * 0.25f) - Config::PREVIEW_RIGHT_MARGIN;
       float avail_width = right_panel_width - Config::PREVIEW_INTERNAL_PADDING;
@@ -534,17 +406,9 @@ int main() {
     ImGui::NewFrame();
 
     // Check if search needs to be updated due to asset changes
-    if (search_update_needed.exchange(false)) {
+    if (search_state.update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
       filter_assets(search_state, assets);
-    }
-
-    // Apply initial filter when we first have assets
-    if (!search_state.initial_filter_applied && !assets.empty()) {
-      filter_assets(search_state, assets);
-      search_state.last_buffer = search_state.buffer;
-      search_state.input_tracking = search_state.buffer;
-      search_state.initial_filter_applied = true;
     }
 
     // Create main window
@@ -552,8 +416,8 @@ int main() {
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin(
       "Asset Inventory", nullptr,
-      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
-      ImGuiWindowFlags_NoCollapse);
+      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse);
 
     // Calculate panel sizes
     float window_width = ImGui::GetWindowSize().x;
@@ -572,11 +436,6 @@ int main() {
     // Calculate centered position within content region
     float content_search_x = (content_region.x - Config::SEARCH_BOX_WIDTH) * 0.5f;
     float content_search_y = (content_region.y - Config::SEARCH_BOX_HEIGHT) * 0.5f;
-
-    // Ensure we have a minimum Y position
-    if (content_search_y < 5.0f) {
-      content_search_y = 5.0f;
-    }
 
     // Get screen position for drawing (content area start + our offset)
     ImVec2 content_start = ImGui::GetCursorScreenPos();
@@ -659,7 +518,6 @@ int main() {
 
       ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(Theme::TEXT_DARK), progress_text);
     }
-    // No "Ready" text - keep panel empty when not indexing
 
     ImGui::EndChild();
 
@@ -735,25 +593,21 @@ int main() {
       ImGui::BeginGroup();
 
       // Load texture (all items in loop are visible now)
-      unsigned int asset_texture = texture_manager.get_asset_texture(search_state.filtered_assets[i]);
+      TextureCacheEntry texture_entry = texture_manager.get_asset_texture(search_state.filtered_assets[i]);
 
       // Calculate display size based on asset type
       ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
 
       // Check if this asset has actual thumbnail dimensions (textures or 3D model thumbnails)
       bool has_thumbnail_dimensions = false;
-      int width = 0, height = 0;
-      if (search_state.filtered_assets[i].type == AssetType::Texture && asset_texture != 0) {
-        has_thumbnail_dimensions = texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path.u8string(), width, height);
-      }
-      else if (search_state.filtered_assets[i].type == AssetType::Model && asset_texture != 0) {
-        // For 3D models, check if we have a thumbnail (will have dimensions in cache)
-        has_thumbnail_dimensions = texture_manager.get_texture_dimensions(search_state.filtered_assets[i].full_path.u8string(), width, height);
+      if (search_state.filtered_assets[i].type == AssetType::Texture || search_state.filtered_assets[i].type == AssetType::Model) {
+        // TextureCacheEntry already contains the dimensions, no need for separate call
+        has_thumbnail_dimensions = (texture_entry.width > 0 && texture_entry.height > 0);
       }
 
       if (has_thumbnail_dimensions) {
         display_size = calculate_thumbnail_size(
-          width, height,
+          texture_entry.width, texture_entry.height,
           Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE,
           Config::MAX_THUMBNAIL_UPSCALE_FACTOR
         ); // upscaling for grid
@@ -783,27 +637,11 @@ int main() {
       ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
 
       // Display thumbnail image
-      if (asset_texture != 0) {
-        ImGui::SetCursorScreenPos(image_pos);
-        if (ImGui::ImageButton(
-          ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) asset_texture, display_size)) {
-          search_state.selected_asset_index = static_cast<int>(i);
-          std::cout << "Selected: " << search_state.filtered_assets[i].name << '\n';
-        }
-      }
-      else {
-        // Fallback: colored button if texture failed to load
-        ImGui::SetCursorScreenPos(image_pos);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
-        if (ImGui::Button(("##Thumbnail" + std::to_string(i)).c_str(), display_size)) {
-          search_state.selected_asset_index = static_cast<int>(i);
-          std::cout << "Selected: " << search_state.filtered_assets[i].name << '\n';
-        }
-        ImGui::PopStyleVar();
-
-        // Add a background to simulate thumbnail (same as app background)
-        ImGui::GetWindowDrawList()->AddRectFilled(
-          ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
+      ImGui::SetCursorScreenPos(image_pos);
+      if (ImGui::ImageButton(
+        ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.texture_id, display_size)) {
+        search_state.selected_asset_index = static_cast<int>(i);
+        std::cout << "Selected: " << search_state.filtered_assets[i].name << '\n';
       }
 
       ImGui::PopStyleColor(3);
@@ -968,8 +806,8 @@ int main() {
         }
 
         // Display audio icon in preview area
-        unsigned int audio_icon = texture_manager.get_asset_texture(selected_asset);
-        if (audio_icon != 0) {
+        TextureCacheEntry audio_entry = texture_manager.get_asset_texture(selected_asset);
+        if (audio_entry.texture_id != 0) {
           float icon_dim = Config::ICON_SCALE * std::min(avail_width, avail_height);
           ImVec2 icon_size(icon_dim, icon_dim);
 
@@ -980,7 +818,7 @@ int main() {
           ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
           ImGui::SetCursorScreenPos(image_pos);
 
-          ImGui::Image((ImTextureID) (intptr_t) audio_icon, icon_size);
+          ImGui::Image((ImTextureID) (intptr_t) audio_entry.texture_id, icon_size);
 
           // Restore cursor for controls below
           ImGui::SetCursorScreenPos(container_pos);
@@ -1054,7 +892,7 @@ int main() {
 
           // Use our custom seek bar - vertically centered
           ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - seek_bar_height); // Center based on handle radius
-          bool seek_changed = CustomSeekBar("##CustomSeek", &seek_position, 0.0f, duration, seek_bar_width, seek_bar_height);
+          bool seek_changed = AudioSeekBar("##CustomSeek", &seek_position, 0.0f, duration, seek_bar_width, seek_bar_height);
 
           if (seek_changed) {
             seeking = true;
@@ -1144,14 +982,14 @@ int main() {
       }
       else {
         // 2D Preview for non-model assets
-        unsigned int preview_texture = texture_manager.get_asset_texture(selected_asset);
-        if (preview_texture != 0) {
+        TextureCacheEntry preview_entry = texture_manager.get_asset_texture(selected_asset);
+        if (preview_entry.texture_id != 0) {
           ImVec2 preview_size(avail_width, avail_height);
 
           if (selected_asset.type == AssetType::Texture) {
-            int width, height;
-            if (texture_manager.get_texture_dimensions(selected_asset.full_path.u8string(), width, height)) {
-              preview_size = calculate_thumbnail_size(width, height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
+            // TextureCacheEntry already contains dimensions
+            if (preview_entry.width > 0 && preview_entry.height > 0) {
+              preview_size = calculate_thumbnail_size(preview_entry.width, preview_entry.height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
             }
           }
           else {
@@ -1172,7 +1010,7 @@ int main() {
           ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
           ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
-          ImGui::Image((ImTextureID) (intptr_t) preview_texture, preview_size);
+          ImGui::Image((ImTextureID) (intptr_t) preview_entry.texture_id, preview_size);
 
           // Restore cursor for info below
           ImGui::SetCursorScreenPos(container_pos);
@@ -1203,7 +1041,7 @@ int main() {
         // Display dimensions for texture assets
         if (selected_asset.type == AssetType::Texture) {
           int width, height;
-          if (texture_manager.get_texture_dimensions(selected_asset.full_path.u8string(), width, height)) {
+          if (texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
             ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
             ImGui::SameLine();
             ImGui::Text("%dx%d", width, height);

@@ -225,7 +225,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
 
             // Queue texture invalidation for modified texture assets
             if (file_info.type == AssetType::Texture) {
-                texture_manager_.queue_texture_invalidation(event.path.u8string());
+                texture_manager_.queue_texture_invalidation(event.path);
             }
         }
         catch (const std::exception& e) {
@@ -264,7 +264,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
         total_events_processed_++;  // Increment per file processed
 
         // Queue texture invalidation for deleted assets
-        texture_manager_.queue_texture_invalidation(path_utf8);
+        texture_manager_.queue_texture_invalidation(event.path);
     }
 
     // Batch delete from database
@@ -305,10 +305,10 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
             total_events_processed_++;  // Increment per file processed
 
             // Queue texture invalidation for both old and new paths
-            texture_manager_.queue_texture_invalidation(event.old_path.u8string());
+            texture_manager_.queue_texture_invalidation(event.old_path);
             // Only invalidate new path if it's a texture asset
             if (file_info.type == AssetType::Texture) {
-                texture_manager_.queue_texture_invalidation(event.path.u8string());
+                texture_manager_.queue_texture_invalidation(event.path);
             }
         }
         catch (const std::exception& e) {

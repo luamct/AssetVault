@@ -1,5 +1,7 @@
 #pragma once
 #include "imgui.h"
+#include "config.h"
+#include <iostream>
 
 namespace Theme {
 
@@ -174,6 +176,25 @@ namespace Theme {
     style.PopupRounding = 6.0f;
     style.FrameBorderSize = 1.0f;
     style.WindowBorderSize = 1.0f;
+  }
+
+  // Font loading function
+  inline bool load_roboto_font(ImGuiIO& io) {
+    // Load embedded Roboto font from external/fonts directory with Unicode support
+    ImFontConfig font_config;
+
+    // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
+    const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
+
+    ImFont* font = io.Fonts->AddFontFromFileTTF(Config::FONT_PATH, Config::FONT_SIZE, &font_config, glyph_ranges);
+    if (font) {
+      std::cout << "Roboto font loaded successfully with Unicode support!\n";
+      return true;
+    }
+
+    // If embedded font fails to load, log error and use default font
+    std::cerr << "Failed to load embedded Roboto font. Check that " << Config::FONT_PATH << " exists.\n";
+    return false;
   }
 
 } // namespace Theme
