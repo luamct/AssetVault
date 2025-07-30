@@ -202,9 +202,9 @@ unsigned int TextureManager::load_svg_texture(
 
 void TextureManager::load_type_textures() {
   const std::unordered_map<AssetType, const char*> texture_paths = {
-      {AssetType::Texture, "images/texture.png"},
-      {AssetType::Model, "images/model.png"},
-      {AssetType::Sound, "images/sound.png"},
+      {AssetType::_2D, "images/texture.png"},
+      {AssetType::_3D, "images/model.png"},
+      {AssetType::Audio, "images/sound.png"},
       {AssetType::Font, "images/font.png"},
       {AssetType::Shader, "images/document.png"},
       {AssetType::Document, "images/document.png"},
@@ -227,7 +227,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   const auto& asset_path = asset.full_path;
 
   // Handle 3D models - check for thumbnails first, generate on-demand if needed
-  if (asset.type == AssetType::Model) {
+  if (asset.type == AssetType::_3D) {
     // Generate thumbnail path using full relative path structure
     // TODO: Move this logic to Asset::thumbnail_path()
     std::filesystem::path asset_root(Config::ASSET_ROOT_DIRECTORY);
@@ -301,7 +301,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   }
 
   // For other non-texture assets, return type-specific icon
-  if (asset.type != AssetType::Texture) {
+  if (asset.type != AssetType::_2D) {
     auto it = type_icons_.find(asset.type);
     TextureCacheEntry entry;
     entry.texture_id = (it != type_icons_.end()) ? it->second : default_texture_;

@@ -9,34 +9,34 @@ AssetType get_asset_type(const std::string& extension) {
 
   static const std::map<std::string, AssetType> type_map = {
     // Textures
-    {".png", AssetType::Texture},
-    {".jpg", AssetType::Texture},
-    {".jpeg", AssetType::Texture},
-    {".gif", AssetType::Texture},
-    {".bmp", AssetType::Texture},
-    {".tga", AssetType::Texture},
-    {".dds", AssetType::Texture},
-    {".hdr", AssetType::Texture},
-    {".exr", AssetType::Texture},
-    {".ktx", AssetType::Texture},
+    {".png", AssetType::_2D},
+    {".jpg", AssetType::_2D},
+    {".jpeg", AssetType::_2D},
+    {".gif", AssetType::_2D},
+    {".bmp", AssetType::_2D},
+    {".tga", AssetType::_2D},
+    {".dds", AssetType::_2D},
+    {".hdr", AssetType::_2D},
+    {".exr", AssetType::_2D},
+    {".ktx", AssetType::_2D},
 
     // Models
-    {".fbx", AssetType::Model},
-    {".obj", AssetType::Model},
-    {".dae", AssetType::Model},
-    {".gltf", AssetType::Model},
-    {".glb", AssetType::Model},
-    {".ply", AssetType::Model},
-    {".stl", AssetType::Model},
-    {".3ds", AssetType::Model},
+    {".fbx", AssetType::_3D},
+    {".obj", AssetType::_3D},
+    {".dae", AssetType::_3D},
+    {".gltf", AssetType::_3D},
+    {".glb", AssetType::_3D},
+    {".ply", AssetType::_3D},
+    {".stl", AssetType::_3D},
+    {".3ds", AssetType::_3D},
 
     // Audio
-    {".wav", AssetType::Sound},
-    {".mp3", AssetType::Sound},
-    {".ogg", AssetType::Sound},
-    {".flac", AssetType::Sound},
-    {".aac", AssetType::Sound},
-    {".m4a", AssetType::Sound},
+    {".wav", AssetType::Audio},
+    {".mp3", AssetType::Audio},
+    {".ogg", AssetType::Audio},
+    {".flac", AssetType::Audio},
+    {".aac", AssetType::Audio},
+    {".m4a", AssetType::Audio},
 
     // Fonts
     {".ttf", AssetType::Font},
@@ -70,7 +70,7 @@ AssetType get_asset_type(const std::string& extension) {
     {".gz", AssetType::Archive},
 
     // Vector graphics
-    {".svg", AssetType::Texture},
+    {".svg", AssetType::_2D},
 
     // Auxiliary files (not shown in search results)
     {".mtl", AssetType::Auxiliary},
@@ -93,56 +93,49 @@ AssetType get_asset_type(const std::string& extension) {
   return (it != type_map.end()) ? it->second : AssetType::Unknown;
 }
 
-// Convert AssetType enum to string for display
+// Convert AssetType enum to string for display and database storage (lowercase)
 std::string get_asset_type_string(AssetType type) {
   switch (type) {
-  case AssetType::Texture:
-    return "Texture";
-  case AssetType::Model:
-    return "Model";
-  case AssetType::Sound:
-    return "Sound";
+  case AssetType::_2D:
+    return "2d";
+  case AssetType::_3D:
+    return "3d";
+  case AssetType::Audio:
+    return "audio";
   case AssetType::Font:
-    return "Font";
+    return "font";
   case AssetType::Shader:
-    return "Shader";
+    return "shader";
   case AssetType::Document:
-    return "Document";
+    return "document";
   case AssetType::Archive:
-    return "Archive";
+    return "archive";
   case AssetType::Directory:
-    return "Directory";
+    return "directory";
   case AssetType::Auxiliary:
-    return "Auxiliary";
+    return "auxiliary";
   case AssetType::Unknown:
-    return "Unknown";
+    return "unknown";
   default:
-    return "NotFound";
+    return "notfound";
   }
 }
 
-// Convert string back to AssetType enum (reverse of get_asset_type_string)
+// Convert lowercase string back to AssetType enum (assumes input is already lowercase)
 AssetType get_asset_type_from_string(const std::string& type_string) {
-  if (type_string == "Texture")
-    return AssetType::Texture;
-  else if (type_string == "Model")
-    return AssetType::Model;
-  else if (type_string == "Sound")
-    return AssetType::Sound;
-  else if (type_string == "Font")
-    return AssetType::Font;
-  else if (type_string == "Shader")
-    return AssetType::Shader;
-  else if (type_string == "Document")
-    return AssetType::Document;
-  else if (type_string == "Archive")
-    return AssetType::Archive;
-  else if (type_string == "Directory")
-    return AssetType::Directory;
-  else if (type_string == "Auxiliary")
-    return AssetType::Auxiliary;
-  else if (type_string == "Unknown")
-    return AssetType::Unknown;
-  else
-    return AssetType::Unknown; // Default fallback
+  static const std::map<std::string, AssetType> type_map = {
+    {"2d", AssetType::_2D},
+    {"3d", AssetType::_3D},
+    {"audio", AssetType::Audio},
+    {"font", AssetType::Font},
+    {"shader", AssetType::Shader},
+    {"document", AssetType::Document},
+    {"archive", AssetType::Archive},
+    {"directory", AssetType::Directory},
+    {"auxiliary", AssetType::Auxiliary},
+    {"unknown", AssetType::Unknown}
+  };
+
+  auto it = type_map.find(type_string);
+  return (it != type_map.end()) ? it->second : AssetType::Unknown;
 }

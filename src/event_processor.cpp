@@ -223,7 +223,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
             total_events_processed_++;  // Increment per file processed
 
             // Queue texture invalidation for modified texture assets
-            if (file_info.type == AssetType::Texture) {
+            if (file_info.type == AssetType::_2D) {
                 texture_manager_.queue_texture_invalidation(event.path);
             }
         }
@@ -306,7 +306,7 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
             // Queue texture invalidation for both old and new paths
             texture_manager_.queue_texture_invalidation(event.old_path);
             // Only invalidate new path if it's a texture asset
-            if (file_info.type == AssetType::Texture) {
+            if (file_info.type == AssetType::_2D) {
                 texture_manager_.queue_texture_invalidation(event.path);
             }
         }

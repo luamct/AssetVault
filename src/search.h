@@ -4,6 +4,7 @@
 #include <vector>
 #include <chrono>
 #include <atomic>
+#include <optional>
 #include "asset.h"
 #include "3d.h"
 
@@ -36,8 +37,17 @@ struct SearchState {
   bool auto_play_audio = true;
 };
 
+// Parsed search query with optional filters
+struct SearchQuery {
+  std::string text_query;                    // Regular search terms
+  std::vector<AssetType> type_filters;       // Multiple type filters (OR condition)
+};
+
+// Parse search string into structured query
+SearchQuery parse_search_query(const std::string& search_string);
+
 // Function to check if an asset matches the search query
-bool asset_matches_search(const Asset& asset, const std::string& search_query);
+bool asset_matches_search(const Asset& asset, const SearchQuery& query);
 
 // Function to filter assets based on search query
 void filter_assets(SearchState& search_state, const std::vector<Asset>& assets);

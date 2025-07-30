@@ -9,7 +9,7 @@ using time_point = std::chrono::system_clock::time_point;
 constexpr int SVG_THUMBNAIL_SIZE = 240;
 
 // Asset type enum
-enum class AssetType { Texture, Model, Sound, Font, Shader, Document, Archive, Directory, Auxiliary, Unknown };
+enum class AssetType { _2D, _3D, Audio, Font, Shader, Document, Archive, Directory, Auxiliary, Unknown };
 
 // Asset information struct
 struct Asset {

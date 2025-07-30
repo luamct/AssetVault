@@ -606,7 +606,7 @@ int main() {
 
       // Check if this asset has actual thumbnail dimensions (textures or 3D model thumbnails)
       bool has_thumbnail_dimensions = false;
-      if (search_state.filtered_assets[i].type == AssetType::Texture || search_state.filtered_assets[i].type == AssetType::Model) {
+      if (search_state.filtered_assets[i].type == AssetType::_2D || search_state.filtered_assets[i].type == AssetType::_3D) {
         // TextureCacheEntry already contains the dimensions, no need for separate call
         has_thumbnail_dimensions = (texture_entry.width > 0 && texture_entry.height > 0);
       }
@@ -692,7 +692,7 @@ int main() {
     // Handle asset selection changes
     if (search_state.selected_asset_index != prev_selected_index) {
       // If we were playing audio and switched to a different asset, stop and unload
-      if (prev_selected_type == AssetType::Sound && audio_manager.has_audio_loaded()) {
+      if (prev_selected_type == AssetType::Audio && audio_manager.has_audio_loaded()) {
         audio_manager.unload_audio();
       }
       prev_selected_index = search_state.selected_asset_index;
@@ -708,7 +708,7 @@ int main() {
       const Asset& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
 
       // Check if selected asset is a model
-      if (selected_asset.type == AssetType::Model && texture_manager.is_preview_initialized()) {
+      if (selected_asset.type == AssetType::_3D && texture_manager.is_preview_initialized()) {
         // Load the model if it's different from the currently loaded one
         if (selected_asset.full_path.u8string() != search_state.current_model.path) {
           LOG_DEBUG("=== Loading Model in Main ===");
@@ -795,7 +795,7 @@ int main() {
         ImGui::SameLine();
         ImGui::Text("%s", ss.str().c_str());
       }
-      else if (selected_asset.type == AssetType::Sound && audio_manager.is_initialized()) {
+      else if (selected_asset.type == AssetType::Audio && audio_manager.is_initialized()) {
         // Audio handling for sound assets
 
         // Load the audio file if it's different from the currently loaded one
@@ -985,7 +985,7 @@ int main() {
         if (preview_entry.texture_id != 0) {
           ImVec2 preview_size(avail_width, avail_height);
 
-          if (selected_asset.type == AssetType::Texture) {
+          if (selected_asset.type == AssetType::_2D) {
             // TextureCacheEntry already contains dimensions
             if (preview_entry.width > 0 && preview_entry.height > 0) {
               preview_size = calculate_thumbnail_size(preview_entry.width, preview_entry.height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
@@ -1038,7 +1038,7 @@ int main() {
         ImGui::Text("%s", selected_asset.extension.c_str());
 
         // Display dimensions for texture assets
-        if (selected_asset.type == AssetType::Texture) {
+        if (selected_asset.type == AssetType::_2D) {
           int width, height;
           if (texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
             ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
