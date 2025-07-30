@@ -2,7 +2,7 @@
 #include "utils.h"
 #include "config.h"
 #include "event_processor.h"
-#include <iostream>
+#include "logger.h"
 #include <sstream>
 #include <algorithm>
 #include <mutex>
@@ -36,8 +36,8 @@ bool asset_matches_search(const Asset& asset, const std::string& search_query) {
 
     // Check if the term matches name, extension, or path
     if (name_lower.find(term) != std::string::npos ||
-        extension_lower.find(term) != std::string::npos ||
-        path_lower.find(term) != std::string::npos) {
+      extension_lower.find(term) != std::string::npos ||
+      path_lower.find(term) != std::string::npos) {
       term_matches = true;
     }
 
@@ -78,7 +78,7 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets) 
 
     // Enforce reasonable limit to prevent UI blocking
     if (filtered_count >= Config::MAX_SEARCH_RESULTS) {
-      std::cout << "Search results limited to " << Config::MAX_SEARCH_RESULTS << " items\n";
+      LOG_INFO("Search results limited to {} items", Config::MAX_SEARCH_RESULTS);
       break;
     }
   }
@@ -94,7 +94,6 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets) 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
 
-  std::cout << "Search for \"" << search_state.buffer << "\" completed in " 
-            << duration.count() / 1000.0 << " ms. "
-            << "Filtered " << filtered_count << "/" << total_assets << " assets\n";
+  LOG_INFO("Search for \"{}\" completed in {:.1f} ms. Filtered {}/{} assets", 
+    search_state.buffer, duration.count() / 1000.0, filtered_count, total_assets);
 }

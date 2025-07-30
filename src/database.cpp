@@ -1,9 +1,9 @@
 #include "database.h"
+#include "logger.h"
 
 #include <chrono>
 #include <filesystem>
 #include <iomanip>
-#include <iostream>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -30,7 +30,7 @@ bool AssetDatabase::initialize(const std::string& db_path) {
   }
 
   is_open_ = true;
-  std::cout << "Database opened successfully: " << db_path << std::endl;
+  LOG_INFO("Database opened successfully: {}", db_path);
 
   // Enable foreign keys and WAL mode for better performance
   execute_sql("PRAGMA foreign_keys = ON");
@@ -468,7 +468,7 @@ bool AssetDatabase::execute_sql(const std::string& sql) {
   int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &error_msg);
 
   if (rc != SQLITE_OK) {
-    std::cerr << "SQL error: " << error_msg << std::endl;
+    LOG_ERROR("SQL error: {}", error_msg);
     sqlite3_free(error_msg);
     return false;
   }
@@ -555,5 +555,5 @@ Asset AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
 }
 
 void AssetDatabase::print_sqlite_error(const std::string& operation) {
-  std::cerr << "SQLite error during " << operation << ": " << sqlite3_errmsg(db_) << '\n';
+  LOG_ERROR("SQLite error during {}: {}", operation, sqlite3_errmsg(db_));
 }

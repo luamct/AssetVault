@@ -2,6 +2,7 @@
 #include "imgui.h"
 #include "config.h"
 #include <iostream>
+#include "logger.h"
 
 namespace Theme {
 
@@ -188,12 +189,12 @@ namespace Theme {
 
     ImFont* font = io.Fonts->AddFontFromFileTTF(Config::FONT_PATH, Config::FONT_SIZE, &font_config, glyph_ranges);
     if (font) {
-      std::cout << "Roboto font loaded successfully with Unicode support!\n";
+      LOG_INFO("Roboto font loaded successfully with Unicode support!");
       return true;
     }
 
     // If embedded font fails to load, log error and use default font
-    std::cerr << "Failed to load embedded Roboto font. Check that " << Config::FONT_PATH << " exists.\n";
+    LOG_ERROR("Failed to load embedded Roboto font. Check that {} exists.", Config::FONT_PATH);
     return false;
   }
 

@@ -13,7 +13,8 @@
       "Bash(sqlite3:*)",
       "Bash(timeout:*)",
       "Bash(dir:*)",
-      "Bash(find assets -name \"*.wav\" -o -name \"*.mp3\" -o -name \"*.ogg\" -o -name \"*.flac\" -o -name \"*.m4a\" -o -name \"*.aac\")"
+      "Bash(find assets -name \"*.wav\" -o -name \"*.mp3\" -o -name \"*.ogg\" -o -name \"*.flac\" -o -name \"*.m4a\" -o -name \"*.aac\")",
+      "Bash(powershell:*)"
     ],
     "deny": []
   }

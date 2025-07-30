@@ -1,4 +1,5 @@
 #include "3d.h"
+#include "logger.h"
 #include <iostream>
 #include <filesystem>
 #include <glm/glm.hpp>
@@ -104,7 +105,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
   materials.clear();
 
   if (!scene || scene->mNumMaterials == 0) {
-    std::cout << "No materials found in model" << std::endl;
+    LOG_WARN("No materials found in model");
     return;
   }
 
@@ -305,13 +306,13 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   );
 
   if (!scene || !scene->mRootNode) {
-    std::cout << "ERROR::ASSIMP:: " << importer.GetErrorString() << std::endl;
+    LOG_ERROR("ASSIMP: {}", importer.GetErrorString());
     return false;
   }
   
   // Handle incomplete scenes (common with FBX files containing animations)
   if (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
-    std::cout << "WARNING: Scene marked as incomplete (possibly due to animations), but proceeding with mesh data" << std::endl;
+    LOG_WARN("Scene marked as incomplete (possibly due to animations), but proceeding with mesh data");
   }
 
   // Process the scene hierarchy starting from root node
@@ -320,7 +321,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   
   // Check if the model has any visible geometry
   if (model.vertices.empty() || model.indices.empty()) {
-    std::cout << "WARNING: Model has no visible geometry (possibly animation-only FBX)" << std::endl;
+    LOG_WARN("Model has no visible geometry (possibly animation-only FBX)");
     return false;
   }
 
@@ -346,7 +347,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   glGenBuffers(1, &model.ebo);
   
   if (model.vao == 0 || model.vbo == 0 || model.ebo == 0) {
-    std::cout << "ERROR: Failed to generate OpenGL buffers!" << std::endl;
+    LOG_ERROR("Failed to generate OpenGL buffers!");
     return false;
   }
 
@@ -358,7 +359,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   // Check for OpenGL errors
   GLenum error = glGetError();
   if (error != GL_NO_ERROR) {
-    std::cout << "ERROR: OpenGL error after vertex buffer creation: " << error << std::endl;
+    LOG_ERROR("OpenGL error after vertex buffer creation: {}", error);
     return false;
   }
 
@@ -369,7 +370,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   
   error = glGetError();
   if (error != GL_NO_ERROR) {
-    std::cout << "ERROR: OpenGL error after index buffer creation: " << error << std::endl;
+    LOG_ERROR("OpenGL error after index buffer creation: {}", error);
     return false;
   }
 

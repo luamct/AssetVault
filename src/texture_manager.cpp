@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <glad/glad.h>
+#include "logger.h"
 
 // Include stb_image for PNG loading
 #define STB_IMAGE_IMPLEMENTATION
@@ -36,7 +37,7 @@ bool TextureManager::initialize() {
   // Load default texture
   default_texture_ = load_texture("images/texture.png");
   if (default_texture_ == 0) {
-    std::cerr << "Failed to load default texture\n";
+    LOG_ERROR("Failed to load default texture");
     return false;
   }
 
@@ -48,7 +49,7 @@ bool TextureManager::initialize() {
   pause_icon_ = load_texture("images/pause.png");
   speaker_icon_ = load_texture("images/speaker.png");
 
-  std::cout << "TextureManager initialized successfully\n";
+  LOG_INFO("TextureManager initialized successfully");
   return true;
 }
 
@@ -95,7 +96,7 @@ unsigned int TextureManager::load_texture(const char* filename, int* out_width, 
   int width, height, channels;
   unsigned char* data = stbi_load(filename, &width, &height, &channels, 4);
   if (!data) {
-    std::cerr << "Failed to load texture: " << filename << '\n';
+    LOG_ERROR("Failed to load texture: {}", filename);
     return 0;
   }
 
@@ -128,12 +129,12 @@ unsigned int TextureManager::load_svg_texture(
   // Parse SVG directly from file like the nanosvg examples do
   NSVGimage* image = nsvgParseFromFile(filename, "px", 96.0f);
   if (!image) {
-    std::cerr << "Failed to parse SVG: " << filename << '\n';
+    LOG_ERROR("Failed to parse SVG: {}", filename);
     return 0;
   }
 
   if (image->width <= 0 || image->height <= 0) {
-    std::cerr << "Invalid SVG dimensions: " << image->width << "x" << image->height << std::endl;
+    LOG_ERROR("Invalid SVG dimensions: {}x{}", image->width, image->height);
     nsvgDelete(image);
     return 0;
   }
@@ -148,7 +149,7 @@ unsigned int TextureManager::load_svg_texture(
   int h = static_cast<int>(image->height * scale);
 
   if (w <= 0 || h <= 0) {
-    std::cerr << "Invalid raster dimensions: " << w << "x" << h << std::endl;
+    LOG_ERROR("Invalid raster dimensions: {}x{}", w, h);
     nsvgDelete(image);
     return 0;
   }
@@ -156,7 +157,7 @@ unsigned int TextureManager::load_svg_texture(
   // Create rasterizer
   NSVGrasterizer* rast = nsvgCreateRasterizer();
   if (!rast) {
-    std::cerr << "Failed to create SVG rasterizer for: " << filename << '\n';
+    LOG_ERROR("Failed to create SVG rasterizer for: {}", filename);
     nsvgDelete(image);
     return 0;
   }
@@ -164,7 +165,7 @@ unsigned int TextureManager::load_svg_texture(
   // Allocate image buffer like the nanosvg examples do
   unsigned char* img_data = static_cast<unsigned char*>(malloc(w * h * 4));
   if (!img_data) {
-    std::cerr << "Failed to allocate image buffer for: " << filename << '\n';
+    LOG_ERROR("Failed to allocate image buffer for: {}", filename);
     nsvgDeleteRasterizer(rast);
     nsvgDelete(image);
     return 0;
@@ -217,7 +218,7 @@ void TextureManager::load_type_textures() {
     unsigned int texture_id = load_texture(path);
     type_icons_[type] = texture_id;
     if (texture_id == 0) {
-      std::cerr << "Failed to load type texture: " << path << '\n';
+      LOG_ERROR("Failed to load type texture: {}", path);
     }
   }
 }
@@ -338,7 +339,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   }
 
   if (texture_id == 0) {
-    std::cerr << "[TextureManager] Failed to load texture, returning default icon for: " << asset_path.u8string() << '\n';
+    LOG_ERROR("Failed to load texture, returning default icon for: {}", asset_path.u8string());
     // Return type icon instead of 0
     auto icon_it = type_icons_.find(asset.type);
     TextureCacheEntry entry;
@@ -383,7 +384,7 @@ bool TextureManager::get_texture_dimensions(const std::filesystem::path& file_pa
 bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager) {
   // Check if preview system is initialized
   if (!texture_manager.is_preview_initialized()) {
-    std::cerr << "Cannot generate 3D model thumbnail: preview system not initialized" << std::endl;
+    LOG_ERROR("Cannot generate 3D model thumbnail: preview system not initialized");
     return false;
   }
 
@@ -397,7 +398,7 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
       std::filesystem::create_directories(thumbnail_dir);
     }
     catch (const std::filesystem::filesystem_error& e) {
-      std::cerr << "Failed to create thumbnail directory " << thumbnail_dir << ": " << e.what() << std::endl;
+      LOG_ERROR("Failed to create thumbnail directory {}: {}", thumbnail_dir.string(), e.what());
       return false;
     }
   }
@@ -405,7 +406,7 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
   // Load the 3D model
   Model model;
   if (!load_model(model_path, model, texture_manager)) {
-    std::cerr << "Failed to load 3D model for thumbnail generation: " << model_path << std::endl;
+    LOG_ERROR("Failed to load 3D model for thumbnail generation: {}", model_path);
     return false;
   }
 
@@ -433,7 +434,7 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
 
   // Check framebuffer completeness
   if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-    std::cerr << "Thumbnail framebuffer is not complete!" << std::endl;
+    LOG_ERROR("Thumbnail framebuffer is not complete!");
     glDeleteFramebuffers(1, &temp_framebuffer);
     glDeleteTextures(1, &temp_texture);
     glDeleteTextures(1, &temp_depth_texture);
@@ -471,7 +472,7 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
   if (!result) {
-    std::cerr << "Failed to write 3D model thumbnail: " << thumbnail_path.string() << std::endl;
+    LOG_ERROR("Failed to write 3D model thumbnail: {}", thumbnail_path.string());
     return false;
   }
 
@@ -482,7 +483,7 @@ unsigned int TextureManager::load_texture_for_model(const std::string& filepath)
   int width, height, channels;
   unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &channels, 0);
   if (!data) {
-    std::cout << "Failed to load texture for 3d model: " << filepath << std::endl;
+    LOG_WARN("Failed to load texture for 3d model: {}", filepath);
     return 0;
   }
 
@@ -627,7 +628,7 @@ bool TextureManager::initialize_preview_system() {
   glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
   if (!success) {
     glGetShaderInfoLog(vertex_shader, 512, nullptr, info_log);
-    std::cerr << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << info_log << std::endl;
+    LOG_ERROR("SHADER::VERTEX::COMPILATION_FAILED: {}", info_log);
     return false;
   }
 
@@ -639,7 +640,7 @@ bool TextureManager::initialize_preview_system() {
   glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
   if (!success) {
     glGetShaderInfoLog(fragment_shader, 512, nullptr, info_log);
-    std::cerr << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << info_log << std::endl;
+    LOG_ERROR("SHADER::FRAGMENT::COMPILATION_FAILED: {}", info_log);
     return false;
   }
 
@@ -652,7 +653,7 @@ bool TextureManager::initialize_preview_system() {
   glGetProgramiv(preview_shader_, GL_LINK_STATUS, &success);
   if (!success) {
     glGetProgramInfoLog(preview_shader_, 512, nullptr, info_log);
-    std::cerr << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << info_log << std::endl;
+    LOG_ERROR("SHADER::PROGRAM::LINKING_FAILED: {}", info_log);
     return false;
   }
 
@@ -680,7 +681,7 @@ bool TextureManager::initialize_preview_system() {
 
   // Check framebuffer completeness
   if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-    std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+    LOG_ERROR("FRAMEBUFFER:: Framebuffer is not complete!");
     return false;
   }
 
@@ -690,7 +691,7 @@ bool TextureManager::initialize_preview_system() {
   glEnable(GL_DEPTH_TEST);
 
   preview_initialized_ = true;
-  std::cout << "3D preview initialized successfully!" << std::endl;
+  LOG_INFO("3D preview initialized successfully!");
   return true;
 }
 

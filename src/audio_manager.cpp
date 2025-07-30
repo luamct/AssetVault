@@ -1,5 +1,5 @@
 #include "audio_manager.h"
-#include <iostream>
+#include "logger.h"
 
 // Include miniaudio implementation
 #define MINIAUDIO_IMPLEMENTATION
@@ -40,15 +40,15 @@ bool AudioManager::initialize() {
   // Initialize miniaudio engine with custom config
   ma_result result = ma_engine_init(&engineConfig, engine_);
   if (result != MA_SUCCESS) {
-    std::cerr << "Failed to initialize audio engine. Error: " << result << std::endl;
+    LOG_ERROR("Failed to initialize audio engine. Error: {}", static_cast<int>(result));
     delete engine_;
     engine_ = nullptr;
     return false;
   }
 
   initialized_ = true;
-  std::cout << "Audio system initialized successfully" << std::endl;
-  std::cout << "Audio sample rate: " << ma_engine_get_sample_rate(engine_) << " Hz" << std::endl;
+  LOG_INFO("Audio system initialized successfully");
+  LOG_INFO("Audio sample rate: {} Hz", ma_engine_get_sample_rate(engine_));
   return true;
 }
 
@@ -68,12 +68,12 @@ void AudioManager::cleanup() {
   }
 
   initialized_ = false;
-  std::cout << "Audio system cleaned up" << std::endl;
+  LOG_INFO("Audio system cleaned up");
 }
 
 bool AudioManager::load_audio(const std::string& filepath) {
   if (!initialized_) {
-    std::cerr << "Audio system not initialized" << std::endl;
+    LOG_ERROR("Audio system not initialized");
     return false;
   }
 
@@ -89,7 +89,7 @@ bool AudioManager::load_audio(const std::string& filepath) {
   // Load the sound file with streaming to reduce memory usage and improve performance
   ma_result result = ma_sound_init_from_file(engine_, filepath.c_str(), flags, NULL, NULL, current_sound_);
   if (result != MA_SUCCESS) {
-    std::cerr << "Failed to load audio file: " << filepath << ". Error: " << result << std::endl;
+    LOG_ERROR("Failed to load audio file: {}. Error: {}", filepath, static_cast<int>(result));
     delete current_sound_;
     current_sound_ = nullptr;
     return false;
@@ -97,7 +97,7 @@ bool AudioManager::load_audio(const std::string& filepath) {
 
   current_file_ = filepath;
   sound_loaded_ = true;
-  std::cout << "Loaded audio file: " << filepath << std::endl;
+  LOG_INFO("Loaded audio file: {}", filepath);
   return true;
 }
 

@@ -22,6 +22,8 @@ endif()
 if(MSVC)
     # Suppress warning C4201 from GLM library (nameless struct/union)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4201")
+    # Enable UTF-8 encoding for spdlog Unicode support
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /utf-8")
     # Enable optimizations in release builds
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG")
@@ -93,6 +95,10 @@ message(STATUS "Using GLM: include at ${GLM_INCLUDE_DIR}")
 # NanoSVG (header-only library)
 set(NANOSVG_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/nanosvg")
 message(STATUS "Using NanoSVG: include at ${NANOSVG_INCLUDE_DIR}")
+
+# spdlog (header-only library)
+set(SPDLOG_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/spdlog")
+message(STATUS "Using spdlog: include at ${SPDLOG_INCLUDE_DIR}")
 
 # Create GLFW imported target (static library)
 add_library(glfw STATIC IMPORTED)
@@ -238,6 +244,7 @@ target_include_directories(AssetInventory PRIVATE
     ${GLM_INCLUDE_DIR}
     ${GLAD_DIR}/include
     ${NANOSVG_INCLUDE_DIR}
+    ${SPDLOG_INCLUDE_DIR}
 )
 
 

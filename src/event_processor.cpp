@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 #include "config.h"
+#include "logger.h"
 #include "texture_manager.h"
 
 namespace fs = std::filesystem;
@@ -32,7 +33,7 @@ bool EventProcessor::start() {
     running_ = true;
     processing_thread_ = std::thread(&EventProcessor::process_events, this);
 
-    std::cout << "EventProcessor started with batch size: " << batch_size_ << std::endl;
+    LOG_INFO("EventProcessor started with batch size: {}", batch_size_);
     return true;
 }
 
@@ -48,7 +49,7 @@ void EventProcessor::stop() {
         processing_thread_.join();
     }
 
-    std::cout << "EventProcessor stopped. Total processed: " << processed_count_ << std::endl;
+    LOG_INFO("EventProcessor stopped. Total processed: {}", processed_count_.load());
 }
 
 void EventProcessor::queue_event(const FileEvent& event) {
@@ -169,9 +170,7 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     double global_avg = total_assets_processed > 0 ? (double) total_processing_time_ms / total_assets_processed : 0.0;
 
     // Enhanced logging with both batch and global metrics
-    std::cout << "Batch of " << batch.size() << " assets completed. " << std::fixed <<
-        std::setprecision(2) << "Running average of " << global_avg << "ms per asset ("
-        << total_assets_processed << " total assets processed)" << std::endl;
+    LOG_INFO("Batch of {} assets completed. Running average of {:.2f}ms per asset ({} total assets processed)", batch.size(), global_avg, total_assets_processed);
 }
 
 // Batch processing methods for better performance
@@ -188,7 +187,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
             total_events_processed_++;  // Increment per file processed
         }
         catch (const std::exception& e) {
-            std::cerr << "Error processing created event for " << event.path.u8string() << ": " << e.what() << std::endl;
+            LOG_ERROR("Error processing created event for {}: {}", event.path.u8string(), e.what());
             total_events_processed_++;  // Count failed attempts too
         }
     }
@@ -229,7 +228,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
             }
         }
         catch (const std::exception& e) {
-            std::cerr << "Error processing modified event for " << event.path.u8string() << ": " << e.what() << std::endl;
+            LOG_ERROR("Error processing modified event for {}: {}", event.path.u8string(), e.what());
             total_events_processed_++;  // Count failed attempts too
         }
     }
@@ -312,8 +311,7 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
             }
         }
         catch (const std::exception& e) {
-            std::cerr << "Error processing renamed event for " << event.old_path.u8string() << " -> " << event.path.u8string()
-                << ": " << e.what() << std::endl;
+            LOG_ERROR("Error processing renamed event for {} -> {}: {}", event.old_path.u8string(), event.path.u8string(), e.what());
             total_events_processed_++;  // Count failed attempts too
         }
     }
@@ -371,7 +369,7 @@ void EventProcessor::update_asset(const Asset& asset) {
     else {
         // Asset not found, add it
         assets_.push_back(asset);
-        std::cerr << "Warning: Updated asset not found in memory, adding: " << asset.full_path.u8string() << std::endl;
+        LOG_WARN("Updated asset not found in memory, adding: {}", asset.full_path.u8string());
     }
 }
 
@@ -383,7 +381,7 @@ void EventProcessor::remove_asset(const std::string& path) {
         assets_.erase(assets_.begin() + index);
     }
     else {
-        std::cerr << "Warning: Deleted asset not found in memory: " << path << std::endl;
+        LOG_WARN("Deleted asset not found in memory: {}", path);
     }
 }
 
@@ -437,11 +435,11 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
                 catch (const fs::filesystem_error& e) {
                     // Fallback to provided timestamp for display
                     file_info.last_modified = timestamp;
-                    std::cerr << "Warning: Using provided timestamp for display for " << full_path.u8string() << ": " << e.what() << std::endl;
+                    LOG_WARN("Using provided timestamp for display for {}: {}", full_path.u8string(), e.what());
                 }
             }
             catch (const fs::filesystem_error& e) {
-                std::cerr << "Warning: Could not get file info for " << file_info.full_path.u8string() << ": " << e.what() << std::endl;
+                LOG_WARN("Could not get file info for {}: {}", file_info.full_path.u8string(), e.what());
                 file_info.size = 0;
                 file_info.last_modified = timestamp;
             }
@@ -465,14 +463,13 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
                 file_info.last_modified = sctp;
             }
             catch (const fs::filesystem_error& e) {
-                std::cerr << "Warning: Could not get modification time for directory " << file_info.full_path.u8string() << ": "
-                    << e.what() << std::endl;
+                LOG_WARN("Could not get modification time for directory {}: {}", file_info.full_path.u8string(), e.what());
                 file_info.last_modified = timestamp; // Fallback to provided timestamp
             }
         }
     }
     catch (const fs::filesystem_error& e) {
-        std::cerr << "Error creating file info for " << full_path.u8string() << ": " << e.what() << std::endl;
+        LOG_ERROR("Error creating file info for {}: {}", full_path.u8string(), e.what());
         // Return minimal file info on error
         file_info.full_path = full_path;
         file_info.name = full_path.filename().u8string();

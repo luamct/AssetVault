@@ -5,7 +5,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
-#include <iostream>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -13,6 +12,7 @@
 
 #include "config.h"
 #include "file_watcher.h"
+#include "logger.h"
 
 // Structure to track pending file events
 struct PendingFileEvent {
@@ -62,7 +62,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
 
   bool start_watching(const std::string& path, FileEventCallback cb) override {
     if (is_watching_flag.load()) {
-      std::cerr << "Already watching a directory\n";
+      LOG_ERROR("Already watching a directory");
       return false;
     }
 
@@ -72,7 +72,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
     // Create event for signaling
     h_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (h_event == nullptr) {
-      std::cerr << "Failed to create event: " << GetLastError() << '\n';
+      LOG_ERROR("Failed to create event: {}", GetLastError());
       return false;
     }
 
@@ -82,7 +82,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
                               FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
 
     if (h_directory == INVALID_HANDLE_VALUE) {
-      std::cerr << "Failed to open directory: " << GetLastError() << '\n';
+      LOG_ERROR("Failed to open directory: {}", GetLastError());
       CloseHandle(h_event);
       return false;
     }
@@ -97,7 +97,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
     // Start timer thread for processing pending events
     timer_thread = std::thread(&WindowsFileWatcher::timer_loop, this);
 
-    std::cout << "Started watching directory: " << path << '\n';
+    LOG_INFO("Started watching directory: {}", path);
     return true;
   }
 
@@ -139,7 +139,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
     }
 
     is_watching_flag = false;
-    std::cout << "Stopped watching directory: " << watched_path << '\n';
+    LOG_INFO("Stopped watching directory: {}", watched_path);
   }
 
   bool is_watching() const override { return is_watching_flag.load(); }
@@ -232,7 +232,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
                                      FILE_NOTIFY_CHANGE_ATTRIBUTES | FILE_NOTIFY_CHANGE_SIZE |
                                      FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION,
                                  nullptr, &overlapped, nullptr)) {
-        std::cerr << "ReadDirectoryChangesW failed: " << GetLastError() << '\n';
+        LOG_ERROR("ReadDirectoryChangesW failed: {}", GetLastError());
         break;
       }
 

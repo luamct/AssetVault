@@ -1,6 +1,5 @@
 #include "file_watcher.h"
-
-#include <iostream>
+#include "logger.h"
 
 // Platform-specific factory functions
 #ifdef _WIN32
@@ -13,7 +12,7 @@ std::unique_ptr<FileWatcherImpl> create_windows_file_watcher_impl();
 
 std::unique_ptr<FileWatcherImpl> create_file_watcher_impl() {
 #ifdef _WIN32
-  std::cout << "Using native Windows file watcher\n";
+  LOG_INFO("Using native Windows file watcher");
   return create_windows_file_watcher_impl();
 #else
   return nullptr;
@@ -23,7 +22,7 @@ std::unique_ptr<FileWatcherImpl> create_file_watcher_impl() {
 FileWatcher::FileWatcher() : p_impl(nullptr) {
   p_impl = create_file_watcher_impl();
   if (!p_impl) {
-    std::cerr << "No file watcher implementation available\n";
+    LOG_ERROR("No file watcher implementation available");
   }
 }
 
@@ -31,7 +30,7 @@ FileWatcher::~FileWatcher() { stop_watching(); }
 
 bool FileWatcher::start_watching(const std::string& path, FileEventCallback callback) {
   if (!p_impl) {
-    std::cerr << "No file watcher implementation available\n";
+    LOG_ERROR("No file watcher implementation available");
     return false;
   }
 

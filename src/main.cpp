@@ -31,6 +31,7 @@
 #include "config.h"
 #include "audio_manager.h"
 #include "search.h"
+#include "logger.h"
 
 // Global callback state (needed for callback functions)
 EventProcessor* g_event_processor = nullptr;
@@ -152,11 +153,11 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
   namespace fs = std::filesystem;
   auto scan_start = std::chrono::high_resolution_clock::now();
 
-  std::cout << "Starting scan for changes...\n";
+  LOG_INFO("Starting scan for changes...");
 
   // Get current database state
   std::vector<Asset> db_assets = database.get_all_assets();
-  std::cout << "Database contains " << db_assets.size() << " assets\n";
+  LOG_INFO("Database contains {} assets", db_assets.size());
   std::unordered_map<std::filesystem::path, Asset> db_map;
   for (const auto& asset : db_assets) {
     db_map[asset.full_path] = asset;
@@ -167,11 +168,11 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
   try {
     fs::path root(Config::ASSET_ROOT_DIRECTORY);
     if (!fs::exists(root) || !fs::is_directory(root)) {
-      std::cerr << "Error: Path does not exist or is not a directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
+      LOG_ERROR("Path does not exist or is not a directory: {}", Config::ASSET_ROOT_DIRECTORY);
       return;
     }
 
-    std::cout << "Scanning directory: " << Config::ASSET_ROOT_DIRECTORY << "\n";
+    LOG_INFO("Scanning directory: {}", Config::ASSET_ROOT_DIRECTORY);
 
     // Single pass: Get all file paths
     for (const auto& entry : fs::recursive_directory_iterator(root)) {
@@ -179,15 +180,15 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
         current_files.insert(entry.path());
       }
       catch (const fs::filesystem_error& e) {
-        std::cerr << "Warning: Could not access " << entry.path().u8string() << ": " << e.what() << '\n';
+        LOG_WARN("Could not access {}: {}", entry.path().u8string(), e.what());
         continue;
       }
     }
 
-    std::cout << "Found " << current_files.size() << " files and directories\n";
+    LOG_INFO("Found {} files and directories", current_files.size());
   }
   catch (const fs::filesystem_error& e) {
-    std::cerr << "Error scanning directory: " << e.what() << '\n';
+    LOG_ERROR("Error scanning directory: {}", e.what());
     return;
   }
 
@@ -210,7 +211,7 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
     // Skip expensive timestamp checks - file modifications will be caught by runtime file watcher
   }
 
-  std::cout << "Now looking for deleted files\n";
+  LOG_INFO("Now looking for deleted files");
 
   // Find files in database that no longer exist on filesystem
   for (const auto& db_asset : db_assets) {
@@ -226,14 +227,14 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
   auto scan_end = std::chrono::high_resolution_clock::now();
   auto scan_duration = std::chrono::duration_cast<std::chrono::milliseconds>(scan_end - scan_start);
 
-  std::cout << "Filesystem scan completed in " << scan_duration.count() << "ms\n";
-  std::cout << "Found " << events_to_queue.size() << " changes to process\n";
+  LOG_INFO("Filesystem scan completed in {}ms", scan_duration.count());
+  LOG_INFO("Found {} changes to process", events_to_queue.size());
 
   // Always load existing assets from database first
   {
     std::lock_guard<std::mutex> lock(event_processor->get_assets_mutex());
     assets = db_assets; // Load existing database assets into assets
-    std::cout << "Loaded " << assets.size() << " existing assets from database\n";
+    LOG_INFO("Loaded {} existing assets from database", assets.size());
   }
 
   // Then queue any detected changes to update from that baseline
@@ -243,11 +244,10 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
     auto queue_end = std::chrono::high_resolution_clock::now();
     auto queue_duration = std::chrono::duration_cast<std::chrono::milliseconds>(queue_end - queue_start);
 
-    std::cout << "Published " << events_to_queue.size() << " events to EventProcessor in "
-      << queue_duration.count() << "ms\n";
+    LOG_INFO("Published {} events to EventProcessor in {}ms", events_to_queue.size(), queue_duration.count());
   }
   else {
-    std::cout << "No changes detected\n";
+    LOG_INFO("No changes detected");
   }
 }
 
@@ -256,8 +256,12 @@ int main() {
   // Set console to UTF-8 mode for proper Unicode display
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
-  std::cout << "Console set to UTF-8 mode for Unicode support\n";
+  LOG_INFO("Console set to UTF-8 mode for Unicode support");
 #endif
+
+  // Initialize logging system
+  Logger::initialize(LogLevel::Debug);
+  LOG_INFO("AssetInventory application starting...");
 
   // Local variables
   std::vector<Asset> assets;
@@ -268,35 +272,37 @@ int main() {
   SearchState search_state;
 
   // Initialize database
-  std::cout << "Initializing database...\n";
+  LOG_INFO("Initializing database...");
   if (!database.initialize(Config::DATABASE_PATH)) {
-    std::cerr << "Failed to initialize database\n";
+    LOG_ERROR("Failed to initialize database");
     return -1;
   }
+  LOG_INFO("Database opened successfully: {}", Config::DATABASE_PATH);
 
   // Debug: Force clear database if flag is set
   if (Config::DEBUG_FORCE_DB_CLEAR) {
-    std::cout << "DEBUG: Forcing database clear for testing...\n";
+    LOG_INFO("DEBUG: Forcing database clear for testing...");
     database.clear_all_assets();
   }
 
   // Initialize unified event processor for both initial scan and runtime events
   g_event_processor = new EventProcessor(database, assets, search_state.update_needed, texture_manager, Config::EVENT_PROCESSOR_BATCH_SIZE);
   if (!g_event_processor->start()) {
-    std::cerr << "Failed to start EventProcessor\n";
+    LOG_ERROR("Failed to start EventProcessor");
     return -1;
   }
+  LOG_INFO("EventProcessor started successfully");
 
   // Initialize GLFW
   if (!glfwInit()) {
-    std::cerr << "Failed to initialize GLFW\n";
+    LOG_ERROR("Failed to initialize GLFW");
     return -1;
   }
 
   // Create window
   GLFWwindow* window = glfwCreateWindow(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT, "Asset Inventory", nullptr, nullptr);
   if (!window) {
-    std::cerr << "Failed to create GLFW window\n";
+    LOG_ERROR("Failed to create GLFW window");
     glfwTerminate();
     return -1;
   }
@@ -306,7 +312,7 @@ int main() {
 
   // Initialize GLAD
   if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
-    std::cerr << "Failed to initialize GLAD\n";
+    LOG_ERROR("Failed to initialize GLAD");
     glfwTerminate();
     return -1;
   }
@@ -333,31 +339,31 @@ int main() {
 
   // Initialize texture manager
   if (!texture_manager.initialize()) {
-    std::cerr << "Failed to initialize texture manager\n";
+    LOG_ERROR("Failed to initialize texture manager");
     return -1;
   }
 
   // Initialize 3D preview system
   if (!texture_manager.initialize_preview_system()) {
-    std::cerr << "Warning: Failed to initialize 3D preview system\n";
+    LOG_WARN("Failed to initialize 3D preview system");
     return -1;
   }
 
   // Initialize audio manager
   if (!audio_manager.initialize()) {
-    std::cerr << "Warning: Failed to initialize audio system\n";
+    LOG_WARN("Failed to initialize audio system");
     // Not critical - continue without audio support
   }
 
   scan_for_changes(database, assets, g_event_processor);
 
   // Start file watcher after initial scan
-  std::cout << "Starting file watcher...\n";
+  LOG_INFO("Starting file watcher...");
   if (file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event)) {
-    std::cout << "File watcher started successfully\n";
+    LOG_INFO("File watcher started successfully");
   }
   else {
-    std::cerr << "Failed to start file watcher\n";
+    LOG_ERROR("Failed to start file watcher");
   }
 
   // Main loop
@@ -641,7 +647,7 @@ int main() {
       if (ImGui::ImageButton(
         ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.texture_id, display_size)) {
         search_state.selected_asset_index = static_cast<int>(i);
-        std::cout << "Selected: " << search_state.filtered_assets[i].name << '\n';
+        LOG_DEBUG("Selected: {}", search_state.filtered_assets[i].name);
       }
 
       ImGui::PopStyleColor(3);
@@ -705,17 +711,17 @@ int main() {
       if (selected_asset.type == AssetType::Model && texture_manager.is_preview_initialized()) {
         // Load the model if it's different from the currently loaded one
         if (selected_asset.full_path.u8string() != search_state.current_model.path) {
-          std::cout << "=== Loading Model in Main ===" << std::endl;
-          std::cout << "Selected asset: " << selected_asset.full_path.u8string() << std::endl;
+          LOG_DEBUG("=== Loading Model in Main ===");
+          LOG_DEBUG("Selected asset: {}", selected_asset.full_path.u8string());
           Model model;
           if (load_model(selected_asset.full_path.u8string(), model, texture_manager)) {
             set_current_model(search_state.current_model, model);
-            std::cout << "Model loaded successfully in main" << std::endl;
+            LOG_DEBUG("Model loaded successfully in main");
           }
           else {
-            std::cout << "Failed to load model in main" << std::endl;
+            LOG_DEBUG("Failed to load model in main");
           }
-          std::cout << "===========================" << std::endl;
+          LOG_DEBUG("===========================");
         }
 
         // Get the current model for displaying info
@@ -887,7 +893,7 @@ int main() {
             seek_position = position;
           }
 
-          const float seek_bar_width = 150.0f;
+          const float seek_bar_width = 120.0f;
           const float seek_bar_height = 4.0f; // Thin line height
 
           // Use our custom seek bar - vertically centered
@@ -910,32 +916,25 @@ int main() {
           ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - 6.0f);
           ImGui::Text("%s", format_time(duration).c_str());
 
-          ImGui::SameLine(0, 10);
+          ImGui::SameLine(0, 12);
 
           // 5. Speaker icon - vertically centered
           const float icon_size = 24.0f;
           ImGui::SetCursorPosY(baseline_y + (button_size - 0.5 * icon_size) * 0.5f);
           ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_speaker_icon(), ImVec2(icon_size, icon_size));
 
-          ImGui::SameLine(0, 10);
+          ImGui::SameLine(0, 6);
 
-          // 6. Volume slider - standard vertical ImGui slider
+          // 6. Volume slider - custom horizontal seek bar style
           static float audio_volume = 0.5f; // Start at 50%
-          const float volume_slider_height = 60.0f;
+          const float volume_width = 60.0f;  // Small horizontal slider
+          const float volume_height = 3.0f;   // Thinner than seek bar
 
-          ImGui::SetCursorPosY(baseline_y - 8.0); // Center approximately
+          ImGui::SetCursorPosY(baseline_y + button_size * 0.5f);
 
-          // Make the slider grab black
-          ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.0f, 0.0f, 0.0f, 1.0f)); // Black grab
-          ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0.2f, 0.2f, 0.2f, 1.0f)); // Dark gray when active
-
-          ImGui::PushItemWidth(20.0f); // Narrow width for vertical slider
-          if (ImGui::VSliderFloat("##VolumeSlider", ImVec2(20.0f, volume_slider_height), &audio_volume, 0.0f, 1.0f, "")) {
+          if (AudioSeekBar("##VolumeBar", &audio_volume, 0.0f, 1.0f, volume_width, volume_height)) {
             audio_manager.set_volume(audio_volume);
           }
-          ImGui::PopItemWidth();
-
-          ImGui::PopStyleColor(2);
 
           // Show percentage on hover
           if (ImGui::IsItemHovered()) {
