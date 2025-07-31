@@ -45,8 +45,8 @@ cmake --build build
 # Run application
 ./build/Debug/AssetInventory.exe
 
-# Run tests
-./build/Debug/RenderingTest.exe
+# Run unit tests
+./build/Debug/SearchTest.exe
 ```
 
 ### Directory Management
@@ -79,11 +79,12 @@ The application uses a unified event-driven architecture where both initial scan
 ### Asset Type System
 The `AssetType` enum in `asset.h` defines supported asset categories. When adding new types:
 1. Add enum value to `AssetType` in `asset.h`
-2. Update `get_asset_type_string()` in `asset.cpp`
-3. Update `get_asset_type_from_string()` in `asset.cpp`
+2. Update `get_asset_type_string()` in `asset.cpp` (returns lowercase strings for database storage)
+3. Update `get_asset_type_from_string()` in `asset.cpp` (expects lowercase input)
 4. Add texture icon mapping in `load_type_textures()` in `texture_manager.cpp`
 5. Add file extension mapping in `get_asset_type()` in `asset.cpp`
 - **Never manually convert strings to enums** - always use `get_asset_type_from_string()`
+- **Type naming convention**: Database stores lowercase type names ("2d", "3d", "audio", etc.)
 
 ### Event Processing Flow
 1. **Initial Scan** (main thread):
@@ -123,6 +124,44 @@ OpenGL-based rendering system with:
 - **EventProcessor background thread**: Unified event processing with batch operations and progress tracking
 - **FileWatcher background thread**: Real-time filesystem monitoring with thread-safe event queue
 - **Thread synchronization**: Mutex protection for shared data, atomic counters for progress, condition variables for event queuing
+
+### Unit Testing System
+Uses Catch2 header-only framework for fast, lightweight unit testing focused on core business logic.
+
+**Running Tests:**
+```bash
+# Build and run all tests
+cmake --build build --target SearchTest && ./build/Debug/SearchTest.exe
+
+# Run tests with specific tags
+./build/Debug/SearchTest.exe "[search]"
+
+# Show verbose output
+./build/Debug/SearchTest.exe -s
+
+# List all tests
+./build/Debug/SearchTest.exe --list-tests
+```
+
+**Current Test Coverage:**
+- **Search System**: Complete coverage of `parse_search_query()` function
+  - Type filter parsing with comma separation
+  - Case insensitive input handling
+  - Whitespace tolerance and trimming
+  - Unknown type filtering
+  - Edge cases and malformed input
+
+**Adding New Tests:**
+1. Add to existing `tests/test_search.cpp` for search-related functions
+2. Create new test files for other modules following naming pattern `tests/test_<module>.cpp`
+3. Update CMakeLists.txt to build new test executables
+4. Use Arrange-Act-Assert pattern with descriptive test names
+
+**Test Philosophy:**
+- **Simple and fast**: Header-only framework, minimal setup
+- **Focus on business logic**: Test core functions, not UI or rendering
+- **Immediate feedback**: Catches bugs during development, not in production
+- **Example**: Unit tests caught a critical regex parsing bug in search functionality
 
 ## Development Guidelines
 
@@ -174,7 +213,7 @@ external/          # Downloaded dependencies (GLFW, ImGui, Assimp, SQLite, etc.)
 assets/            # Asset files for monitoring and indexing
 db/                # SQLite database files
 build/             # Generated build output
-tests/             # Unit tests for database and rendering
+tests/             # Unit tests with Catch2 framework
 readmes/           # Component-specific documentation
 ```
 
@@ -192,7 +231,7 @@ readmes/           # Component-specific documentation
 ### Dependency Management
 - All dependencies are pre-included in the `external/` directory
 - No additional downloads or setup required for development
-- Dependencies include: GLFW, ImGui, GLM, Assimp, SQLite, GLAD, STB, NanoSVG
+- Dependencies include: GLFW, ImGui, GLM, Assimp, SQLite, GLAD, STB, NanoSVG, Catch2
 
 ### Asset Management
 - Smart incremental scanning compares filesystem state with database - no clearing on startup

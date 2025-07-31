@@ -61,10 +61,10 @@ namespace Config {
     // =============================================================================
 
     // File watcher settings
-    constexpr int FILE_WATCHER_DEBOUNCE_MS = 500;
+    constexpr int FILE_WATCHER_DEBOUNCE_MS = 100;
 
     // Asset root directory
-    constexpr const char* ASSET_ROOT_DIRECTORY = "assets";
+    constexpr const char* ASSET_ROOT_DIRECTORY = "D:/GameDev/AssetInventory/assets";
 
     // Database settings
     constexpr const char* DATABASE_PATH = "db/assets.db";

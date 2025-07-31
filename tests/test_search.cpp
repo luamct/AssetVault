@@ -1,0 +1,316 @@
+#define CATCH_CONFIG_MAIN
+#include "catch2/catch.hpp"
+#include "search.h"
+#include "asset.h"
+#include "test_helpers.h"
+
+// Mock global for linking - we're not testing functions that use it
+class EventProcessor;
+EventProcessor* g_event_processor = nullptr;
+
+TEST_CASE("parse_search_query basic functionality", "[search]") {
+    SECTION("Empty query") {
+        auto query = parse_search_query("");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.type_filters.empty());
+    }
+
+    SECTION("Text only query") {
+        auto query = parse_search_query("monster texture");
+        REQUIRE(query.text_query == "monster texture");
+        REQUIRE(query.type_filters.empty());
+    }
+
+    SECTION("Type only query") {
+        auto query = parse_search_query("type=2d");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.type_filters.size() == 1);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+    }
+
+    SECTION("Type and text query") {
+        auto query = parse_search_query("type=audio monster");
+        REQUIRE(query.text_query == "monster");
+        REQUIRE(query.type_filters.size() == 1);
+        REQUIRE(query.type_filters[0] == AssetType::Audio);
+    }
+}
+
+TEST_CASE("parse_search_query multiple types", "[search]") {
+    SECTION("Multiple types comma separated") {
+        auto query = parse_search_query("type=2d,audio");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.type_filters.size() == 2);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+        REQUIRE(query.type_filters[1] == AssetType::Audio);
+    }
+
+    SECTION("Multiple types with text") {
+        auto query = parse_search_query("type=2d,3d monster");
+        REQUIRE(query.text_query == "monster");
+        REQUIRE(query.type_filters.size() == 2);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+        REQUIRE(query.type_filters[1] == AssetType::_3D);
+    }
+}
+
+TEST_CASE("parse_search_query case insensitive", "[search]") {
+    SECTION("Uppercase type names") {
+        auto query = parse_search_query("type=2D,AUDIO");
+        REQUIRE(query.type_filters.size() == 2);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+        REQUIRE(query.type_filters[1] == AssetType::Audio);
+    }
+
+    SECTION("Mixed case type names") {
+        auto query = parse_search_query("type=2D,audio,3D");
+        REQUIRE(query.type_filters.size() == 3);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+        REQUIRE(query.type_filters[1] == AssetType::Audio);
+        REQUIRE(query.type_filters[2] == AssetType::_3D);
+    }
+}
+
+TEST_CASE("parse_search_query whitespace handling", "[search]") {
+    SECTION("Spaces around equals") {
+        auto query = parse_search_query("type = 2d");
+        REQUIRE(query.type_filters.size() == 1);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+    }
+
+    SECTION("Spaces everywhere") {
+        auto query = parse_search_query("  type = 2d , audio   monster  ");
+        REQUIRE(query.text_query == "monster");
+        REQUIRE(query.type_filters.size() == 2);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+        REQUIRE(query.type_filters[1] == AssetType::Audio);
+    }
+}
+
+TEST_CASE("parse_search_query unknown types", "[search]") {
+    SECTION("Unknown type ignored") {
+        auto query = parse_search_query("type=2d,invalidtype,audio");
+        REQUIRE(query.type_filters.size() == 2);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+        REQUIRE(query.type_filters[1] == AssetType::Audio);
+    }
+
+    SECTION("All unknown types") {
+        auto query = parse_search_query("type=invalid1,invalid2");
+        REQUIRE(query.type_filters.empty());
+    }
+}
+
+
+TEST_CASE("parse_search_query edge cases", "[search]") {
+    SECTION("Empty type list") {
+        auto query = parse_search_query("type=");
+        REQUIRE(query.type_filters.empty());
+    }
+
+    SECTION("Only commas") {
+        auto query = parse_search_query("type=,,,");
+        REQUIRE(query.type_filters.empty());
+    }
+
+    SECTION("Type with only spaces") {
+        auto query = parse_search_query("type=  ,  ,  ");
+        REQUIRE(query.type_filters.empty());
+    }
+}
+
+TEST_CASE("asset_matches_search text matching", "[search]") {
+    Asset asset = create_test_asset("monster_texture", ".png", AssetType::_2D, "assets/textures/monster_texture.png");
+
+    SECTION("Name matching") {
+        SearchQuery query;
+        query.text_query = "monster";
+        REQUIRE(asset_matches_search(asset, query) == true);
+
+        query.text_query = "texture";
+        REQUIRE(asset_matches_search(asset, query) == true);
+
+        query.text_query = "robot";
+        REQUIRE(asset_matches_search(asset, query) == false);
+    }
+
+    SECTION("Extension matching") {
+        SearchQuery query;
+        query.text_query = "png";
+        REQUIRE(asset_matches_search(asset, query) == true);
+
+        query.text_query = "jpg";
+        REQUIRE(asset_matches_search(asset, query) == false);
+    }
+
+    SECTION("Path matching") {
+        SearchQuery query;
+        query.text_query = "textures";
+        REQUIRE(asset_matches_search(asset, query) == true);
+
+        query.text_query = "assets";
+        REQUIRE(asset_matches_search(asset, query) == true);
+
+        query.text_query = "models";
+        REQUIRE(asset_matches_search(asset, query) == false);
+    }
+
+    SECTION("Case insensitive matching") {
+        SearchQuery query;
+        query.text_query = "MONSTER";
+        REQUIRE(asset_matches_search(asset, query) == true);
+
+        query.text_query = "PNG";
+        REQUIRE(asset_matches_search(asset, query) == true);
+
+        query.text_query = "TEXTURES";
+        REQUIRE(asset_matches_search(asset, query) == true);
+    }
+}
+
+TEST_CASE("asset_matches_search type filtering", "[search]") {
+    Asset texture_asset = create_test_asset("texture", ".png", AssetType::_2D);
+    Asset model_asset = create_test_asset("model", ".fbx", AssetType::_3D);
+    Asset audio_asset = create_test_asset("sound", ".wav", AssetType::Audio);
+
+    SECTION("Single type filter") {
+        SearchQuery query;
+        query.type_filters = { AssetType::_2D };
+
+        REQUIRE(asset_matches_search(texture_asset, query) == true);
+        REQUIRE(asset_matches_search(model_asset, query) == false);
+        REQUIRE(asset_matches_search(audio_asset, query) == false);
+    }
+
+    SECTION("Multiple type filter (OR condition)") {
+        SearchQuery query;
+        query.type_filters = { AssetType::_2D, AssetType::Audio };
+
+        REQUIRE(asset_matches_search(texture_asset, query) == true);
+        REQUIRE(asset_matches_search(model_asset, query) == false);
+        REQUIRE(asset_matches_search(audio_asset, query) == true);
+    }
+
+    SECTION("No type filter matches all") {
+        SearchQuery query;
+        // Empty type_filters means no type restriction
+
+        REQUIRE(asset_matches_search(texture_asset, query) == true);
+        REQUIRE(asset_matches_search(model_asset, query) == true);
+        REQUIRE(asset_matches_search(audio_asset, query) == true);
+    }
+}
+
+TEST_CASE("asset_matches_search combined filtering", "[search]") {
+    Asset monster_texture = create_test_asset("monster_texture", ".png", AssetType::_2D);
+    Asset monster_model = create_test_asset("monster_model", ".fbx", AssetType::_3D);
+    Asset robot_texture = create_test_asset("robot_texture", ".png", AssetType::_2D);
+
+    SECTION("Type and text both must match") {
+        SearchQuery query;
+        query.text_query = "monster";
+        query.type_filters = { AssetType::_2D };
+
+        REQUIRE(asset_matches_search(monster_texture, query) == true);  // Both match
+        REQUIRE(asset_matches_search(monster_model, query) == false);   // Text matches, type doesn't
+        REQUIRE(asset_matches_search(robot_texture, query) == false);   // Type matches, text doesn't
+    }
+
+    SECTION("Multiple search terms (AND logic)") {
+        SearchQuery query;
+        query.text_query = "monster texture";
+
+        REQUIRE(asset_matches_search(monster_texture, query) == true);  // Both "monster" and "texture" match
+        REQUIRE(asset_matches_search(monster_model, query) == false);   // "texture" doesn't match
+        REQUIRE(asset_matches_search(robot_texture, query) == false);   // "monster" doesn't match
+    }
+
+    SECTION("Empty text query with type filter") {
+        SearchQuery query;
+        query.text_query = "";
+        query.type_filters = { AssetType::_2D };
+
+        REQUIRE(asset_matches_search(monster_texture, query) == true);
+        REQUIRE(asset_matches_search(monster_model, query) == false);
+        REQUIRE(asset_matches_search(robot_texture, query) == true);
+    }
+}
+
+TEST_CASE("filter_assets functionality", "[search]") {
+    // Create test assets
+    std::vector<Asset> test_assets = {
+        create_test_asset("monster_texture", ".png", AssetType::_2D),
+        create_test_asset("robot_texture", ".jpg", AssetType::_2D),
+        create_test_asset("monster_model", ".fbx", AssetType::_3D),
+        create_test_asset("explosion_sound", ".wav", AssetType::Audio),
+        create_test_asset("background_music", ".mp3", AssetType::Audio),
+        create_test_asset("shader", ".hlsl", AssetType::Shader)
+    };
+
+    std::mutex test_mutex;
+    SearchState search_state;
+
+    SECTION("Filter by text") {
+        strcpy_s(search_state.buffer, "monster");
+        filter_assets(search_state, test_assets, test_mutex);
+
+        REQUIRE(search_state.filtered_assets.size() == 2);
+        REQUIRE(search_state.filtered_assets[0].name == "monster_texture");
+        REQUIRE(search_state.filtered_assets[1].name == "monster_model");
+    }
+
+    SECTION("Filter by type") {
+        strcpy_s(search_state.buffer, "type=2d");
+        filter_assets(search_state, test_assets, test_mutex);
+
+        REQUIRE(search_state.filtered_assets.size() == 2);
+        REQUIRE(search_state.filtered_assets[0].type == AssetType::_2D);
+        REQUIRE(search_state.filtered_assets[1].type == AssetType::_2D);
+    }
+
+    SECTION("Filter by multiple types") {
+        strcpy_s(search_state.buffer, "type=2d,audio");
+        filter_assets(search_state, test_assets, test_mutex);
+
+        REQUIRE(search_state.filtered_assets.size() == 4);
+        // Should include both 2D textures and both audio files
+    }
+
+    SECTION("Combined type and text filter") {
+        strcpy_s(search_state.buffer, "type=2d texture");
+        filter_assets(search_state, test_assets, test_mutex);
+
+        REQUIRE(search_state.filtered_assets.size() == 2);
+        REQUIRE(search_state.filtered_assets[0].name == "monster_texture");
+        REQUIRE(search_state.filtered_assets[1].name == "robot_texture");
+    }
+
+    SECTION("No matches") {
+        strcpy_s(search_state.buffer, "nonexistent");
+        filter_assets(search_state, test_assets, test_mutex);
+
+        REQUIRE(search_state.filtered_assets.empty());
+    }
+
+    SECTION("Empty query returns all") {
+        strcpy_s(search_state.buffer, "");
+        filter_assets(search_state, test_assets, test_mutex);
+
+        REQUIRE(search_state.filtered_assets.size() == test_assets.size());
+    }
+
+    SECTION("Search state initialization") {
+        strcpy_s(search_state.buffer, "monster");
+        search_state.selected_asset_index = 5;
+        search_state.model_preview_row = 3;
+
+        filter_assets(search_state, test_assets, test_mutex);
+
+        // Should reset selection and preview state
+        REQUIRE(search_state.selected_asset_index == -1);
+        REQUIRE(search_state.model_preview_row == -1);
+        // Should initialize loaded range
+        REQUIRE(search_state.loaded_start_index == 0);
+        REQUIRE(search_state.loaded_end_index <= SearchState::LOAD_BATCH_SIZE);
+    }
+}

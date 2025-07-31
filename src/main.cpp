@@ -400,7 +400,7 @@ int main() {
 
       if (elapsed >= Config::SEARCH_DEBOUNCE_MS) {
         // Execute the search
-        filter_assets(search_state, assets);
+        filter_assets(search_state, assets, g_event_processor->get_assets_mutex());
         search_state.last_buffer = search_state.buffer;
         search_state.pending_search = false;
       }
@@ -414,7 +414,7 @@ int main() {
     // Check if search needs to be updated due to asset changes
     if (search_state.update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
-      filter_assets(search_state, assets);
+      filter_assets(search_state, assets, g_event_processor->get_assets_mutex());
     }
 
     // Create main window
@@ -477,7 +477,7 @@ int main() {
 
     if (enter_pressed) {
       // Immediate search on Enter key
-      filter_assets(search_state, assets);
+      filter_assets(search_state, assets, g_event_processor->get_assets_mutex());
       search_state.last_buffer = current_input;
       search_state.input_tracking = current_input;
       search_state.pending_search = false;

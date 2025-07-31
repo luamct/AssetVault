@@ -9,18 +9,17 @@
 #include <mutex>
 #include <regex>
 
-// Global event processor reference (defined in main.cpp)
-extern EventProcessor* g_event_processor;
 
 // Parse search string to extract type filter and text query
 SearchQuery parse_search_query(const std::string& search_string) {
   SearchQuery query;
 
-  // LOG_DEBUG("Parsing search query: '{}'", search_string);
+  LOG_DEBUG("Parsing search query: '{}'", search_string);
 
   // Regex to match type=<name> pattern (case insensitive)
   // Now supports comma-separated values like type=2d,3d or type=2d, 3d
-  std::regex type_regex(R"(type\s*=\s*([\w,\s]+))", std::regex::icase);
+  // Use non-greedy matching to avoid consuming text after the type list
+  std::regex type_regex(R"(type\s*=\s*([^\s]+(?:\s*,\s*[^\s]+)*))", std::regex::icase);
   std::smatch match;
 
   std::string remaining = search_string;
@@ -28,8 +27,6 @@ SearchQuery parse_search_query(const std::string& search_string) {
   // Look for type filter
   if (std::regex_search(remaining, match, type_regex)) {
     std::string types_str = match[1];
-
-    // LOG_DEBUG("Found type filter: '{}'", types_str);
 
     // Split comma-separated types
     std::stringstream ss(types_str);
@@ -53,7 +50,7 @@ SearchQuery parse_search_query(const std::string& search_string) {
 
       // Use the existing function (expects lowercase input)
       AssetType type = get_asset_type_from_string(single_type);
-      
+
       if (type != AssetType::Unknown) {
         query.type_filters.push_back(type);
       }
@@ -64,8 +61,14 @@ SearchQuery parse_search_query(const std::string& search_string) {
   }
 
   // Trim whitespace from remaining text query
-  remaining.erase(0, remaining.find_first_not_of(" \t\n\r"));
-  remaining.erase(remaining.find_last_not_of(" \t\n\r") + 1);
+  size_t first = remaining.find_first_not_of(" \t\n\r");
+  if (first == std::string::npos) {
+    remaining.clear();
+  }
+  else {
+    size_t last = remaining.find_last_not_of(" \t\n\r");
+    remaining = remaining.substr(first, last - first + 1);
+  }
 
   query.text_query = remaining;
 
@@ -128,7 +131,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   return true;
 }
 
-void filter_assets(SearchState& search_state, const std::vector<Asset>& assets) {
+void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, std::mutex& assets_mutex) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   search_state.filtered_assets.clear();
@@ -144,7 +147,7 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets) 
   SearchQuery query = parse_search_query(search_state.buffer);
 
   // Lock assets during filtering to prevent race conditions
-  std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
+  std::lock_guard<std::mutex> lock(assets_mutex);
 
   total_assets = assets.size();
   LOG_DEBUG("Filtering {} assets with query: '{}', type filters count: {}",

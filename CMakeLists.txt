@@ -188,31 +188,43 @@ endif()
 
 
 
-# Add OpenGL rendering test executable
-add_executable(RenderingTest
-    tests/test_rendering.cpp
+
+# Add search unit test executable
+add_executable(SearchTest
+    tests/test_search.cpp
+    tests/test_helpers.cpp
+    src/search.cpp
+    src/asset.cpp
+    src/utils.cpp
 )
 
 if(MSVC)
-    set_property(TARGET RenderingTest PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    set_property(TARGET SearchTest PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
-# Include directories for rendering test
-target_include_directories(RenderingTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
-    ${GLFW_INCLUDE_DIR}
+# Include directories for search test
+target_include_directories(SearchTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src         # Clean includes for our own headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests       # Clean includes for test headers  
+    ${CMAKE_CURRENT_SOURCE_DIR}/external    # Clean includes for external libraries
+    ${SPDLOG_INCLUDE_DIR}
     ${GLAD_DIR}/include
+    ${ASSIMP_INCLUDE_DIR}
+    ${GLM_INCLUDE_DIR}
+    ${IMGUI_DIR}
+    ${GLFW_INCLUDE_DIR}
+    ${SQLITE_DIR}
 )
 
-# Link libraries for rendering test
-target_link_libraries(RenderingTest PRIVATE
-    glfw
-    OpenGL::GL
+# Link libraries for search test
+target_link_libraries(SearchTest PRIVATE
     glad
-    imgui
 )
+
+# Enable testing and add tests
+enable_testing()
+add_test(NAME SearchTests COMMAND SearchTest)
+
 
 # Set compiler flags for our own code
 if(MSVC)
