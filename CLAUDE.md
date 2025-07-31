@@ -47,6 +47,9 @@ cmake --build build
 
 # Run unit tests
 ./build/Debug/SearchTest.exe
+
+# Measure compilation timing with performance summary
+cmake --build build --clean-first -- /clp:PerformanceSummary
 ```
 
 ### Directory Management
