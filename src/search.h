@@ -36,6 +36,13 @@ struct SearchState {
 
   // Audio playback settings
   bool auto_play_audio = true;
+
+  // Type filter toggle states
+  bool type_filter_2d = false;
+  bool type_filter_3d = false;
+  bool type_filter_audio = false;
+  bool type_filter_shader = false;
+  bool type_filter_font = false;
 };
 
 // Parsed search query with optional filters
@@ -45,7 +52,9 @@ struct SearchQuery {
 };
 
 // Parse search string into structured query
-SearchQuery parse_search_query(const std::string& search_string);
+// UI filters take precedence over any filters found in the query string
+SearchQuery parse_search_query(const std::string& search_string, 
+                              const std::vector<AssetType>& ui_type_filters = {});
 
 // Function to check if an asset matches the search query
 bool asset_matches_search(const Asset& asset, const SearchQuery& query);

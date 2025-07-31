@@ -67,6 +67,15 @@ namespace Theme {
   constexpr ImVec4 ACCENT_BLUE_2_ALPHA_95 = ImVec4(0.10f, 0.45f, 0.65f, 0.95f); // Darker accent 95% opacity
   constexpr ImVec4 ACCENT_BLUE_3_ALPHA_90 = ImVec4(0.05f, 0.35f, 0.55f, 0.90f); // Darkest accent 90% opacity
 
+  // === LIVELY TOGGLE COLORS ===
+  constexpr ImVec4 TOGGLE_OFF_BG = ImVec4(0.92f, 0.95f, 0.98f, 1.00f);        // Light off state background
+  constexpr ImVec4 TOGGLE_OFF_BORDER = ImVec4(0.80f, 0.85f, 0.90f, 1.00f);    // Light off state border
+  constexpr ImVec4 TOGGLE_OFF_TEXT = ImVec4(0.30f, 0.35f, 0.40f, 1.00f);      // Darker off state text
+  constexpr ImVec4 TOGGLE_ON_BG = ImVec4(0.50f, 0.20f, 0.70f, 1.00f);         // Deep purple on state background
+  constexpr ImVec4 TOGGLE_ON_BORDER = ImVec4(0.40f, 0.15f, 0.60f, 1.00f);     // Darker purple on state border
+  constexpr ImVec4 TOGGLE_ON_TEXT = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);       // White on state text
+  constexpr ImVec4 TOGGLE_HOVER_BG = ImVec4(0.88f, 0.92f, 0.96f, 1.00f);      // Hover background for off state
+
   // === SCROLLBAR COLORS ===
   constexpr ImVec4 SCROLLBAR_BG = ImVec4(0.90f, 0.95f, 1.00f, 0.60f);     // Scrollbar background
   constexpr ImVec4 SCROLLBAR_GRAB_1 = ImVec4(0.70f, 0.80f, 0.90f, 1.00f); // Scrollbar grab

@@ -11,10 +11,17 @@
 
 
 // Parse search string to extract type filter and text query
-SearchQuery parse_search_query(const std::string& search_string) {
+SearchQuery parse_search_query(const std::string& search_string, 
+                              const std::vector<AssetType>& ui_type_filters) {
   SearchQuery query;
 
   LOG_DEBUG("Parsing search query: '{}'", search_string);
+
+  // If UI filters are provided, use them directly
+  if (!ui_type_filters.empty()) {
+    query.type_filters = ui_type_filters;
+    LOG_DEBUG("Using {} UI type filters", ui_type_filters.size());
+  }
 
   // Regex to match type=<name> pattern (case insensitive)
   // Now supports comma-separated values like type=2d,3d or type=2d, 3d
@@ -24,8 +31,8 @@ SearchQuery parse_search_query(const std::string& search_string) {
 
   std::string remaining = search_string;
 
-  // Look for type filter
-  if (std::regex_search(remaining, match, type_regex)) {
+  // Look for type filter in query string only if no UI filters
+  if (ui_type_filters.empty() && std::regex_search(remaining, match, type_regex)) {
     std::string types_str = match[1];
 
     // Split comma-separated types
@@ -143,8 +150,16 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, 
   size_t total_assets = 0;
   size_t filtered_count = 0;
 
-  // Parse the search query once before the loop
-  SearchQuery query = parse_search_query(search_state.buffer);
+  // Build UI type filters from toggle states
+  std::vector<AssetType> ui_type_filters;
+  if (search_state.type_filter_2d) ui_type_filters.push_back(AssetType::_2D);
+  if (search_state.type_filter_3d) ui_type_filters.push_back(AssetType::_3D);
+  if (search_state.type_filter_audio) ui_type_filters.push_back(AssetType::Audio);
+  if (search_state.type_filter_shader) ui_type_filters.push_back(AssetType::Shader);
+  if (search_state.type_filter_font) ui_type_filters.push_back(AssetType::Font);
+
+  // Parse the search query once before the loop, passing UI filters
+  SearchQuery query = parse_search_query(search_state.buffer, ui_type_filters);
 
   // Lock assets during filtering to prevent race conditions
   std::lock_guard<std::mutex> lock(assets_mutex);

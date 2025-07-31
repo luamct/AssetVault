@@ -139,8 +139,61 @@ ImVec2 calculate_thumbnail_size(
   return ImVec2(calculated_width, calculated_height);
 }
 
+// Custom toggle button drawing function
+bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,
+  float button_width, float button_height) {
+  ImVec2 button_min(x_pos, y_pos);
+  ImVec2 button_max(button_min.x + button_width, button_min.y + button_height);
 
+  // Check if mouse is hovering over button
+  ImVec2 mouse_pos = ImGui::GetMousePos();
+  bool is_hovered = (mouse_pos.x >= button_min.x && mouse_pos.x <= button_max.x &&
+    mouse_pos.y >= button_min.y && mouse_pos.y <= button_max.y);
 
+  // Choose colors based on state
+  ImVec4 bg_color = toggle_state ? Theme::TOGGLE_ON_BG :
+    (is_hovered ? Theme::TOGGLE_HOVER_BG : Theme::TOGGLE_OFF_BG);
+  ImVec4 border_color = toggle_state ? Theme::TOGGLE_ON_BORDER : Theme::TOGGLE_OFF_BORDER;
+  ImVec4 text_color = toggle_state ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
+
+  // Draw button background
+  ImGui::GetWindowDrawList()->AddRectFilled(
+    button_min, button_max,
+    Theme::ToImU32(bg_color),
+    8.0f  // Rounded corners
+  );
+
+  // Draw button border
+  ImGui::GetWindowDrawList()->AddRect(
+    button_min, button_max,
+    Theme::ToImU32(border_color),
+    8.0f,  // Rounded corners
+    0,     // No corner flags
+    2.0f   // Border thickness
+  );
+
+  // Draw text centered in button
+  ImVec2 text_size = ImGui::CalcTextSize(label);
+  ImVec2 text_pos(
+    button_min.x + (button_width - text_size.x) * 0.5f,
+    button_min.y + (button_height - text_size.y) * 0.5f
+  );
+
+  ImGui::GetWindowDrawList()->AddText(
+    text_pos,
+    Theme::ToImU32(text_color),
+    label
+  );
+
+  // Handle click detection
+  bool clicked = false;
+  if (is_hovered && ImGui::IsMouseClicked(0)) {
+    toggle_state = !toggle_state;
+    clicked = true;
+  }
+
+  return clicked;
+}
 
 // File event callback function (runs on background thread)
 // Queues events for unified processing
@@ -430,8 +483,8 @@ int main() {
     float window_height = ImGui::GetWindowSize().y;
     float left_width = window_width * 0.75f;
     float right_width = window_width * 0.25f - Config::PREVIEW_RIGHT_MARGIN;
-    float top_height = window_height * 0.15f;
-    float bottom_height = window_height * 0.85f - 20.0f; // Account for some padding
+    float top_height = window_height * 0.20f;
+    float bottom_height = window_height * 0.80f - 20.0f; // Account for some padding
 
     // ============ TOP LEFT: Search Box ============
     ImGui::BeginChild("SearchRegion", ImVec2(left_width, top_height), true);
@@ -439,9 +492,9 @@ int main() {
     // Get the actual usable content area (accounts for child window borders/padding)
     ImVec2 content_region = ImGui::GetContentRegionAvail();
 
-    // Calculate centered position within content region
+    // Calculate centered position within content region - move search box up
     float content_search_x = (content_region.x - Config::SEARCH_BOX_WIDTH) * 0.5f;
-    float content_search_y = (content_region.y - Config::SEARCH_BOX_HEIGHT) * 0.5f;
+    float content_search_y = (content_region.y - Config::SEARCH_BOX_HEIGHT) * 0.2f;
 
     // Get screen position for drawing (content area start + our offset)
     ImVec2 content_start = ImGui::GetCursorScreenPos();
@@ -487,6 +540,59 @@ int main() {
       search_state.input_tracking = current_input;
       search_state.last_keypress_time = std::chrono::steady_clock::now();
       search_state.pending_search = true;
+    }
+
+    // ============ TYPE FILTER TOGGLE BUTTONS ============
+
+    // Position toggle buttons below the search box
+    float toggles_y = content_search_y + Config::SEARCH_BOX_HEIGHT + 30.0f; // 30px gap below search box
+    float toggle_button_height = 35.0f;
+    float toggle_spacing = 20.0f;
+
+    // Individual button widths - tweak these as needed
+    float button_width_2d = 48.0f;      // "2D" is short
+    float button_width_3d = 48.0f;      // "3D" is short
+    float button_width_audio = 84.0f;   // "Audio" is longer
+    float button_width_shader = 96.0f;  // "Shader" is longer
+    float button_width_font = 72.0f;    // "Font" is medium
+
+    // Calculate centered starting position for all toggle buttons
+    float total_toggle_width = button_width_2d + button_width_3d + button_width_audio +
+      button_width_shader + button_width_font + (toggle_spacing * 4);
+    float toggles_start_x = content_search_x + (Config::SEARCH_BOX_WIDTH - total_toggle_width) * 0.5f;
+
+    // Draw all toggle buttons using the dedicated function
+    bool any_toggle_changed = false;
+    float current_x = toggles_start_x;
+
+    any_toggle_changed |= draw_type_toggle_button("2D", search_state.type_filter_2d,
+      content_start.x + current_x, content_start.y + toggles_y,
+      button_width_2d, toggle_button_height);
+    current_x += button_width_2d + toggle_spacing;
+
+    any_toggle_changed |= draw_type_toggle_button("3D", search_state.type_filter_3d,
+      content_start.x + current_x, content_start.y + toggles_y,
+      button_width_3d, toggle_button_height);
+    current_x += button_width_3d + toggle_spacing;
+
+    any_toggle_changed |= draw_type_toggle_button("Audio", search_state.type_filter_audio,
+      content_start.x + current_x, content_start.y + toggles_y,
+      button_width_audio, toggle_button_height);
+    current_x += button_width_audio + toggle_spacing;
+
+    any_toggle_changed |= draw_type_toggle_button("Shader", search_state.type_filter_shader,
+      content_start.x + current_x, content_start.y + toggles_y,
+      button_width_shader, toggle_button_height);
+    current_x += button_width_shader + toggle_spacing;
+
+    any_toggle_changed |= draw_type_toggle_button("Font", search_state.type_filter_font,
+      content_start.x + current_x, content_start.y + toggles_y,
+      button_width_font, toggle_button_height);
+
+    // If any toggle changed, trigger immediate search
+    if (any_toggle_changed) {
+      filter_assets(search_state, assets, g_event_processor->get_assets_mutex());
+      search_state.pending_search = false;
     }
 
     ImGui::EndChild();
