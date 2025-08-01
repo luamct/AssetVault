@@ -36,6 +36,84 @@
 // Global callback state (needed for callback functions)
 EventProcessor* g_event_processor = nullptr;
 
+// Function to render clickable path segments that add path filters when clicked
+void render_clickable_path(const std::string& full_path, SearchState& search_state) {
+  // Get relative path from assets folder
+  std::string relative_path = get_relative_asset_path(full_path);
+  
+  // Split path into segments
+  std::vector<std::string> segments;
+  std::stringstream ss(relative_path);
+  std::string segment;
+  
+  while (std::getline(ss, segment, '/')) {
+    if (!segment.empty()) {
+      segments.push_back(segment);
+    }
+  }
+  
+  // Render each segment as a clickable button
+  for (size_t i = 0; i < segments.size(); ++i) {
+    if (i > 0) {
+      ImGui::SameLine();
+      ImGui::TextColored(Theme::TEXT_SECONDARY, " / ");
+      ImGui::SameLine();
+    }
+    
+    // Build the path up to this segment
+    std::string path_to_segment;
+    for (size_t j = 0; j <= i; ++j) {
+      if (j > 0) path_to_segment += "/";
+      path_to_segment += segments[j];
+    }
+    
+    // Create unique button ID
+    std::string button_id = "##path_" + std::to_string(i) + "_" + segments[i];
+    
+    // Check if this path is already in the filter
+    bool is_active = std::find(search_state.internal_path_filters.begin(), 
+                               search_state.internal_path_filters.end(), 
+                               path_to_segment) != search_state.internal_path_filters.end();
+    
+    // Style the button differently if it's active
+    if (is_active) {
+      ImGui::PushStyleColor(ImGuiCol_Button, Theme::ACCENT_BLUE_1);
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::ACCENT_BLUE_2);
+      ImGui::PushStyleColor(ImGuiCol_Text, Theme::TEXT_DARK);
+    } else {
+      ImGui::PushStyleColor(ImGuiCol_Button, Theme::FRAME_LIGHT_BLUE_1);
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::BACKGROUND_LIGHT_BLUE_1);
+      ImGui::PushStyleColor(ImGuiCol_Text, Theme::ACCENT_BLUE_1);
+    }
+    
+    // Render clickable segment
+    if (ImGui::SmallButton((segments[i] + button_id).c_str())) {
+      // Toggle the path filter
+      auto it = std::find(search_state.internal_path_filters.begin(), 
+                          search_state.internal_path_filters.end(), 
+                          path_to_segment);
+      
+      if (it != search_state.internal_path_filters.end()) {
+        // Remove if already present
+        search_state.internal_path_filters.erase(it);
+      } else {
+        // Add if not present
+        search_state.internal_path_filters.push_back(path_to_segment);
+      }
+      
+      // Trigger search update
+      search_state.update_needed = true;
+    }
+    
+    ImGui::PopStyleColor(3);
+    
+    // Show tooltip with the full path segment
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("Click to filter by: %s", path_to_segment.c_str());
+    }
+  }
+}
+
 // Custom slider component for audio seek bar
 bool AudioSeekBar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f) {
   ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
@@ -137,6 +215,45 @@ ImVec2 calculate_thumbnail_size(
 
 
   return ImVec2(calculated_width, calculated_height);
+}
+
+// Fancy text input box with rounded corners and shadow
+bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float width,
+  float padding_x = 20.0f, float padding_y = 16.0f,
+  float corner_radius = 25.0f, ImGuiInputTextFlags flags = 0) {
+
+  ImGui::PushItemWidth(width);
+
+  // Calculate the actual height of the text input box
+  float font_height = ImGui::GetFontSize();
+  float actual_input_height = font_height + (padding_y * 2.0f);
+
+  // Style the text input with rounded corners
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, corner_radius);
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padding_x, padding_y));
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // White background
+  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.98f, 0.98f, 0.98f, 1.0f)); // Slightly darker on hover
+  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.95f, 0.95f, 0.95f, 1.0f)); // Even darker when active
+
+  // Draw shadow effect behind the text input
+  ImVec2 shadow_offset(2.0f, 2.0f);
+  ImVec2 input_pos = ImGui::GetCursorScreenPos();
+  ImVec2 shadow_min(input_pos.x + shadow_offset.x, input_pos.y + shadow_offset.y);
+  ImVec2 shadow_max(shadow_min.x + width, shadow_min.y + actual_input_height);
+
+  ImGui::GetWindowDrawList()->AddRectFilled(
+    shadow_min, shadow_max,
+    ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.12f)),
+    corner_radius
+  );
+
+  bool result = ImGui::InputText(label, buffer, buffer_size, flags);
+
+  ImGui::PopStyleColor(3);
+  ImGui::PopStyleVar(2);
+  ImGui::PopItemWidth();
+
+  return result;
 }
 
 // Custom toggle button drawing function
@@ -494,36 +611,14 @@ int main() {
 
     // Calculate centered position within content region - move search box up
     float content_search_x = (content_region.x - Config::SEARCH_BOX_WIDTH) * 0.5f;
-    float content_search_y = (content_region.y - Config::SEARCH_BOX_HEIGHT) * 0.2f;
+    float content_search_y = (content_region.y - Config::SEARCH_BOX_HEIGHT) * 0.3f;
 
     // Get screen position for drawing (content area start + our offset)
     ImVec2 content_start = ImGui::GetCursorScreenPos();
-    ImVec2 capsule_min(content_start.x + content_search_x, content_start.y + content_search_y);
-    ImVec2 capsule_max(capsule_min.x + Config::SEARCH_BOX_WIDTH, capsule_min.y + Config::SEARCH_BOX_HEIGHT);
 
-    // Draw capsule background
-    ImGui::GetWindowDrawList()->AddRectFilled(
-      capsule_min, capsule_max,
-      Theme::COLOR_WHITE_U32, // White background
-      25.0f        // Rounded corners
-    );
-
-    // Position text input - ImGui text inputs are positioned by their center, not top-left
-    float text_input_x = content_search_x + 40;                       // 40px padding from left edge of capsule
-    float text_input_y = content_search_y + Config::SEARCH_BOX_HEIGHT * 0.5f; // Center of capsule
-
-    ImGui::SetCursorPos(ImVec2(text_input_x, text_input_y));
-    ImGui::PushItemWidth(Config::SEARCH_BOX_WIDTH - 40); // Leave 20px padding on each side
-
-    // Remove borders from text input
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT_U32); // Transparent background
-
-    bool enter_pressed = ImGui::InputText("##Search", search_state.buffer, sizeof(search_state.buffer), ImGuiInputTextFlags_EnterReturnsTrue);
-
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
-    ImGui::PopItemWidth();
+    // Position and draw the fancy search text input
+    ImGui::SetCursorPos(ImVec2(content_search_x, content_search_y));
+    bool enter_pressed = fancy_text_input("##Search", search_state.buffer, sizeof(search_state.buffer), Config::SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f, ImGuiInputTextFlags_EnterReturnsTrue);
 
     // Handle search input
     std::string current_input(search_state.buffer);
@@ -862,7 +957,7 @@ int main() {
         // 3D Model information
         ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
-        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path.u8string()).c_str());
+        render_clickable_path(selected_asset.full_path.u8string(), search_state);
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
         ImGui::SameLine();
@@ -1073,7 +1168,7 @@ int main() {
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
-        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path.u8string()).c_str());
+        render_clickable_path(selected_asset.full_path.u8string(), search_state);
 
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
@@ -1155,7 +1250,7 @@ int main() {
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
-        ImGui::TextWrapped("%s", format_display_path(selected_asset.full_path.u8string()).c_str());
+        render_clickable_path(selected_asset.full_path.u8string(), search_state);
 
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);

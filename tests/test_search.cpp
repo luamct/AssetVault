@@ -148,9 +148,6 @@ TEST_CASE("asset_matches_search text matching", "[search]") {
         query.text_query = "textures";
         REQUIRE(asset_matches_search(asset, query) == true);
 
-        query.text_query = "assets";
-        REQUIRE(asset_matches_search(asset, query) == true);
-
         query.text_query = "models";
         REQUIRE(asset_matches_search(asset, query) == false);
     }
@@ -233,6 +230,189 @@ TEST_CASE("asset_matches_search combined filtering", "[search]") {
         REQUIRE(asset_matches_search(monster_texture, query) == true);
         REQUIRE(asset_matches_search(monster_model, query) == false);
         REQUIRE(asset_matches_search(robot_texture, query) == true);
+    }
+}
+
+TEST_CASE("parse_search_query path filtering", "[search]") {
+    SECTION("Single path filter") {
+        auto query = parse_search_query("path=textures");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.type_filters.empty());
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "textures");
+    }
+
+    SECTION("Multiple path filters comma separated") {
+        auto query = parse_search_query("path=textures,sounds");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.type_filters.empty());
+        REQUIRE(query.path_filters.size() == 2);
+        REQUIRE(query.path_filters[0] == "textures");
+        REQUIRE(query.path_filters[1] == "sounds");
+    }
+
+    SECTION("Path filter with text") {
+        auto query = parse_search_query("path=textures monster");
+        REQUIRE(query.text_query == "monster");
+        REQUIRE(query.type_filters.empty());
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "textures");
+    }
+
+    SECTION("Path filter with subdirectory") {
+        auto query = parse_search_query("path=models/characters");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "models/characters");
+    }
+
+    SECTION("Path filter with backslashes normalized") {
+        auto query = parse_search_query("path=models\\characters");
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "models/characters");
+    }
+
+    SECTION("Path and type filters combined") {
+        auto query = parse_search_query("type=2d path=textures");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.type_filters.size() == 1);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "textures");
+    }
+
+    SECTION("Path filter whitespace handling") {
+        auto query = parse_search_query("path = textures , sounds   monster");
+        REQUIRE(query.text_query == "monster");
+        REQUIRE(query.path_filters.size() == 2);
+        REQUIRE(query.path_filters[0] == "textures");
+        REQUIRE(query.path_filters[1] == "sounds");
+    }
+
+    SECTION("Quoted path with spaces") {
+        auto query = parse_search_query("path=\"simple damage/folder\"");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "simple damage/folder");
+    }
+
+    SECTION("Multiple quoted paths with spaces") {
+        auto query = parse_search_query("path=\"simple damage/folder\",\"another path/with spaces\"");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.path_filters.size() == 2);
+        REQUIRE(query.path_filters[0] == "simple damage/folder");
+        REQUIRE(query.path_filters[1] == "another path/with spaces");
+    }
+
+    SECTION("Quoted path with text query") {
+        auto query = parse_search_query("path=\"simple damage/folder\" monster");
+        REQUIRE(query.text_query == "monster");
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "simple damage/folder");
+    }
+
+    SECTION("Quoted path with backslashes normalized") {
+        auto query = parse_search_query("path=\"simple damage\\\\folder\"");
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "simple damage/folder");
+    }
+
+    SECTION("Quoted path with escaped quotes") {
+        auto query = parse_search_query("path=\"folder \\\"with quotes\\\"/subfolder\"");
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "folder \"with quotes\"/subfolder");
+    }
+
+    SECTION("Mixed quoted and unquoted paths now supported") {
+        // The new token-based parser correctly handles mixed quoted and unquoted paths
+        auto query = parse_search_query("path=\"simple damage/folder\",textures");
+        REQUIRE(query.path_filters.size() == 2);
+        REQUIRE(query.path_filters[0] == "simple damage/folder");
+        REQUIRE(query.path_filters[1] == "textures");
+    }
+
+    SECTION("Quoted path and type filters combined") {
+        auto query = parse_search_query("type=2d path=\"simple damage/folder\"");
+        REQUIRE(query.text_query.empty());
+        REQUIRE(query.type_filters.size() == 1);
+        REQUIRE(query.type_filters[0] == AssetType::_2D);
+        REQUIRE(query.path_filters.size() == 1);
+        REQUIRE(query.path_filters[0] == "simple damage/folder");
+    }
+}
+
+TEST_CASE("asset_matches_search path filtering", "[search]") {
+    Asset texture_in_textures = create_test_asset("monster", ".png", AssetType::_2D, "assets/textures/monster.png");
+    Asset texture_in_ui = create_test_asset("button", ".png", AssetType::_2D, "assets/textures/ui/button.png");
+    Asset model_in_models = create_test_asset("character", ".fbx", AssetType::_3D, "assets/models/character.fbx");
+    Asset sound_in_sounds = create_test_asset("explosion", ".wav", AssetType::Audio, "assets/sounds/explosion.wav");
+
+    SECTION("Single path filter matches") {
+        SearchQuery query;
+        query.path_filters = { "textures" };
+
+        REQUIRE(asset_matches_search(texture_in_textures, query) == true);
+        REQUIRE(asset_matches_search(texture_in_ui, query) == true);  // textures/ui should match textures
+        REQUIRE(asset_matches_search(model_in_models, query) == false);
+        REQUIRE(asset_matches_search(sound_in_sounds, query) == false);
+    }
+
+    SECTION("Specific subdirectory path filter") {
+        SearchQuery query;
+        query.path_filters = { "textures/ui" };
+
+        REQUIRE(asset_matches_search(texture_in_textures, query) == false);  // textures doesn't match textures/ui
+        REQUIRE(asset_matches_search(texture_in_ui, query) == true);
+        REQUIRE(asset_matches_search(model_in_models, query) == false);
+        REQUIRE(asset_matches_search(sound_in_sounds, query) == false);
+    }
+
+    SECTION("Multiple path filters (OR condition)") {
+        SearchQuery query;
+        query.path_filters = { "textures", "sounds" };
+
+        REQUIRE(asset_matches_search(texture_in_textures, query) == true);
+        REQUIRE(asset_matches_search(texture_in_ui, query) == true);
+        REQUIRE(asset_matches_search(model_in_models, query) == false);
+        REQUIRE(asset_matches_search(sound_in_sounds, query) == true);
+    }
+
+    SECTION("Path and type filters combined") {
+        SearchQuery query;
+        query.type_filters = { AssetType::_2D };
+        query.path_filters = { "textures" };
+
+        REQUIRE(asset_matches_search(texture_in_textures, query) == true);   // Both match
+        REQUIRE(asset_matches_search(texture_in_ui, query) == true);         // Both match
+        REQUIRE(asset_matches_search(model_in_models, query) == false);      // Path doesn't match
+        REQUIRE(asset_matches_search(sound_in_sounds, query) == false);      // Type doesn't match
+    }
+
+    SECTION("Path filter case insensitive") {
+        SearchQuery query;
+        query.path_filters = { "TEXTURES" };
+
+        REQUIRE(asset_matches_search(texture_in_textures, query) == true);
+        REQUIRE(asset_matches_search(texture_in_ui, query) == true);
+    }
+
+    SECTION("Path filter with spaces matches correctly") {
+        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, "assets/simple damage/folder/damage.png");
+        
+        SearchQuery query;
+        query.path_filters = { "simple damage/folder" };
+
+        REQUIRE(asset_matches_search(asset_with_spaces, query) == true);
+        REQUIRE(asset_matches_search(texture_in_textures, query) == false);
+    }
+
+    SECTION("Path filter with spaces partial match") {
+        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, "assets/simple damage/folder/subfolder/damage.png");
+        
+        SearchQuery query;
+        query.path_filters = { "simple damage" };
+
+        REQUIRE(asset_matches_search(asset_with_spaces, query) == true);
     }
 }
 

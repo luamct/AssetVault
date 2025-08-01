@@ -4,82 +4,287 @@
 #include "event_processor.h"
 #include "logger.h"
 #include "asset.h"
+#include "imgui.h"
+#include "theme.h"
 #include <sstream>
 #include <algorithm>
 #include <mutex>
 #include <regex>
+#include <unordered_set>
 
+// SearchTokenizer Implementation
+SearchTokenizer::SearchTokenizer(const std::string& input) 
+  : input_(input), current_pos_(0) {}
 
-// Parse search string to extract type filter and text query
-SearchQuery parse_search_query(const std::string& search_string, 
-                              const std::vector<AssetType>& ui_type_filters) {
+SearchToken SearchTokenizer::next_token() {
+  if (peeked_token_.has_value()) {
+    SearchToken token = peeked_token_.value();
+    peeked_token_.reset();
+    return token;
+  }
+  
+  skip_whitespace();
+  
+  if (current_pos_ >= input_.length()) {
+    return SearchToken(SearchTokenType::END_OF_INPUT, "", current_pos_, 0);
+  }
+  
+  char current_char = input_[current_pos_];
+  
+  // Handle quoted strings
+  if (current_char == '"') {
+    return parse_quoted_string();
+  }
+  
+  // Handle operators
+  if (current_char == '=') {
+    size_t start_pos = current_pos_;
+    current_pos_++;
+    return SearchToken(SearchTokenType::EQUALS, "=", start_pos, 1);
+  }
+  
+  if (current_char == ',') {
+    size_t start_pos = current_pos_;
+    current_pos_++;
+    return SearchToken(SearchTokenType::COMMA, ",", start_pos, 1);
+  }
+  
+  // Handle words (identifiers and text)
+  return parse_word();
+}
+
+SearchToken SearchTokenizer::peek_token() {
+  if (!peeked_token_.has_value()) {
+    peeked_token_ = next_token();
+  }
+  return peeked_token_.value();
+}
+
+bool SearchTokenizer::has_more_tokens() const {
+  if (peeked_token_.has_value()) {
+    return peeked_token_->type != SearchTokenType::END_OF_INPUT;
+  }
+  
+  // Skip whitespace to check for real content
+  size_t pos = current_pos_;
+  while (pos < input_.length() && std::isspace(input_[pos])) {
+    pos++;
+  }
+  return pos < input_.length();
+}
+
+void SearchTokenizer::skip_whitespace() {
+  while (current_pos_ < input_.length() && std::isspace(input_[current_pos_])) {
+    current_pos_++;
+  }
+}
+
+SearchToken SearchTokenizer::parse_quoted_string() {
+  size_t start_pos = current_pos_;
+  current_pos_++; // Skip opening quote
+  
+  std::string value;
+  
+  while (current_pos_ < input_.length()) {
+    char c = input_[current_pos_];
+    
+    if (c == '"') {
+      // End of quoted string
+      current_pos_++; // Skip closing quote
+      size_t length = current_pos_ - start_pos;
+      return SearchToken(SearchTokenType::QUOTED_STRING, value, start_pos, length);
+    }
+    
+    if (c == '\\' && current_pos_ + 1 < input_.length()) {
+      // Handle escape sequences
+      current_pos_++; // Skip backslash
+      char escaped_char = input_[current_pos_];
+      value += escaped_char;
+      current_pos_++;
+    } else {
+      value += c;
+      current_pos_++;
+    }
+  }
+  
+  // Unclosed quoted string - return what we have
+  size_t length = current_pos_ - start_pos;
+  return SearchToken(SearchTokenType::QUOTED_STRING, value, start_pos, length);
+}
+
+SearchToken SearchTokenizer::parse_word() {
+  size_t start_pos = current_pos_;
+  std::string value;
+  
+  while (current_pos_ < input_.length()) {
+    char c = input_[current_pos_];
+    
+    // Stop at whitespace, quotes, or operators
+    if (std::isspace(c) || c == '"' || c == '=' || c == ',') {
+      break;
+    }
+    
+    value += c;
+    current_pos_++;
+  }
+  
+  size_t length = current_pos_ - start_pos;
+  
+  // Determine if this is a filter name or regular text
+  SearchTokenType type = is_filter_name(value) ? SearchTokenType::FILTER_NAME : SearchTokenType::TEXT;
+  
+  return SearchToken(type, value, start_pos, length);
+}
+
+bool SearchTokenizer::is_filter_name(const std::string& word) const {
+  static const std::unordered_set<std::string> filter_names = {
+    "type", "path"
+    // Future: "size", "date", "ext", etc.
+  };
+  
+  std::string lowercase_word = to_lowercase(word);
+  return filter_names.count(lowercase_word) > 0;
+}
+
+// SearchQueryParser Implementation
+SearchQueryParser::SearchQueryParser(SearchTokenizer& tokenizer)
+  : tokenizer_(tokenizer) {}
+
+SearchQuery SearchQueryParser::parse(const std::vector<AssetType>& ui_type_filters,
+                                   const std::vector<std::string>& ui_path_filters) {
   SearchQuery query;
-
-  LOG_DEBUG("Parsing search query: '{}'", search_string);
-
-  // If UI filters are provided, use them directly
+  
+  // Use UI filters if provided (they take precedence)
   if (!ui_type_filters.empty()) {
     query.type_filters = ui_type_filters;
-    LOG_DEBUG("Using {} UI type filters", ui_type_filters.size());
   }
-
-  // Regex to match type=<name> pattern (case insensitive)
-  // Now supports comma-separated values like type=2d,3d or type=2d, 3d
-  // Use non-greedy matching to avoid consuming text after the type list
-  std::regex type_regex(R"(type\s*=\s*([^\s]+(?:\s*,\s*[^\s]+)*))", std::regex::icase);
-  std::smatch match;
-
-  std::string remaining = search_string;
-
-  // Look for type filter in query string only if no UI filters
-  if (ui_type_filters.empty() && std::regex_search(remaining, match, type_regex)) {
-    std::string types_str = match[1];
-
-    // Split comma-separated types
-    std::stringstream ss(types_str);
-    std::string single_type;
-
-    while (std::getline(ss, single_type, ',')) {
-      // Trim whitespace before and after
-      size_t first = single_type.find_first_not_of(" \t\n\r");
-      size_t last = single_type.find_last_not_of(" \t\n\r");
-
-      if (first != std::string::npos && last != std::string::npos) {
-        single_type = single_type.substr(first, last - first + 1);
-      }
-      else {
-        continue; // Skip empty strings
-      }
-
-      // Convert to lowercase
-      std::transform(single_type.begin(), single_type.end(), single_type.begin(),
-        [](unsigned char c) { return std::tolower(c); });
-
-      // Use the existing function (expects lowercase input)
-      AssetType type = get_asset_type_from_string(single_type);
-
-      if (type != AssetType::Unknown) {
-        query.type_filters.push_back(type);
-      }
+  if (!ui_path_filters.empty()) {
+    query.path_filters = ui_path_filters;
+  }
+  
+  std::vector<std::string> text_terms;
+  
+  while (tokenizer_.has_more_tokens()) {
+    SearchToken token = tokenizer_.next_token();
+    
+    if (token.type == SearchTokenType::END_OF_INPUT) {
+      break;
     }
-
-    // Remove the type filter from the string to get the text query
-    remaining = match.prefix().str() + match.suffix().str();
+    
+    if (token.type == SearchTokenType::FILTER_NAME) {
+      // Parse filter only if UI hasn't provided filters of this type
+      std::string filter_name = to_lowercase(token.value);
+      
+      if (filter_name == "type" && ui_type_filters.empty()) {
+        parse_filter(query, token);
+      } else if (filter_name == "path" && ui_path_filters.empty()) {
+        parse_filter(query, token);
+      } else {
+        // Skip this filter (UI takes precedence) - consume tokens until next filter or end
+        SearchToken next = tokenizer_.peek_token();
+        if (next.type == SearchTokenType::EQUALS) {
+          tokenizer_.next_token(); // consume equals
+          parse_filter_values(); // consume and discard values
+        }
+      }
+    } else if (token.type == SearchTokenType::TEXT) {
+      text_terms.push_back(token.value);
+    }
+    // Ignore other tokens (EQUALS, COMMA, QUOTED_STRING outside of filters)
   }
-
-  // Trim whitespace from remaining text query
-  size_t first = remaining.find_first_not_of(" \t\n\r");
-  if (first == std::string::npos) {
-    remaining.clear();
+  
+  // Combine text terms into text query
+  if (!text_terms.empty()) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < text_terms.size(); ++i) {
+      if (i > 0) oss << " ";
+      oss << text_terms[i];
+    }
+    query.text_query = oss.str();
   }
-  else {
-    size_t last = remaining.find_last_not_of(" \t\n\r");
-    remaining = remaining.substr(first, last - first + 1);
+  
+  return query;
+}
+
+void SearchQueryParser::parse_filter(SearchQuery& query, const SearchToken& filter_name) {
+  std::string filter_name_lower = to_lowercase(filter_name.value);
+  
+  // Expect equals token
+  SearchToken equals_token = tokenizer_.next_token();
+  if (equals_token.type != SearchTokenType::EQUALS) {
+    // Malformed filter - treat filter name as text
+    return;
   }
+  
+  // Parse filter values
+  std::vector<std::string> values = parse_filter_values();
+  
+  // Add values to appropriate filter type
+  for (const std::string& value : values) {
+    if (filter_name_lower == "type") {
+      add_type_filter(query, value);
+    } else if (filter_name_lower == "path") {
+      add_path_filter(query, value);
+    }
+  }
+}
 
-  query.text_query = remaining;
+std::vector<std::string> SearchQueryParser::parse_filter_values() {
+  std::vector<std::string> values;
+  
+  while (tokenizer_.has_more_tokens()) {
+    SearchToken token = tokenizer_.next_token();
+    
+    if (token.type == SearchTokenType::TEXT || 
+        token.type == SearchTokenType::QUOTED_STRING) {
+      values.push_back(token.value);
+      
+      // Check for comma (more values)
+      SearchToken next = tokenizer_.peek_token();
+      if (next.type == SearchTokenType::COMMA) {
+        tokenizer_.next_token(); // consume comma
+        continue;
+      } else {
+        break; // No more values in this filter
+      }
+    } else {
+      // Unexpected token - stop parsing values
+      break;
+    }
+  }
+  
+  return values;
+}
 
-  LOG_DEBUG("Final parsed query - Text: '{}', Type filters count: {}", query.text_query, query.type_filters.size());
+void SearchQueryParser::add_type_filter(SearchQuery& query, const std::string& type_str) {
+  std::string type_lower = to_lowercase(type_str);
+  AssetType type = get_asset_type_from_string(type_lower);
+  
+  if (type != AssetType::Unknown) {
+    query.type_filters.push_back(type);
+  }
+}
+
+void SearchQueryParser::add_path_filter(SearchQuery& query, const std::string& path_str) {
+  std::string normalized_path = normalize_path_separators(path_str);
+  
+  if (!normalized_path.empty()) {
+    query.path_filters.push_back(normalized_path);
+  }
+}
+
+// Parse search string using new token-based parser
+SearchQuery parse_search_query(const std::string& search_string, 
+                              const std::vector<AssetType>& ui_type_filters,
+                              const std::vector<std::string>& ui_path_filters) {
+  LOG_DEBUG("Parsing search query: '{}'", search_string);
+
+  SearchTokenizer tokenizer(search_string);
+  SearchQueryParser parser(tokenizer);
+  SearchQuery query = parser.parse(ui_type_filters, ui_path_filters);
+
+  LOG_DEBUG("Final parsed query - Text: '{}', Type filters count: {}, Path filters count: {}", 
+    query.text_query, query.type_filters.size(), query.path_filters.size());
 
   return query;
 }
@@ -99,6 +304,29 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
     }
   }
 
+  // Check path filters (OR condition - asset must match at least one path)
+  if (!query.path_filters.empty()) {
+    bool path_matches = false;
+    std::string asset_relative_path = to_lowercase(get_relative_asset_path(asset.full_path.u8string()));
+    
+    for (const auto& filter_path : query.path_filters) {
+      std::string filter_path_lower = to_lowercase(filter_path);
+      
+      // Check if asset path starts with the filter path
+      if (asset_relative_path.substr(0, filter_path_lower.length()) == filter_path_lower) {
+        // Exact match or the asset path continues with a directory separator
+        if (asset_relative_path.length() == filter_path_lower.length() || 
+            asset_relative_path[filter_path_lower.length()] == '/') {
+          path_matches = true;
+          break;
+        }
+      }
+    }
+    if (!path_matches) {
+      return false;
+    }
+  }
+
   // If no text query, asset matches based on type filter alone
   if (query.text_query.empty()) {
     return true;
@@ -107,7 +335,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   std::string query_lower = to_lowercase(query.text_query);
   std::string name_lower = to_lowercase(asset.name);
   std::string extension_lower = to_lowercase(asset.extension);
-  std::string path_lower = to_lowercase(asset.full_path.u8string());
+  std::string path_lower = to_lowercase(get_relative_asset_path(asset.full_path.u8string()));
 
   // Split search query into terms (space-separated)
   std::vector<std::string> search_terms;
@@ -159,14 +387,14 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, 
   if (search_state.type_filter_font) ui_type_filters.push_back(AssetType::Font);
 
   // Parse the search query once before the loop, passing UI filters
-  SearchQuery query = parse_search_query(search_state.buffer, ui_type_filters);
+  SearchQuery query = parse_search_query(search_state.buffer, ui_type_filters, search_state.internal_path_filters);
 
   // Lock assets during filtering to prevent race conditions
   std::lock_guard<std::mutex> lock(assets_mutex);
 
   total_assets = assets.size();
-  LOG_DEBUG("Filtering {} assets with query: '{}', type filters count: {}",
-    total_assets, search_state.buffer, query.type_filters.size());
+  LOG_DEBUG("Filtering {} assets with query: '{}', type filters count: {}, path filters count: {}",
+    total_assets, search_state.buffer, query.type_filters.size(), query.path_filters.size());
 
   for (const auto& asset : assets) {
     // Skip ignored asset types
@@ -202,3 +430,4 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, 
   LOG_INFO("Search for \"{}\" completed in {:.1f} ms. Filtered {}/{} assets",
     search_state.buffer, duration.count() / 1000.0, filtered_count, total_assets);
 }
+

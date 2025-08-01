@@ -10,6 +10,7 @@
 #include "config.h"
 #include "logger.h"
 #include "texture_manager.h"
+#include "utils.h"
 
 namespace fs = std::filesystem;
 
@@ -412,8 +413,8 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
     try {
         fs::path root(root_path_);
 
-        // Basic file information (keep as filesystem::path for proper Unicode handling)
-        file_info.full_path = full_path;
+        // Basic file information (normalize path separators for consistent storage)
+        file_info.full_path = fs::u8path(normalize_path_separators(full_path.u8string()));
         file_info.name = full_path.filename().u8string();
         file_info.is_directory = fs::is_directory(full_path);
 
@@ -471,7 +472,7 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
     catch (const fs::filesystem_error& e) {
         LOG_ERROR("Error creating file info for {}: {}", full_path.u8string(), e.what());
         // Return minimal file info on error
-        file_info.full_path = full_path;
+        file_info.full_path = fs::u8path(normalize_path_separators(full_path.u8string()));
         file_info.name = full_path.filename().u8string();
         file_info.last_modified = timestamp;
     }
