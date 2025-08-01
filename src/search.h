@@ -25,9 +25,10 @@ struct SearchToken {
   std::string value;
   size_t position;        // Character position in original string
   size_t length;          // Length of token in original string
-  
+
   SearchToken(SearchTokenType t, const std::string& v, size_t pos, size_t len)
-    : type(t), value(v), position(pos), length(len) {}
+    : type(t), value(v), position(pos), length(len) {
+  }
 };
 
 // Parsed search query with optional filters
@@ -41,16 +42,16 @@ struct SearchQuery {
 class SearchTokenizer {
 public:
   explicit SearchTokenizer(const std::string& input);
-  
+
   // Get next token from input stream
   SearchToken next_token();
-  
+
   // Peek at next token without consuming it
   SearchToken peek_token();
-  
+
   // Check if there are more tokens
   bool has_more_tokens() const;
-  
+
   // Get current position in input
   size_t get_position() const { return current_pos_; }
 
@@ -58,7 +59,7 @@ private:
   const std::string& input_;
   size_t current_pos_;
   std::optional<SearchToken> peeked_token_;
-  
+
   // Helper methods
   void skip_whitespace();
   SearchToken parse_quoted_string();
@@ -70,14 +71,14 @@ private:
 class SearchQueryParser {
 public:
   explicit SearchQueryParser(SearchTokenizer& tokenizer);
-  
+
   // Parse tokens into SearchQuery structure
   SearchQuery parse(const std::vector<AssetType>& ui_type_filters = {},
-                   const std::vector<std::string>& ui_path_filters = {});
+    const std::vector<std::string>& ui_path_filters = {});
 
 private:
   SearchTokenizer& tokenizer_;
-  
+
   // Grammar parsing methods
   void parse_filter(SearchQuery& query, const SearchToken& filter_name);
   std::vector<std::string> parse_filter_values();
@@ -119,16 +120,16 @@ struct SearchState {
   bool type_filter_audio = false;
   bool type_filter_shader = false;
   bool type_filter_font = false;
-  
-  // Internal path filters (set by clicking on path segments)
-  std::vector<std::string> internal_path_filters;
+
+  // Path filters (set by clicking on path segments)
+  std::vector<std::string> path_filters;
 };
 
 // Parse search string into structured query
 // UI filters take precedence over any filters found in the query string
-SearchQuery parse_search_query(const std::string& search_string, 
-                              const std::vector<AssetType>& ui_type_filters = {},
-                              const std::vector<std::string>& ui_path_filters = {});
+SearchQuery parse_search_query(const std::string& search_string,
+  const std::vector<AssetType>& ui_type_filters = {},
+  const std::vector<std::string>& ui_path_filters = {});
 
 // Function to check if an asset matches the search query
 bool asset_matches_search(const Asset& asset, const SearchQuery& query);

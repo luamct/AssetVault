@@ -40,76 +40,119 @@ EventProcessor* g_event_processor = nullptr;
 void render_clickable_path(const std::string& full_path, SearchState& search_state) {
   // Get relative path from assets folder
   std::string relative_path = get_relative_asset_path(full_path);
-  
+
   // Split path into segments
   std::vector<std::string> segments;
   std::stringstream ss(relative_path);
   std::string segment;
-  
+
   while (std::getline(ss, segment, '/')) {
     if (!segment.empty()) {
       segments.push_back(segment);
     }
   }
-  
-  // Render each segment as a clickable button
+
+  // Render each segment as a clickable link (exclude the last segment if it's a file)
+  // Only directory segments should be clickable, not the filename itself
+  size_t clickable_segments = segments.size();
+  if (clickable_segments > 0) {
+    clickable_segments = segments.size() - 1; // Exclude the filename
+  }
+
+  // Get available width for wrapping
+  float available_width = ImGui::GetContentRegionAvail().x;
+  float current_line_width = 0.0f;
+
   for (size_t i = 0; i < segments.size(); ++i) {
+    bool is_clickable = (i < clickable_segments);
+
+    // Calculate the width this segment would take (including separator if not first)
+    float separator_width = 0.0f;
     if (i > 0) {
-      ImGui::SameLine();
-      ImGui::TextColored(Theme::TEXT_SECONDARY, " / ");
-      ImGui::SameLine();
+      separator_width = ImGui::CalcTextSize(" / ").x + 4.0f; // Add spacing (2.0f before + 2.0f after)
     }
-    
+
+    // Text width calculation (same for both clickable and non-clickable now)
+    float segment_width = ImGui::CalcTextSize(segments[i].c_str()).x;
+
+    // Check if we need to wrap to next line
+    if (i > 0) {
+      if (current_line_width + separator_width + segment_width > available_width) {
+        // Start new line - no separator at the beginning of new line
+        current_line_width = segment_width;
+      }
+      else {
+        // Continue on same line with separator
+        current_line_width += separator_width + segment_width;
+        ImGui::SameLine(0, 2.0f); // Small spacing between segments
+        ImGui::TextColored(Theme::TEXT_SECONDARY, " / ");
+        ImGui::SameLine(0, 2.0f);
+      }
+    }
+    else {
+      // First segment
+      current_line_width = segment_width;
+    }
+
     // Build the path up to this segment
     std::string path_to_segment;
     for (size_t j = 0; j <= i; ++j) {
       if (j > 0) path_to_segment += "/";
       path_to_segment += segments[j];
     }
-    
-    // Create unique button ID
-    std::string button_id = "##path_" + std::to_string(i) + "_" + segments[i];
-    
-    // Check if this path is already in the filter
-    bool is_active = std::find(search_state.internal_path_filters.begin(), 
-                               search_state.internal_path_filters.end(), 
-                               path_to_segment) != search_state.internal_path_filters.end();
-    
-    // Style the button differently if it's active
-    if (is_active) {
-      ImGui::PushStyleColor(ImGuiCol_Button, Theme::ACCENT_BLUE_1);
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::ACCENT_BLUE_2);
-      ImGui::PushStyleColor(ImGuiCol_Text, Theme::TEXT_DARK);
-    } else {
-      ImGui::PushStyleColor(ImGuiCol_Button, Theme::FRAME_LIGHT_BLUE_1);
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::BACKGROUND_LIGHT_BLUE_1);
-      ImGui::PushStyleColor(ImGuiCol_Text, Theme::ACCENT_BLUE_1);
-    }
-    
-    // Render clickable segment
-    if (ImGui::SmallButton((segments[i] + button_id).c_str())) {
-      // Toggle the path filter
-      auto it = std::find(search_state.internal_path_filters.begin(), 
-                          search_state.internal_path_filters.end(), 
-                          path_to_segment);
-      
-      if (it != search_state.internal_path_filters.end()) {
-        // Remove if already present
-        search_state.internal_path_filters.erase(it);
-      } else {
-        // Add if not present
-        search_state.internal_path_filters.push_back(path_to_segment);
+
+    if (is_clickable) {
+      // Check if this path is already in the filter
+      bool is_active = std::find(search_state.path_filters.begin(),
+        search_state.path_filters.end(),
+        path_to_segment) != search_state.path_filters.end();
+
+      // Choose color based on active state
+      ImVec4 link_color = is_active ? Theme::ACCENT_BLUE_2 : Theme::ACCENT_BLUE_1;
+
+      // Render as clickable text link
+      ImGui::PushStyleColor(ImGuiCol_Text, link_color);
+      ImGui::Text("%s", segments[i].c_str());
+      ImGui::PopStyleColor();
+
+      // Get item rect for interaction and underline
+      ImVec2 text_min = ImGui::GetItemRectMin();
+      ImVec2 text_max = ImGui::GetItemRectMax();
+      bool is_hovered = ImGui::IsItemHovered();
+
+      // Draw underline on hover
+      if (is_hovered) {
+        ImGui::GetWindowDrawList()->AddLine(
+          ImVec2(text_min.x, text_max.y - 1.0f),
+          ImVec2(text_max.x, text_max.y - 1.0f),
+          ImGui::GetColorU32(link_color),
+          1.0f
+        );
+
+        // Change cursor to hand
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       }
-      
-      // Trigger search update
-      search_state.update_needed = true;
+
+      // Handle click
+      if (is_hovered && ImGui::IsMouseClicked(0)) {
+        // Single path filter mode - only one can be active at a time
+        if (is_active) {
+          // If this path is already active, deactivate it (clear all filters)
+          search_state.path_filters.clear();
+        }
+        else {
+          // Clear all existing filters and add this one
+          search_state.path_filters.clear();
+          search_state.path_filters.push_back(path_to_segment);
+        }
+
+        // Trigger search update
+        search_state.update_needed = true;
+      }
     }
-    
-    ImGui::PopStyleColor(3);
-    
-    // Show tooltip with the full path segment
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("Click to filter by: %s", path_to_segment.c_str());
+    else {
+      // Render non-clickable segment (filename) as regular text
+      ImGui::TextColored(Theme::TEXT_DARK, "%s", segments[i].c_str());
     }
   }
 }
