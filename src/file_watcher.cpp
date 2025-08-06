@@ -4,16 +4,20 @@
 // Platform-specific factory functions
 #ifdef _WIN32
 std::unique_ptr<FileWatcherImpl> create_windows_file_watcher_impl();
+#elif defined(__APPLE__)
+std::unique_ptr<FileWatcherImpl> create_platform_file_watcher();
 #else
-// For non-Windows platforms, we'll need to implement a different solution
-// For now, this will cause a compilation error on non-Windows
-#error "FileWatcher only supports Windows at this time"
+// For non-Windows/non-macOS platforms, we'll need to implement a different solution
+#error "FileWatcher only supports Windows and macOS at this time"
 #endif
 
 std::unique_ptr<FileWatcherImpl> create_file_watcher_impl() {
 #ifdef _WIN32
   LOG_INFO("Using native Windows file watcher");
   return create_windows_file_watcher_impl();
+#elif defined(__APPLE__)
+  LOG_INFO("Using native macOS file watcher (FSEvents)");
+  return create_platform_file_watcher();
 #else
   return nullptr;
 #endif

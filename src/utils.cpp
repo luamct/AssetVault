@@ -84,3 +84,20 @@ std::string format_file_size(uint64_t size_bytes) {
     return std::to_string(size_bytes) + " bytes";
   }
 }
+
+void safe_localtime(std::tm* tm_buf, const std::time_t* time) {
+#ifdef _WIN32
+  localtime_s(tm_buf, time);
+#else
+  localtime_r(time, tm_buf);
+#endif
+}
+
+void safe_strcpy(char* dest, size_t dest_size, const char* src) {
+#ifdef _WIN32
+  strcpy_s(dest, dest_size, src);
+#else
+  strncpy(dest, src, dest_size - 1);
+  dest[dest_size - 1] = '\0';  // Ensure null termination
+#endif
+}

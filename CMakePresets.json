@@ -1,0 +1,73 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "windows-static",
+      "displayName": "Windows Static Build",
+      "description": "Windows build with static linking for distribution",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "build",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS Build",
+      "description": "macOS build with app bundle support",
+      "generator": "Unix Makefiles",
+      "binaryDir": "build",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "arm64-osx",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "linux-static",
+      "displayName": "Linux Static Build",
+      "description": "Linux build with static linking for AppImage",
+      "generator": "Unix Makefiles",
+      "binaryDir": "build",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-linux-static",
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-static",
+      "configurePreset": "windows-static",
+      "configuration": "Release"
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos"
+    },
+    {
+      "name": "linux-static",
+      "configurePreset": "linux-static"
+    }
+  ]
+}

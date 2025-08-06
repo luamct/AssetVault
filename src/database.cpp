@@ -436,14 +436,10 @@ bool AssetDatabase::delete_assets_batch(const std::vector<std::string>& paths) {
   }
 
   bool success = true;
-  int deleted_count = 0;
   for (const auto& path : paths) {
     if (!delete_asset(path)) {
       success = false;
       break;
-    }
-    else {
-      deleted_count++;
     }
   }
 

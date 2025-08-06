@@ -512,6 +512,20 @@ int main() {
     return -1;
   }
 
+  // Set OpenGL context hints for cross-platform compatibility
+#ifdef __APPLE__
+  // macOS requires OpenGL 4.1 core profile
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#else
+  // Windows/Linux can use OpenGL 3.3
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#endif
+
   // Create window
   GLFWwindow* window = glfwCreateWindow(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT, "Asset Inventory", nullptr, nullptr);
   if (!window) {
@@ -1032,7 +1046,7 @@ int main() {
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
         std::tm tm_buf;
-        localtime_s(&tm_buf, &time_t);
+        safe_localtime(&tm_buf, &time_t);
         std::stringstream ss;
         ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
         ImGui::TextColored(Theme::TEXT_LABEL, "Modified: ");
@@ -1216,7 +1230,7 @@ int main() {
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
         std::tm tm_buf;
-        localtime_s(&tm_buf, &time_t);
+        safe_localtime(&tm_buf, &time_t);
         std::stringstream ss;
         ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
         ImGui::TextColored(Theme::TEXT_LABEL, "Modified: ");
@@ -1298,7 +1312,7 @@ int main() {
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
         std::tm tm_buf;
-        localtime_s(&tm_buf, &time_t);
+        safe_localtime(&tm_buf, &time_t);
         std::stringstream ss;
         ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
         ImGui::TextColored(Theme::TEXT_LABEL, "Modified: ");

@@ -34,28 +34,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
-### CMake Build (Windows Visual Studio)
+### Unified vcpkg Build System
+The project now uses vcpkg for unified cross-platform dependency management with static linking for distribution builds.
+
+**Prerequisites:**
+- Install vcpkg: `git clone https://github.com/microsoft/vcpkg $HOME/vcpkg && $HOME/vcpkg/bootstrap-vcpkg.sh`
+- Set environment: `export VCPKG_ROOT="$HOME/vcpkg"`
+
+**Build Commands:**
 ```bash
-# Clean build (always run from project root)
-rm -rf build && mkdir build && cmake -B build && cmake --build build
+# Configure with platform preset (always run from project root)
+export VCPKG_ROOT="$HOME/vcpkg"  # Set vcpkg path
+cmake --preset <preset-name>      # Configure with preset (outputs to build/)
+cmake --build build --config Release  # Build application
 
-# Quick rebuild (when only source files change)
-cmake --build build
+# Available presets:
+# - windows-static: Windows build with static linking for distribution
+# - macos: macOS build with app bundle support
+# - linux-static: Linux build with static linking for AppImage
 
-# Run application
-./build/Debug/AssetInventory.exe
+# Run application (from project root)
+./build/AssetInventory.app/Contents/MacOS/AssetInventory  # macOS
+./build/AssetInventory.exe                                # Windows
+./build/AssetInventory                                    # Linux
 
-# Run unit tests
-./build/Debug/SearchTest.exe
+# Run unit tests (from project root)
+./build/SearchTest
 
-# Measure compilation timing with performance summary
-cmake --build build --clean-first -- /clp:PerformanceSummary
+# Clean build artifacts
+rm -rf build/
 ```
 
 ### Directory Management
-- **Always stay in project root directory** (`D:/GameDev/AssetInventory`) when running commands
+- **Always stay in project root directory** when running commands
+- **Build in separate directory**: All builds happen in `build/` subdirectory
 - **Use relative paths** instead of absolute paths when possible
-- **Never run commands from subdirectories** like `build/`
+- **vcpkg dependencies**: Automatically managed within build directory
+- **Clean builds**: Simply delete the `build/` directory
 
 ## Architecture Overview
 
@@ -133,17 +148,17 @@ Uses Catch2 header-only framework for fast, lightweight unit testing focused on 
 
 **Running Tests:**
 ```bash
-# Build and run all tests
-cmake --build build --target SearchTest && ./build/Debug/SearchTest.exe
+# Build and run all tests (cross-platform)
+./build/SearchTest
 
 # Run tests with specific tags
-./build/Debug/SearchTest.exe "[search]"
+./build/SearchTest "[search]"
 
 # Show verbose output
-./build/Debug/SearchTest.exe -s
+./build/SearchTest -s
 
 # List all tests
-./build/Debug/SearchTest.exe --list-tests
+./build/SearchTest --list-tests
 ```
 
 **Current Test Coverage:**
@@ -195,10 +210,12 @@ The `EventProcessor` class is the core of the unified event system:
 - Window positions and sizes not saved between sessions
 
 ### Build Configuration
-- Uses C++17 standard with CMake 3.16+
-- MSVC runtime library settings configured to avoid linker conflicts
-- External dependencies are precompiled binaries in `external/` directory
-- Windows-focused development with Visual Studio 2022
+- Uses C++17 standard with CMake 3.21+
+- **Unified vcpkg dependency management** across all platforms
+- **Static linking configuration** for self-contained distribution builds
+- **Cross-platform support**: Windows (Visual Studio), macOS (Xcode/Make), Linux (Make)
+- **App bundle support** on macOS with proper Info.plist configuration
+- Some dependencies still built from source: ImGui (for customization), GLAD (OpenGL loader), fonts and resources
 
 ### Directory Structure
 ```
@@ -206,23 +223,38 @@ src/               # Source files with clear separation of concerns
   ├── main.cpp     # Main application entry point, UI logic, and smart initial scanning
   ├── event_processor.cpp/h # Unified event processing with batch operations and progress tracking
   ├── database.cpp/h # Database operations with batch methods for EventProcessor
-  ├── index.cpp/h  # Asset type detection, file metadata extraction, and processing logic
+  ├── asset.cpp/h  # Asset type detection, file metadata extraction, and processing logic
   ├── file_watcher*.cpp/h # Cross-platform file system monitoring with event generation
   ├── texture_manager.cpp/h # Texture loading, caching, and thumbnail generation including SVG
   ├── 3d.cpp/h     # 3D model rendering and viewport functionality
   ├── utils.cpp/h  # Utility functions for string formatting, file operations
   └── theme.h      # UI theming configuration
-external/          # Downloaded dependencies (GLFW, ImGui, Assimp, SQLite, etc.)
-assets/            # Asset files for monitoring and indexing
+external/          # Minimal dependencies that can't use vcpkg (8MB)
+  ├── imgui/       # UI framework (needs backend compilation)
+  ├── glad/        # OpenGL function loading
+  ├── nanosvg/     # SVG rendering (not in vcpkg)
+  ├── fonts/       # Application resources
+  ├── miniaudio.h  # Audio metadata (not in vcpkg)
+  ├── stb_image_write.h # Image writing (single header)
+  └── README.md    # Explains why each dependency remains
+images/            # UI icons and textures
 db/                # SQLite database files
-build/             # Generated build output
 tests/             # Unit tests with Catch2 framework
 readmes/           # Component-specific documentation
+vcpkg.json         # Dependency manifest with features
+CMakePresets.json  # Platform-specific build configurations
+Info.plist.in      # macOS app bundle template
 ```
 
+**Note**: `vcpkg_installed/` directory is created during builds and should be added to .gitignore.
+
 ### Platform Support
-- **Windows**: Visual Studio 2022 with precompiled binaries (primary platform)
-- Cross-platform file watching with platform-specific implementations
+- **Windows**: Visual Studio 2022 with static linking for distribution
+- **macOS**: Native app bundle with FSEvents file watching (ARM64 and x64)
+- **Linux**: Static linking for AppImage distribution
+- **Cross-platform file watching**: Platform-specific implementations (Windows API, FSEvents, inotify)
+- **OpenGL compatibility**: Version 330 (Windows/Linux) and 410 core (macOS)
+- **Architecture support**: Both ARM64 and x64 builds
 
 ## Critical Development Notes
 
@@ -232,9 +264,26 @@ readmes/           # Component-specific documentation
 - This ensures consistency across all future sessions
 
 ### Dependency Management
-- All dependencies are pre-included in the `external/` directory
-- No additional downloads or setup required for development
-- Dependencies include: GLFW, ImGui, GLM, Assimp, SQLite, GLAD, STB, NanoSVG, Catch2
+**vcpkg-managed dependencies** (automatically installed during build):
+- **GLFW**: Window management and OpenGL context
+- **Assimp**: 3D model loading (FBX, OBJ, GLTF, etc.)
+- **SQLite**: Database with FTS5, JSON1, and DBSTAT features
+- **GLM**: Math library for 3D operations
+- **spdlog**: Logging framework
+- **Catch2**: Unit testing framework
+
+**Source-built dependencies** (in `external/` directory - 8MB total):
+- **ImGui** (3.9MB): UI framework requiring backend compilation
+- **GLAD** (180KB): OpenGL loader for specific version requirements
+- **NanoSVG** (124KB): SVG rendering (not in vcpkg)
+- **miniaudio.h** (3.8MB): Audio metadata (not in vcpkg)
+- **stb_image_write.h** (72KB): Image writing (single header)
+- **fonts/** (144KB): Application resources
+
+**Configuration files**:
+- `vcpkg.json`: Dependency manifest with features
+- `vcpkg-configuration.json`: Registry configuration
+- `CMakePresets.json`: Platform-specific build presets
 
 ### Asset Management
 - Smart incremental scanning compares filesystem state with database - no clearing on startup
@@ -270,11 +319,19 @@ readmes/           # Component-specific documentation
 - **Never assume user wants to commit changes** - always wait for explicit instruction
 
 ### Current Architecture Status
+- **Complete vcpkg migration**: All standard libraries managed through vcpkg (GLFW, Assimp, SQLite, GLM, spdlog, Catch2)
+- **Minimal external/**: Reduced from 27MB to 8MB, only essential non-vcpkg dependencies remain
+- **SQLite features**: Using vcpkg with FTS5, JSON1, and DBSTAT features enabled
+- **Cross-platform compatibility**: Windows, macOS (ARM64/x64), and Linux support
+- **OpenGL version handling**: Platform-specific shader compatibility (330 vs 410 core)
+- **macOS native integration**: FSEvents file watching and proper app bundle structure
 - **Timestamp optimization**: Removed expensive `created_or_modified_seconds` field and related Windows FILETIME operations
 - **3D debugging cleanup**: Verbose model loading output removed, only essential errors/warnings remain
 - **Failed model handling**: Added caching system to prevent infinite retry loops for problematic FBX files
 - **Unicode support**: Full UTF-8 filesystem path handling for international asset names
 - **Performance**: Initial scan optimized, no more 110-second delays on large asset directories
+- **Distribution ready**: Static linking ensures self-contained executables
+- **Warning-free builds**: Resolved macOS version compatibility warnings by updating deployment target to 15.0, suppressed deprecated API warnings with pragmas
 
 ### Supported Asset Types
 - **Texture**: .png, .jpg, .jpeg, .gif, .bmp, .tga, .hdr, .svg (with pre-rasterization)

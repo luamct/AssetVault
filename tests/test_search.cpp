@@ -1,8 +1,8 @@
-#define CATCH_CONFIG_MAIN
-#include "catch2/catch.hpp"
+#include <catch2/catch_all.hpp>
 #include "search.h"
 #include "asset.h"
 #include "test_helpers.h"
+#include "utils.h"
 
 // Mock global for linking - we're not testing functions that use it
 class EventProcessor;
@@ -431,7 +431,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     SearchState search_state;
 
     SECTION("Filter by text") {
-        strcpy_s(search_state.buffer, "monster");
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster");
         filter_assets(search_state, test_assets, test_mutex);
 
         REQUIRE(search_state.filtered_assets.size() == 2);
@@ -440,7 +440,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     }
 
     SECTION("Filter by type") {
-        strcpy_s(search_state.buffer, "type=2d");
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d");
         filter_assets(search_state, test_assets, test_mutex);
 
         REQUIRE(search_state.filtered_assets.size() == 2);
@@ -449,7 +449,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     }
 
     SECTION("Filter by multiple types") {
-        strcpy_s(search_state.buffer, "type=2d,audio");
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d,audio");
         filter_assets(search_state, test_assets, test_mutex);
 
         REQUIRE(search_state.filtered_assets.size() == 4);
@@ -457,7 +457,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     }
 
     SECTION("Combined type and text filter") {
-        strcpy_s(search_state.buffer, "type=2d texture");
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d texture");
         filter_assets(search_state, test_assets, test_mutex);
 
         REQUIRE(search_state.filtered_assets.size() == 2);
@@ -466,21 +466,21 @@ TEST_CASE("filter_assets functionality", "[search]") {
     }
 
     SECTION("No matches") {
-        strcpy_s(search_state.buffer, "nonexistent");
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "nonexistent");
         filter_assets(search_state, test_assets, test_mutex);
 
         REQUIRE(search_state.filtered_assets.empty());
     }
 
     SECTION("Empty query returns all") {
-        strcpy_s(search_state.buffer, "");
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "");
         filter_assets(search_state, test_assets, test_mutex);
 
         REQUIRE(search_state.filtered_assets.size() == test_assets.size());
     }
 
     SECTION("Search state initialization") {
-        strcpy_s(search_state.buffer, "monster");
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster");
         search_state.selected_asset_index = 5;
         search_state.model_preview_row = 3;
 

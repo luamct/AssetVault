@@ -15,6 +15,31 @@
 // Model state is now managed by the caller
 
 // Vertex shader source (updated for 3D models with texture support)
+#ifdef __APPLE__
+const char* vertex_shader_source = R"(
+#version 410 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aTexCoord;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+out vec3 FragPos;
+out vec3 Normal;
+out vec2 TexCoord;
+
+void main()
+{
+    FragPos = vec3(model * vec4(aPos, 1.0));
+    Normal = mat3(transpose(inverse(model))) * aNormal;
+    TexCoord = aTexCoord;
+
+    gl_Position = projection * view * vec4(FragPos, 1.0);
+}
+)";
+#else
 const char* vertex_shader_source = R"(
 #version 330 core
 layout (location = 0) in vec3 aPos;
@@ -38,8 +63,63 @@ void main()
     gl_Position = projection * view * vec4(FragPos, 1.0);
 }
 )";
+#endif
 
 // Fragment shader source (updated for 3D models with multi-material support)
+#ifdef __APPLE__
+const char* fragment_shader_source = R"(
+#version 410 core
+in vec3 FragPos;
+in vec3 Normal;
+in vec2 TexCoord;
+
+uniform vec3 lightPos;
+uniform vec3 viewPos;
+uniform vec3 lightColor;
+uniform sampler2D diffuseTexture;
+uniform bool useTexture;
+uniform vec3 materialColor;
+
+out vec4 FragColor;
+
+void main()
+{
+    // Sample texture color or use material color
+    vec3 objectColor = useTexture ? texture(diffuseTexture, TexCoord).rgb : materialColor;
+
+    vec3 norm = normalize(Normal);
+    vec3 viewDir = normalize(viewPos - FragPos);
+
+    // Moderate ambient lighting to allow for some shadows
+    float ambientStrength = 0.25;
+    vec3 ambient = ambientStrength * lightColor;
+
+    // Main key light (from camera direction)
+    vec3 lightDir = normalize(lightPos - FragPos);
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 diffuse = diff * lightColor * 0.7; // Slightly stronger main light
+
+    // Add subtle fill light from opposite direction to soften shadows
+    vec3 fillLightDir = normalize(-lightPos); // Opposite direction
+    float fillDiff = max(dot(norm, fillLightDir), 0.0);
+    vec3 fillLight = fillDiff * lightColor * 0.15; // Gentler fill light
+
+    // Softer specular highlights
+    float specularStrength = 0.2; // Reduced from 0.5
+    vec3 reflectDir = reflect(-lightDir, norm);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64); // Higher for softer highlights
+    vec3 specular = specularStrength * spec * lightColor;
+
+    // Add subtle rim lighting for better shape definition
+    float rimStrength = 0.3;
+    float rimFactor = 1.0 - max(dot(viewDir, norm), 0.0);
+    vec3 rimLight = rimStrength * pow(rimFactor, 3.0) * lightColor;
+
+    vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor;
+    FragColor = vec4(result, 1.0);
+}
+)";
+#else
 const char* fragment_shader_source = R"(
 #version 330 core
 in vec3 FragPos;
@@ -92,6 +172,7 @@ void main()
     FragColor = vec4(result, 1.0);
 }
 )";
+#endif
 
 // Helper function to get base path
 std::string getBasePath(const std::string& path) {

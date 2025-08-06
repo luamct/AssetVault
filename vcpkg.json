@@ -1,0 +1,17 @@
+{
+  "name": "assetinventory",
+  "version": "1.0.0",
+  "description": "Asset Inventory - Game Development Asset Manager",
+  "dependencies": [
+    "glfw3",
+    "assimp",
+    {
+      "name": "sqlite3",
+      "features": ["fts5", "json1", "dbstat"]
+    },
+    "glm",
+    "spdlog",
+    "catch2"
+  ],
+  "builtin-baseline": "8cce1e1118ea2569d5117f096035671a8490b8f4"
+}

@@ -17,7 +17,26 @@
       "Bash(powershell:*)",
       "Bash(./build/Debug/SearchTest.exe)",
       "Bash(./build/Debug/SearchTest.exe \"[debug]\")",
-      "Bash(ctest:*)"
+      "Bash(ctest:*)",
+      "Bash(brew:*)",
+      "Bash(pkg-config:*)",
+      "Bash(make:*)",
+      "Bash(./SearchTest)",
+      "Bash(./AssetInventory)",
+      "Bash(./build/AssetInventory)",
+      "Bash(chmod:*)",
+      "Bash(git clone:*)",
+      "Bash(export VCPKG_ROOT=\"$HOME/vcpkg\")",
+      "Bash(echo:*)",
+      "Bash(./bootstrap-vcpkg.sh:*)",
+      "Bash(\"$VCPKG_ROOT/vcpkg\" --version)",
+      "Bash(\"$VCPKG_ROOT/vcpkg\" install --triplet x64-osx)",
+      "Bash(\"$VCPKG_ROOT/vcpkg\" install --triplet arm64-osx)",
+      "Bash(./AssetInventory.app/Contents/MacOS/AssetInventory:*)",
+      "Bash(find:*)",
+      "Bash(\"$VCPKG_ROOT/vcpkg\" search sqlite3)",
+      "Bash(sw_vers)",
+      "Bash(./build/SearchTest)"
     ],
     "deny": []
   }

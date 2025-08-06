@@ -102,6 +102,9 @@ Thumbs.db
 # Ignore build and cache directories
 .cache/
 
+# vcpkg managed dependencies (auto-generated)
+vcpkg_installed/
+
 # Asset files (user content)
 assets/
 /db

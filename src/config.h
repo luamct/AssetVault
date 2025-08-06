@@ -64,7 +64,11 @@ namespace Config {
     constexpr int FILE_WATCHER_DEBOUNCE_MS = 100;
 
     // Asset root directory
+#ifdef _WIN32
     constexpr const char* ASSET_ROOT_DIRECTORY = "D:/GameDev/AssetInventory/assets";
+#else
+    constexpr const char* ASSET_ROOT_DIRECTORY = "assets";
+#endif
 
     // Database settings
     constexpr const char* DATABASE_PATH = "db/assets.db";
