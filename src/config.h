@@ -67,7 +67,7 @@ namespace Config {
 #ifdef _WIN32
     constexpr const char* ASSET_ROOT_DIRECTORY = "D:/GameDev/AssetInventory/assets";
 #else
-    constexpr const char* ASSET_ROOT_DIRECTORY = "assets";
+    constexpr const char* ASSET_ROOT_DIRECTORY = "/Users/luamct/GameDev/AssetInventory/assets";
 #endif
 
     // Database settings

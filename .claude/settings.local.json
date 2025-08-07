@@ -36,7 +36,9 @@
       "Bash(find:*)",
       "Bash(\"$VCPKG_ROOT/vcpkg\" search sqlite3)",
       "Bash(sw_vers)",
-      "Bash(./build/SearchTest)"
+      "Bash(./build/SearchTest)",
+      "Bash(./build/AssetInventory.app/Contents/MacOS/AssetInventory)",
+      "Bash(code:*)"
     ],
     "deny": []
   }

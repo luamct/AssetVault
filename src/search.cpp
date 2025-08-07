@@ -407,20 +407,12 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, 
   for (const auto& asset : assets) {
     // Skip ignored asset types
     if (Config::IGNORED_ASSET_TYPES.count(asset.type) > 0) {
-      LOG_DEBUG("Skipping ignored asset type: {} ({})", asset.name, get_asset_type_string(asset.type));
       continue;
     }
 
     if (asset_matches_search(asset, query)) {
       search_state.filtered_assets.push_back(asset);
       filtered_count++;
-      LOG_DEBUG("Asset matched: {} ({})", asset.name, get_asset_type_string(asset.type));
-    }
-
-    // Enforce reasonable limit to prevent UI blocking
-    if (filtered_count >= Config::MAX_SEARCH_RESULTS) {
-      LOG_INFO("Search results limited to {} items", Config::MAX_SEARCH_RESULTS);
-      break;
     }
   }
 
