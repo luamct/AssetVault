@@ -1,25 +1,25 @@
 #include "file_watcher.h"
 #include "logger.h"
 
-// Platform-specific factory functions
+// Factory functions
+std::unique_ptr<FileWatcherImpl> create_fswatch_file_watcher_impl();
 #ifdef _WIN32
 std::unique_ptr<FileWatcherImpl> create_windows_file_watcher_impl();
-#elif defined(__APPLE__)
-std::unique_ptr<FileWatcherImpl> create_platform_file_watcher();
-#else
-// For non-Windows/non-macOS platforms, we'll need to implement a different solution
-#error "FileWatcher only supports Windows and macOS at this time"
+#endif
+#ifdef __APPLE__
+std::unique_ptr<FileWatcherImpl> create_macos_file_watcher_impl();
 #endif
 
 std::unique_ptr<FileWatcherImpl> create_file_watcher_impl() {
 #ifdef _WIN32
-  LOG_INFO("Using native Windows file watcher");
+  LOG_INFO("Using native Windows ReadDirectoryChangesW file watcher");
   return create_windows_file_watcher_impl();
 #elif defined(__APPLE__)
-  LOG_INFO("Using native macOS file watcher (FSEvents)");
-  return create_platform_file_watcher();
+  LOG_INFO("Using native macOS FSEvents file watcher");
+  return create_macos_file_watcher_impl();
 #else
-  return nullptr;
+  LOG_INFO("Using cross-platform fswatch file watcher");
+  return create_fswatch_file_watcher_impl();
 #endif
 }
 
@@ -32,7 +32,7 @@ FileWatcher::FileWatcher() : p_impl(nullptr) {
 
 FileWatcher::~FileWatcher() { stop_watching(); }
 
-bool FileWatcher::start_watching(const std::string& path, FileEventCallback callback) {
+bool FileWatcher::start_watching(const std::string& path, FileEventCallback callback, AssetExistsCallback asset_check) {
   if (!p_impl) {
     LOG_ERROR("No file watcher implementation available");
     return false;
@@ -41,7 +41,7 @@ bool FileWatcher::start_watching(const std::string& path, FileEventCallback call
   watched_path = path;
   is_watching_flag = true;
 
-  return p_impl->start_watching(path, callback);
+  return p_impl->start_watching(path, callback, asset_check);
 }
 
 void FileWatcher::stop_watching() {

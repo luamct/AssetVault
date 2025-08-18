@@ -33,6 +33,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
   std::atomic<bool> should_stop;
   std::atomic<bool> is_watching_flag;
   FileEventCallback callback;
+  AssetExistsCallback asset_check_callback;
   std::string watched_path;
   
   // Timer-based event tracking
@@ -58,7 +59,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
     current_instance = nullptr;
   }
 
-  bool start_watching(const std::string& path, FileEventCallback cb) override {
+  bool start_watching(const std::string& path, FileEventCallback cb, AssetExistsCallback asset_check) override {
     if (is_watching_flag.load()) {
       LOG_ERROR("Already watching a directory");
       return false;
@@ -66,6 +67,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
 
     watched_path = path;
     callback = cb;
+    asset_check_callback = asset_check;
 
     should_stop = false;
     timer_should_stop = false;
@@ -136,7 +138,50 @@ class MacOSFileWatcher : public FileWatcherImpl {
       // Determine event type based on flags
       FSEventStreamEventFlags flags = eventFlags[i];
       
-      if (flags & kFSEventStreamEventFlagItemCreated) {
+      // Get relative path for logging
+      std::string relative_path = file_path.string();
+      if (relative_path.find(watcher->watched_path) == 0) {
+        relative_path = relative_path.substr(watcher->watched_path.length());
+        if (!relative_path.empty() && relative_path[0] == '/') {
+          relative_path = relative_path.substr(1);
+        }
+      }
+      
+      // Debug: Log all flags for this event
+      LOG_DEBUG("FSEvents: Event for '{}' with flags: 0x{:X} (Created:{} Removed:{} Modified:{} Renamed:{} IsDir:{})",
+                relative_path, flags,
+                (flags & kFSEventStreamEventFlagItemCreated) ? "Y" : "N",
+                (flags & kFSEventStreamEventFlagItemRemoved) ? "Y" : "N", 
+                (flags & kFSEventStreamEventFlagItemModified) ? "Y" : "N",
+                (flags & kFSEventStreamEventFlagItemRenamed) ? "Y" : "N",
+                (flags & kFSEventStreamEventFlagItemIsDir) ? "Y" : "N");
+      
+      // Check Renamed flag first as it can be combined with other flags
+      if (flags & kFSEventStreamEventFlagItemRenamed) {
+        // Handle rename events based solely on asset database
+        // A rename event means either:
+        // 1. File moved FROM this path (if asset exists in DB) -> Deleted
+        // 2. File moved TO this path (if asset doesn't exist in DB) -> Created
+        
+        if (watcher->asset_check_callback) {
+          bool is_tracked = watcher->asset_check_callback(file_path);
+          LOG_DEBUG("FSEvents: Rename event for '{}', is_tracked={}", relative_path, is_tracked);
+          
+          if (is_tracked) {
+            // Asset was tracked at this path - file moved away/deleted
+            LOG_DEBUG("FSEvents: Treating as Deleted (asset was tracked)", relative_path);
+            watcher->add_pending_event(FileEventType::Deleted, file_path);
+          } else {
+            // Asset wasn't tracked at this path - file moved here
+            LOG_DEBUG("FSEvents: Treating as Created (asset not tracked)", relative_path);
+            watcher->add_pending_event(FileEventType::Created, file_path);
+          }
+        } else {
+          // No asset check callback provided - fall back to simple rename event
+          LOG_DEBUG("FSEvents: Rename event for '{}', no asset check available", relative_path);
+          watcher->add_pending_event(FileEventType::Renamed, file_path);
+        }
+      } else if (flags & kFSEventStreamEventFlagItemCreated) {
         if (flags & kFSEventStreamEventFlagItemIsDir) {
           watcher->add_pending_event(FileEventType::DirectoryCreated, file_path);
         } else {
@@ -152,21 +197,11 @@ class MacOSFileWatcher : public FileWatcherImpl {
         if (!(flags & kFSEventStreamEventFlagItemIsDir)) {
           watcher->add_pending_event(FileEventType::Modified, file_path);
         }
-      } else if (flags & kFSEventStreamEventFlagItemRenamed) {
-        // For simplicity, treat renames as delete + create
-        // macOS doesn't easily provide the old/new names in a single event
-        if (std::filesystem::exists(file_path)) {
-          if (flags & kFSEventStreamEventFlagItemIsDir) {
-            watcher->add_pending_event(FileEventType::DirectoryCreated, file_path);
-          } else {
-            watcher->add_pending_event(FileEventType::Created, file_path);
-          }
-        } else {
-          if (flags & kFSEventStreamEventFlagItemIsDir) {
-            watcher->add_pending_event(FileEventType::DirectoryDeleted, file_path);
-          } else {
-            watcher->add_pending_event(FileEventType::Deleted, file_path);
-          }
+      } else {
+        // Check if file exists - if not, it's been deleted even without explicit flags
+        if (!std::filesystem::exists(file_path)) {
+          LOG_DEBUG("FSEvents: File '{}' no longer exists (no explicit flags), treating as Deleted", relative_path);
+          watcher->add_pending_event(FileEventType::Deleted, file_path);
         }
       }
     }
@@ -233,14 +268,36 @@ class MacOSFileWatcher : public FileWatcherImpl {
   }
 
   void add_pending_event(FileEventType type, const std::filesystem::path& path, const std::filesystem::path& old_path = std::filesystem::path()) {
+    // For Deleted and Renamed events, process immediately (don't debounce)
+    if (type == FileEventType::Deleted || type == FileEventType::Renamed || 
+        type == FileEventType::DirectoryDeleted) {
+      // Get relative path for logging
+      std::string relative_path = path.string();
+      if (relative_path.find(watched_path) == 0) {
+        relative_path = relative_path.substr(watched_path.length());
+        if (!relative_path.empty() && relative_path[0] == '/') {
+          relative_path = relative_path.substr(1);
+        }
+      }
+      LOG_DEBUG("Processing {} event IMMEDIATELY for '{}'", 
+                (type == FileEventType::Deleted) ? "Deleted" :
+                (type == FileEventType::Renamed) ? "Renamed" :
+                "DirectoryDeleted", relative_path);
+      if (callback) {
+        FileEvent event(type, path, old_path);
+        callback(event);
+      }
+      return;
+    }
+    
     std::lock_guard<std::mutex> lock(pending_events_mutex);
     
     // Check if it's an asset file (has extension)
-    if (!path.has_extension() && type != FileEventType::DirectoryCreated && type != FileEventType::DirectoryDeleted) {
+    if (!path.has_extension() && type != FileEventType::DirectoryCreated) {
       return;
     }
 
-    // Create or update the pending event
+    // Create or update the pending event (only for Created/Modified events)
     pending_events[path] = PendingFileEvent(type, path, old_path);
   }
 
@@ -276,6 +333,6 @@ class MacOSFileWatcher : public FileWatcherImpl {
 MacOSFileWatcher* MacOSFileWatcher::current_instance = nullptr;
 
 // Factory function
-std::unique_ptr<FileWatcherImpl> create_platform_file_watcher() {
+std::unique_ptr<FileWatcherImpl> create_macos_file_watcher_impl() {
   return std::make_unique<MacOSFileWatcher>();
 }

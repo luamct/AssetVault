@@ -30,7 +30,6 @@ bool AssetDatabase::initialize(const std::string& db_path) {
   }
 
   is_open_ = true;
-  LOG_INFO("Database opened successfully: {}", db_path);
 
   // Enable foreign keys and WAL mode for better performance
   execute_sql("PRAGMA foreign_keys = ON");

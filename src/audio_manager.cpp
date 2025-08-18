@@ -47,8 +47,6 @@ bool AudioManager::initialize() {
   }
 
   initialized_ = true;
-  LOG_INFO("Audio system initialized successfully");
-  LOG_INFO("Audio sample rate: {} Hz", ma_engine_get_sample_rate(engine_));
   return true;
 }
 

@@ -119,3 +119,5 @@ Place your game assets in the `assets/` directory. The application will automati
 ## License
 
 This project is open source. See LICENSE file for details.
+
+## FileWatcher

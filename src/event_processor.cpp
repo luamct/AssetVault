@@ -256,88 +256,134 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
 void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events) {
     std::vector<std::string> paths_to_delete;
     paths_to_delete.reserve(events.size());
-
-    // Collect all paths to delete and increment progress per file
+    
+    // Collect all paths and handle directory deletion by emitting events for children
     for (const auto& event : events) {
         std::string path_utf8 = event.path.u8string();
-        paths_to_delete.push_back(path_utf8);
-        total_events_processed_++;  // Increment per file processed
-
+        
+        if (event.type == FileEventType::DirectoryDeleted) {
+            LOG_DEBUG("Processing directory deletion for: {}", path_utf8);
+            
+            // Get all assets under this directory from the in-memory vector
+            std::lock_guard<std::mutex> lock(assets_mutex_);
+            for (const auto& asset : assets_) {
+                std::string asset_path = asset.full_path.u8string();
+                // Check if asset is within the deleted directory
+                if (asset_path.find(path_utf8) == 0) {  // Path starts with directory
+                    paths_to_delete.push_back(asset_path);
+                    LOG_DEBUG("Adding child asset for deletion: {}", asset_path);
+                }
+            }
+        } else {
+            paths_to_delete.push_back(path_utf8);
+        }
+        
+        total_events_processed_++;  // Increment per event processed
+        
         // Queue texture invalidation for deleted assets
         texture_manager_.queue_texture_invalidation(event.path);
     }
 
-    // Batch delete from database
+    // Batch delete all paths from database
     if (!paths_to_delete.empty()) {
         database_.delete_assets_batch(paths_to_delete);
 
-        // Batch remove from assets vector using partition + erase idiom
+        // Remove from in-memory assets vector
         std::lock_guard<std::mutex> lock(assets_mutex_);
-
-        // Create a set for O(1) lookup
-        std::unordered_set<std::string> paths_set(paths_to_delete.begin(), paths_to_delete.end());
-
-        // Partition: move elements to delete to the end
+        
+        // Use partition to move all to-be-deleted items to the end
         auto new_end = std::partition(assets_.begin(), assets_.end(),
-            [&paths_set](const Asset& asset) {
-                return paths_set.find(asset.full_path.u8string()) == paths_set.end();
+            [&paths_to_delete](const Asset& asset) {
+                std::string asset_path = asset.full_path.u8string();
+                
+                // Check if asset should be deleted
+                for (const auto& path : paths_to_delete) {
+                    if (asset_path == path) {
+                        return false;  // Should be deleted
+                    }
+                }
+                
+                return true;  // Keep this asset
             });
-
-        // Erase elements from new_end to end
+        
+        // Erase the deleted items
         assets_.erase(new_end, assets_.end());
     }
 }
 
 void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events) {
-    // For renames, we still need to handle them individually since they involve
-    // both delete and create operations with different paths
-    std::vector<std::string> old_paths;
-    std::vector<Asset> new_files;
+    // Handle renames based on whether destination is within watched directory
+    std::vector<std::string> paths_to_delete;  // For moves outside watched directory
+    std::vector<std::string> old_paths;        // For renames within watched directory
+    std::vector<Asset> new_files;              // For renames within watched directory
 
+    paths_to_delete.reserve(events.size());
     old_paths.reserve(events.size());
     new_files.reserve(events.size());
 
     for (const auto& event : events) {
         try {
-            old_paths.push_back(event.old_path.u8string());
-            Asset file_info = process_file(event.path, event.timestamp);
-            new_files.push_back(file_info);
-            total_events_processed_++;  // Increment per file processed
-
-            // Queue texture invalidation for both old and new paths
-            texture_manager_.queue_texture_invalidation(event.old_path);
-            // Only invalidate new path if it's a texture asset
-            if (file_info.type == AssetType::_2D) {
+            std::string event_path = event.path.u8string();
+            
+            // Check if the rename destination is within our watched directory
+            bool destination_in_watched_dir = event_path.find(root_path_) == 0;
+            
+            if (destination_in_watched_dir && std::filesystem::exists(event.path)) {
+                // File renamed/moved within watched directory - treat as proper rename
+                LOG_DEBUG("Rename event: '{}' moved within watched directory, treating as rename", event_path);
+                
+                // Since FSEvents only gives us the destination path, we need to find the old path
+                // by looking for assets that no longer exist
+                // For now, treat this as creation since we don't have the old path
+                Asset file_info = process_file(event.path, event.timestamp);
+                new_files.push_back(file_info);
+                
+                // Queue texture invalidation for new path if it's a texture asset
+                if (file_info.type == AssetType::_2D) {
+                    texture_manager_.queue_texture_invalidation(event.path);
+                }
+            } else {
+                // File moved outside watched directory (e.g., to Trash) - treat as deletion
+                LOG_DEBUG("Rename event: '{}' moved outside watched directory, treating as deletion", event_path);
+                paths_to_delete.push_back(event_path);
+                
+                // Queue texture invalidation for deleted asset
                 texture_manager_.queue_texture_invalidation(event.path);
             }
+            
+            total_events_processed_++;  // Increment per file processed
         }
         catch (const std::exception& e) {
-            LOG_ERROR("Error processing renamed event for {} -> {}: {}", event.old_path.u8string(), event.path.u8string(), e.what());
+            LOG_ERROR("Error processing renamed event for {}: {}", event.path.u8string(), e.what());
             total_events_processed_++;  // Count failed attempts too
         }
     }
 
-    // Batch delete old paths
-    if (!old_paths.empty()) {
-        database_.delete_assets_batch(old_paths);
+    // Handle deletions (moves outside watched directory)
+    if (!paths_to_delete.empty()) {
+        database_.delete_assets_batch(paths_to_delete);
+
+        // Remove from in-memory assets vector
+        std::lock_guard<std::mutex> lock(assets_mutex_);
+        auto new_end = std::partition(assets_.begin(), assets_.end(),
+            [&paths_to_delete](const Asset& asset) {
+                std::string asset_path = asset.full_path.u8string();
+                for (const auto& path : paths_to_delete) {
+                    if (asset_path == path) {
+                        return false;  // Should be deleted
+                    }
+                }
+                return true;  // Keep this asset
+            });
+        assets_.erase(new_end, assets_.end());
     }
 
-    // Batch insert new paths
+    // Handle creations (renames within watched directory)
     if (!new_files.empty()) {
         database_.insert_assets_batch(new_files);
 
-        // Update assets vector
+        // Add to in-memory assets vector
         std::lock_guard<std::mutex> lock(assets_mutex_);
-
-        // Remove old paths
-        std::unordered_set<std::string> old_paths_set(old_paths.begin(), old_paths.end());
-        auto new_end = std::partition(assets_.begin(), assets_.end(),
-            [&old_paths_set](const Asset& asset) {
-                return old_paths_set.find(asset.full_path.u8string()) == old_paths_set.end();
-            });
-        assets_.erase(new_end, assets_.end());
-
-        // Add new files
         assets_.reserve(assets_.size() + new_files.size());
         for (const auto& file : new_files) {
             assets_.push_back(file);

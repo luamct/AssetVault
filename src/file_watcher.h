@@ -27,6 +27,9 @@ struct FileEvent {
 // Callback type for file events
 using FileEventCallback = std::function<void(const FileEvent&)>;
 
+// Callback type for checking if an asset exists in the database
+using AssetExistsCallback = std::function<bool(const std::filesystem::path&)>;
+
 // Main file watcher class
 class FileWatcher {
  public:
@@ -34,7 +37,7 @@ class FileWatcher {
   ~FileWatcher();
 
   // Start watching a directory
-  bool start_watching(const std::string& path, FileEventCallback callback);
+  bool start_watching(const std::string& path, FileEventCallback callback, AssetExistsCallback asset_check = nullptr);
 
   // Stop watching
   void stop_watching();
@@ -63,7 +66,7 @@ class FileWatcher {
 class FileWatcherImpl {
  public:
   virtual ~FileWatcherImpl() = default;
-  virtual bool start_watching(const std::string& path, FileEventCallback callback) = 0;
+  virtual bool start_watching(const std::string& path, FileEventCallback callback, AssetExistsCallback asset_check = nullptr) = 0;
   virtual void stop_watching() = 0;
   virtual bool is_watching() const = 0;
 };

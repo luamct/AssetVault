@@ -96,12 +96,22 @@ if(MSVC)
     set_property(TARGET imgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-# File watcher sources - platform specific
-set(FILE_WATCHER_SOURCES src/file_watcher.cpp)
+# Add fswatch library - compiled from source for cross-platform file watching
+set(FSWATCH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/fswatch)
+set(BUILD_LIBS_ONLY ON CACHE BOOL "Build libfswatch only" FORCE)
+add_subdirectory(${FSWATCH_DIR} EXCLUDE_FROM_ALL)
 
+# File watcher sources
 if(PLATFORM_WINDOWS)
-    list(APPEND FILE_WATCHER_SOURCES src/file_watcher_windows.cpp)
-    # Windows-specific definitions
+    set(FILE_WATCHER_SOURCES src/file_watcher.cpp src/file_watcher_windows.cpp src/file_watcher_fswatch.cpp)
+elseif(PLATFORM_MACOS)
+    set(FILE_WATCHER_SOURCES src/file_watcher.cpp src/file_watcher_macos.cpp src/file_watcher_fswatch.cpp)
+else()
+    set(FILE_WATCHER_SOURCES src/file_watcher.cpp src/file_watcher_fswatch.cpp)
+endif()
+
+# Platform-specific definitions (still needed for other parts)
+if(PLATFORM_WINDOWS)
     add_definitions(
         -DWIN32_LEAN_AND_MEAN
         -D_UNICODE
@@ -111,7 +121,6 @@ if(PLATFORM_WINDOWS)
         -DIMGUI_IMPL_OPENGL_LOADER_GLAD
     )
 elseif(PLATFORM_MACOS)
-    list(APPEND FILE_WATCHER_SOURCES src/file_watcher_macos.cpp)
     add_definitions(-DIMGUI_IMPL_OPENGL_LOADER_GLAD)
 endif()
 
@@ -154,6 +163,7 @@ target_include_directories(AssetInventory PRIVATE
     ${IMGUI_DIR}/backends
     ${CMAKE_CURRENT_SOURCE_DIR}/external
     ${CMAKE_CURRENT_SOURCE_DIR}/external/nanosvg
+    ${FSWATCH_DIR}/libfswatch/src
 )
 
 # Link libraries
@@ -166,6 +176,7 @@ target_link_libraries(AssetInventory PRIVATE
     glad
     glm::glm
     spdlog::spdlog
+    libfswatch
 )
 
 # Platform-specific system libraries
@@ -217,9 +228,49 @@ target_link_libraries(SearchTest PRIVATE
     Catch2::Catch2WithMain
 )
 
+# File watcher test executable
+add_executable(FileWatcherTest
+    tests/test_file_watcher.cpp
+    src/asset.cpp
+    src/utils.cpp
+    ${FILE_WATCHER_SOURCES}
+)
+
+if(MSVC)
+    set_property(TARGET FileWatcherTest PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+# Include directories for file watcher test
+target_include_directories(FileWatcherTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/external
+    ${GLAD_DIR}/include
+    ${IMGUI_DIR}
+    ${FSWATCH_DIR}/libfswatch/src
+)
+
+# Link libraries for file watcher test
+target_link_libraries(FileWatcherTest PRIVATE
+    glad
+    assimp::assimp
+    glm::glm
+    spdlog::spdlog
+    Catch2::Catch2WithMain
+    libfswatch
+)
+
+# Platform-specific libraries for file watcher test
+if(PLATFORM_MACOS)
+    target_link_libraries(FileWatcherTest PRIVATE
+        ${COREFOUNDATION_LIBRARY}
+    )
+endif()
+
 # Enable testing
 enable_testing()
 add_test(NAME SearchTests COMMAND SearchTest)
+add_test(NAME FileWatcherTests COMMAND FileWatcherTest)
 
 # Set compiler warnings for our code
 if(MSVC)

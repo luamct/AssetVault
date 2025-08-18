@@ -59,3 +59,30 @@ The system automatically detects and indexes relevant asset types:
 - SVGs: `.svg` (pre-rasterized to 240px thumbnails)
 - Audio: `.wav`, `.mp3`, `.ogg`
 - Fonts: `.ttf`, `.otf`
+
+## System Behavior
+
+This project uses low level system dependent APIs, each with its own quirks that needed 
+to be handled accordingly.
+
+### FSEvents (MacOS)
+
+- File copied
+- File moved into
+- File deleted (to trash)
+- File deleted permanentely
+- File Renamed
+- Directory copied
+- Directory moved into
+- Directory deleted (to trash)
+- Directory deleted permanentely
+- Directory Renamed
+
+Lets rework the FSEvents implementation a bit now that I understand how it behaves. Here are the actions I want to support:                                               
+   + File copied: Seems simple, check creation flag
+   + File moved into path: Renames trigger two events, one for the old name and one for the new, but only if both locations are within the observed path. This case here only one event will be triggered, but in order to distinguish it from the other renames we'll have to access the list of assets and check for the path on it. If it's there, then we create a file delete for that path, otherwise we trigger a create file for that path
+   - File renamed within path
+   + File moved outside path: Covered by the logic described above
+   + File deleted (to trash): Triggered as a rename (moved to trash), covered by the logic described above
+   + File deleted permanentely: Simple, checks deletion flag 
+   

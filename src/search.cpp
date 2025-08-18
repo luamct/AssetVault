@@ -285,13 +285,12 @@ void SearchQueryParser::add_path_filter(SearchQuery& query, const std::string& p
 SearchQuery parse_search_query(const std::string& search_string,
   const std::vector<AssetType>& ui_type_filters,
   const std::vector<std::string>& ui_path_filters) {
-  LOG_DEBUG("Parsing search query: '{}'", search_string);
 
   SearchTokenizer tokenizer(search_string);
   SearchQueryParser parser(tokenizer);
   SearchQuery query = parser.parse(ui_type_filters, ui_path_filters);
 
-  LOG_DEBUG("Final parsed query - Text: '{}', Type filters count: {}, Path filters count: {}",
+  LOG_TRACE("Final parsed query - Text: '{}', Type filters count: {}, Path filters count: {}",
     query.text_query, query.type_filters.size(), query.path_filters.size());
 
   return query;
@@ -401,7 +400,7 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, 
   std::lock_guard<std::mutex> lock(assets_mutex);
 
   total_assets = assets.size();
-  LOG_DEBUG("Filtering {} assets with query: '{}', type filters count: {}, path filters count: {}",
+  LOG_TRACE("Filtering {} assets with query: '{}', type filters count: {}, path filters count: {}",
     total_assets, search_state.buffer, query.type_filters.size(), query.path_filters.size());
 
   for (const auto& asset : assets) {

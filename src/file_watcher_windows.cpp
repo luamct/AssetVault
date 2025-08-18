@@ -60,7 +60,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
 
   ~WindowsFileWatcher() { stop_watching(); }
 
-  bool start_watching(const std::string& path, FileEventCallback cb) override {
+  bool start_watching(const std::string& path, FileEventCallback cb, AssetExistsCallback asset_check) override {
     if (is_watching_flag.load()) {
       LOG_ERROR("Already watching a directory");
       return false;

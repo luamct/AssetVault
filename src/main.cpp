@@ -1,6 +1,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -421,7 +422,6 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
-    // Skip expensive timestamp checks - file modifications will be caught by runtime file watcher
   }
 
   LOG_INFO("Now looking for deleted files");
@@ -443,7 +443,7 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
   LOG_INFO("Filesystem scan completed in {}ms", scan_duration.count());
   LOG_INFO("Found {} changes to process", events_to_queue.size());
 
-  // Always load existing assets from database first
+  // Load existing assets from database
   {
     std::lock_guard<std::mutex> lock(event_processor->get_assets_mutex());
     assets = db_assets; // Load existing database assets into assets
@@ -485,12 +485,10 @@ int main() {
   SearchState search_state;
 
   // Initialize database
-  LOG_INFO("Initializing database...");
   if (!database.initialize(Config::DATABASE_PATH)) {
     LOG_ERROR("Failed to initialize database");
     return -1;
   }
-  LOG_INFO("Database opened successfully: {}", Config::DATABASE_PATH);
 
   // Debug: Force clear database if flag is set
   if (Config::DEBUG_FORCE_DB_CLEAR) {
@@ -504,7 +502,6 @@ int main() {
     LOG_ERROR("Failed to start EventProcessor");
     return -1;
   }
-  LOG_INFO("EventProcessor started successfully");
 
   // Initialize GLFW
   if (!glfwInit()) {
@@ -586,11 +583,19 @@ int main() {
 
   // Start file watcher after initial scan
   LOG_INFO("Starting file watcher...");
-  if (file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event)) {
-    LOG_INFO("File watcher started successfully");
-  }
-  else {
+  
+  // Create asset check lambda that safely checks if an asset exists
+  auto asset_exists_check = [&assets](const std::filesystem::path& path) -> bool {
+    std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
+    return std::any_of(assets.begin(), assets.end(), 
+                      [&path](const Asset& asset) { 
+                        return asset.full_path == path; 
+                      });
+  };
+  
+  if (!file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event, asset_exists_check)) {
     LOG_ERROR("Failed to start file watcher");
+    return -1;
   }
 
   // Main loop
@@ -601,6 +606,11 @@ int main() {
     last_time = current_time;
 
     glfwPollEvents();
+
+    // Development shortcut: ESC to close app
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
 
     // Render 3D preview to framebuffer BEFORE starting ImGui frame
     {
