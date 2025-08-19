@@ -190,17 +190,19 @@ class MacOSFileWatcher : public FileWatcherImpl {
           LOG_DEBUG("FSEvents: Rename event for '{}', no asset check available", relative_path);
           watcher->add_pending_event(FileEventType::Renamed, file_path);
         }
+      } else if (flags & kFSEventStreamEventFlagItemRemoved) {
+        // Handle removal events - this should come before Created check
+        // because FSEvents can set both Created+Removed for deletion
+        if (flags & kFSEventStreamEventFlagItemIsDir) {
+          watcher->add_pending_event(FileEventType::DirectoryDeleted, file_path);
+        } else {
+          watcher->add_pending_event(FileEventType::Deleted, file_path);
+        }
       } else if (flags & kFSEventStreamEventFlagItemCreated) {
         if (flags & kFSEventStreamEventFlagItemIsDir) {
           watcher->add_pending_event(FileEventType::DirectoryCreated, file_path);
         } else {
           watcher->add_pending_event(FileEventType::Created, file_path);
-        }
-      } else if (flags & kFSEventStreamEventFlagItemRemoved) {
-        if (flags & kFSEventStreamEventFlagItemIsDir) {
-          watcher->add_pending_event(FileEventType::DirectoryDeleted, file_path);
-        } else {
-          watcher->add_pending_event(FileEventType::Deleted, file_path);
         }
       } else if (flags & kFSEventStreamEventFlagItemModified) {
         if (!(flags & kFSEventStreamEventFlagItemIsDir)) {

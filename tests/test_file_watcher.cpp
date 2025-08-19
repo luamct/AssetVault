@@ -351,4 +351,124 @@ TEST_CASE("File watcher rename event handling", "[file_watcher]") {
         // Cleanup
         std::filesystem::remove(file);
     }
+    
+    SECTION("Directory deletion generates individual file events") {
+        // Setup: Create directory with multiple files
+        auto test_subdir = fixture.test_dir / "subdir";
+        std::filesystem::create_directory(test_subdir);
+        
+        std::vector<std::filesystem::path> test_files;
+        for (int i = 1; i <= 3; i++) {
+            auto file = test_subdir / ("file" + std::to_string(i) + ".txt");
+            std::ofstream(file) << "test content " << i;
+            test_files.push_back(file);
+            fixture.mock_db.add_asset(file);
+        }
+        
+        fixture.mock_db.add_asset(test_subdir);
+        
+        // Start watching
+        fixture.start_watching();
+        fixture.clear_events();
+        
+        // Action: Delete entire directory
+        std::filesystem::remove_all(test_subdir);
+        
+        // Wait for events - should get events for each file plus directory
+        fixture.wait_for_events(4);  // 3 files + 1 directory
+        
+        // Count how many file deletion events vs directory deletion events
+        int file_deletion_count = 0;
+        int dir_deletion_count = 0;
+        
+        std::cout << "Directory deletion test - captured " << fixture.captured_events.size() << " events:" << std::endl;
+        for (const auto& event : fixture.captured_events) {
+            std::string event_type_str;
+            switch (event.type) {
+                case FileEventType::Deleted: event_type_str = "Deleted"; file_deletion_count++; break;
+                case FileEventType::DirectoryDeleted: event_type_str = "DirectoryDeleted"; dir_deletion_count++; break;
+                case FileEventType::Created: event_type_str = "Created"; break;
+                case FileEventType::Modified: event_type_str = "Modified"; break;
+                case FileEventType::Renamed: event_type_str = "Renamed"; break;
+                default: event_type_str = "Other"; break;
+            }
+            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+        }
+        
+        // Assert: Platform-specific behavior
+#ifdef __APPLE__
+        // On macOS with FSEvents, we should get individual file events + directory event
+        REQUIRE(file_deletion_count == 3);  // One for each file
+        REQUIRE(dir_deletion_count >= 1);   // At least one for directory
+#elif defined(_WIN32)
+        // On Windows, check what actually happens
+        std::cout << "Windows behavior - file deletions: " << file_deletion_count << ", dir deletions: " << dir_deletion_count << std::endl;
+        REQUIRE(fixture.captured_events.size() >= 3);  // Should get at least file events
+#else
+        // Linux/other platforms
+        REQUIRE(fixture.captured_events.size() >= 3);
+#endif
+    }
+}
+
+TEST_CASE("Directory deletion event behavior", "[file_watcher]") {
+    FileWatcherTestFixture fixture;
+    
+    SECTION("Directory deletion generates individual file events") {
+        // Setup: Create directory with multiple files
+        auto test_subdir = fixture.test_dir / "subdir";
+        std::filesystem::create_directory(test_subdir);
+        
+        std::vector<std::filesystem::path> test_files;
+        for (int i = 1; i <= 3; i++) {
+            auto file = test_subdir / ("file" + std::to_string(i) + ".txt");
+            std::ofstream(file) << "test content " << i;
+            test_files.push_back(file);
+            fixture.mock_db.add_asset(file);
+        }
+        
+        fixture.mock_db.add_asset(test_subdir);
+        
+        // Start watching
+        fixture.start_watching();
+        fixture.clear_events();
+        
+        // Action: Delete entire directory
+        std::filesystem::remove_all(test_subdir);
+        
+        // Wait for events - should get events for each file plus directory
+        fixture.wait_for_events(4);  // 3 files + 1 directory
+        
+        // Count how many file deletion events vs directory deletion events
+        int file_deletion_count = 0;
+        int dir_deletion_count = 0;
+        
+        std::cout << "Directory deletion test - captured " << fixture.captured_events.size() << " events:" << std::endl;
+        for (const auto& event : fixture.captured_events) {
+            std::string event_type_str;
+            switch (event.type) {
+                case FileEventType::Deleted: event_type_str = "Deleted"; file_deletion_count++; break;
+                case FileEventType::DirectoryDeleted: event_type_str = "DirectoryDeleted"; dir_deletion_count++; break;
+                case FileEventType::Created: event_type_str = "Created"; break;
+                case FileEventType::Modified: event_type_str = "Modified"; break;
+                case FileEventType::Renamed: event_type_str = "Renamed"; break;
+                default: event_type_str = "Other"; break;
+            }
+            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+        }
+        
+        // Assert: Platform-specific behavior
+#ifdef __APPLE__
+        // On macOS with FSEvents, we should get individual file events + directory event
+        REQUIRE(file_deletion_count == 3);  // One for each file
+        REQUIRE(dir_deletion_count >= 1);   // At least one for directory
+#elif defined(_WIN32)
+        // On Windows, check what actually happens
+        std::cout << "Windows behavior - file deletions: " << file_deletion_count << ", dir deletions: " << dir_deletion_count << std::endl;
+        REQUIRE(fixture.captured_events.size() >= 3);  // Should get at least file events
+#else
+        // Linux/other platforms
+        REQUIRE(fixture.captured_events.size() >= 3);
+#endif
+    }
 }

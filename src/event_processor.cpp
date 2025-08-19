@@ -254,26 +254,14 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     std::vector<std::string> paths_to_delete;
     paths_to_delete.reserve(events.size());
     
-    // Collect all paths and handle directory deletion by emitting events for children
+    // Collect all paths - file watchers generate individual events for each deleted item
     for (const auto& event : events) {
         std::string path_utf8 = event.path.u8string();
         
-        if (event.type == FileEventType::DirectoryDeleted) {
-            LOG_DEBUG("Processing directory deletion for: {}", path_utf8);
-            
-            // Get all assets under this directory from the in-memory map
-            std::lock_guard<std::mutex> lock(assets_mutex_);
-            for (const auto& [key, asset] : assets_) {
-                std::string asset_path = asset.full_path.u8string();
-                // Check if asset is within the deleted directory
-                if (asset_path.find(path_utf8) == 0) {  // Path starts with directory
-                    paths_to_delete.push_back(asset_path);
-                    LOG_DEBUG("Adding child asset for deletion: {}", asset_path);
-                }
-            }
-        } else {
-            paths_to_delete.push_back(path_utf8);
-        }
+        // File watchers (FSEvents, Windows ReadDirectoryChanges) generate individual
+        // deletion events for each file when a directory is deleted, so we don't need
+        // to manually find and delete child assets
+        paths_to_delete.push_back(path_utf8);
         
         total_events_processed_++;  // Increment per event processed
         

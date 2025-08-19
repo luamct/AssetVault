@@ -87,7 +87,7 @@ Lets rework the FSEvents implementation a bit now that I understand how it behav
    + File deleted permanentely: Simple, checks deletion flag 
    
 
-Now I want to cover directory operations:
+Now I want to cover directory operations. Clear the current todo list and add these as items and implement one at a time, giving me time to manually test them before moving forward:
 - Directory copied: I believe it's already covered, since every file and directories will be triggered individually
 - Directory moved in: FSEvent only triggers a single renamed event for the parent directory, so we'll have to list all files under the directory and emit Create events for each, including directories
 - Directory moved out: Similar to above, but since we don't have the files on disk, we have to check the assets variable to list all child files and emit delete events for each
@@ -95,4 +95,5 @@ Now I want to cover directory operations:
 - Directory deleted (to trash): These are treated as moved out, so the logic above handles it
 - Directory deleted permanentely: Events are triggered for each file, so its simple
 
-Like the previous implementation for files, checking the assets variable should cover most cases without the need for doing file operations, with the exception of a moved in folder, since the files are not tracked and also don't trigger events individually
+Like the previous implementation for files, checking the assets variable should cover most cases without the need for doing file operations, with the exception of a moved in folder, since the files are not tracked and also don't trigger events individually.
+

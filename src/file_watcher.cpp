@@ -2,7 +2,6 @@
 #include "logger.h"
 
 // Factory functions
-std::unique_ptr<FileWatcherImpl> create_fswatch_file_watcher_impl();
 #ifdef _WIN32
 std::unique_ptr<FileWatcherImpl> create_windows_file_watcher_impl();
 #endif
@@ -18,8 +17,8 @@ std::unique_ptr<FileWatcherImpl> create_file_watcher_impl() {
   LOG_INFO("Using native macOS FSEvents file watcher");
   return create_macos_file_watcher_impl();
 #else
-  LOG_INFO("Using cross-platform fswatch file watcher");
-  return create_fswatch_file_watcher_impl();
+  LOG_ERROR("File watcher not implemented for this platform");
+  return nullptr;
 #endif
 }
 
