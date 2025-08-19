@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Overview
+
+AssetInventory is a C++ desktop application for managing game assets, built with Dear ImGui, OpenGL, and SQLite.
+
+### Key Features
+- Asset indexing and management with real-time file system monitoring
+- 3D model preview with OpenGL rendering
+- Texture and image preview with thumbnail generation
+- SVG support with pre-rasterized thumbnails (240px max dimension)
+- Asset type detection and categorization
+- Cross-platform support (Windows, macOS, Linux)
+- Modern C++17 with CMake build system
+
 ## AI Assistant Guidelines
 
 ### Communication Principles
@@ -71,6 +84,34 @@ rm -rf build/
 - **Use relative paths** instead of absolute paths when possible
 - **vcpkg dependencies**: Automatically managed within build directory
 - **Clean builds**: Simply delete the `build/` directory
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/luamct/AssetInventory.git
+cd AssetInventory
+
+# Set up vcpkg (one-time setup)
+export VCPKG_ROOT="$HOME/vcpkg"
+git clone https://github.com/microsoft/vcpkg $HOME/vcpkg
+$HOME/vcpkg/bootstrap-vcpkg.sh
+
+# Configure and build with vcpkg
+cmake --preset macos  # or windows-static, linux-static
+cmake --build build --config Release
+
+# Run the application
+./build/AssetInventory.app/Contents/MacOS/AssetInventory  # macOS
+```
+
+### Adding Assets
+Place your game assets in the `assets/` directory. The application will automatically:
+- Index and categorize assets by type
+- Generate thumbnails for images and textures
+- Pre-rasterize SVG files to 240px PNG thumbnails with proper aspect ratios
+- Provide 3D preview for models
+- Monitor for file changes in real-time
 
 ## Architecture Overview
 
@@ -144,12 +185,46 @@ OpenGL-based rendering system with:
 - **Thread synchronization**: Mutex protection for shared data, atomic counters for progress, condition variables for event queuing
 
 ### Unit Testing System
-Uses Catch2 header-only framework for fast, lightweight unit testing focused on core business logic.
+Uses Catch2 header-only framework for fast, lightweight unit testing focused on core business logic. The project includes comprehensive test suites that are integrated with CMake's CTest framework.
 
-**Running Tests:**
+**Test Suites:**
+- **SearchTest**: Search functionality, query parsing, and asset filtering
+- **FileWatcherTest**: Cross-platform file system monitoring and event generation
+
+**Running Tests (Recommended - CTest):**
 ```bash
-# Build and run all tests (cross-platform)
+# Run all tests using preset (from project root directory)
+ctest --preset macos              # macOS
+ctest --preset windows-static     # Windows  
+ctest --preset linux-static       # Linux
+
+# Alternative: Run from any directory by specifying build directory
+ctest --test-dir build --output-on-failure
+
+# Run tests in parallel for faster execution
+ctest --preset macos --parallel 4
+
+# Run specific test suite
+ctest --preset macos -R SearchTests        # Run only search tests
+ctest --preset macos -R FileWatcherTests   # Run only file watcher tests
+
+# Verbose output with detailed information
+ctest --preset macos --verbose
+
+# Run tests and stop on first failure
+ctest --preset macos --stop-on-failure
+
+# List available test presets
+ctest --list-presets
+```
+
+**Running Individual Test Executables:**
+```bash
+# Build and run search tests
 ./build/SearchTest
+
+# Run file watcher tests  
+./build/FileWatcherTest
 
 # Run tests with specific tags
 ./build/SearchTest "[search]"
@@ -157,29 +232,51 @@ Uses Catch2 header-only framework for fast, lightweight unit testing focused on 
 # Show verbose output
 ./build/SearchTest -s
 
-# List all tests
+# List all available tests
 ./build/SearchTest --list-tests
+
+# Run with specific random seed (for debugging)
+./build/SearchTest --rng-seed 12345
 ```
 
 **Current Test Coverage:**
-- **Search System**: Complete coverage of `parse_search_query()` function
-  - Type filter parsing with comma separation
-  - Case insensitive input handling
-  - Whitespace tolerance and trimming
-  - Unknown type filtering
-  - Edge cases and malformed input
+- **Search System** (152 assertions): Complete coverage of search functionality
+  - Query parsing with type and path filters
+  - Case insensitive input handling and whitespace tolerance
+  - Asset matching with combined filters (type + text + path)
+  - Path filtering with subdirectories and spaces
+  - Edge cases and malformed input handling
+
+- **File Watcher System** (13 assertions): Cross-platform file monitoring
+  - File operations: create, delete, modify, rename, copy
+  - Directory operations and nested file handling
+  - Asset database integration with existence checking
+  - Platform-specific FSEvents behavior (macOS) and event coalescing
+
+**Test Architecture:**
+- **Working Directory Independence**: Tests work regardless of execution location
+- **Mock Components**: MockAssetDatabase for isolated testing
+- **Path Normalization**: Handles cross-platform path differences (/private prefix on macOS)
+- **Thread Safety**: Tests validate thread-safe operations and mutex usage
+- **Performance Validation**: O(1) vs O(n) lookup performance verification
 
 **Adding New Tests:**
-1. Add to existing `tests/test_search.cpp` for search-related functions
-2. Create new test files for other modules following naming pattern `tests/test_<module>.cpp`
-3. Update CMakeLists.txt to build new test executables
+1. Add to existing test files: `tests/test_search.cpp`, `tests/test_file_watcher.cpp`
+2. Create new test files following pattern: `tests/test_<module>.cpp`
+3. Add test executable to CMakeLists.txt and register with CTest:
+   ```cmake
+   add_executable(NewTest tests/test_new_module.cpp ...)
+   add_test(NAME NewTests COMMAND NewTest)
+   ```
 4. Use Arrange-Act-Assert pattern with descriptive test names
 
 **Test Philosophy:**
-- **Simple and fast**: Header-only framework, minimal setup
-- **Focus on business logic**: Test core functions, not UI or rendering
-- **Immediate feedback**: Catches bugs during development, not in production
-- **Example**: Unit tests caught a critical regex parsing bug in search functionality
+- **CTest Integration**: Unified test runner with CMake build system
+- **Fast and Reliable**: Header-only framework, minimal setup, deterministic results
+- **Business Logic Focus**: Test core algorithms, not UI rendering or file I/O
+- **Cross-Platform**: Tests validate behavior across Windows, macOS, and Linux
+- **Regression Prevention**: Comprehensive coverage catches bugs during development
+- **Example Success**: Unit tests identified critical path filtering bug in search functionality that only manifested under specific working directory conditions
 
 ## Development Guidelines
 
@@ -219,31 +316,31 @@ The `EventProcessor` class is the core of the unified event system:
 
 ### Directory Structure
 ```
-src/               # Source files with clear separation of concerns
-  ├── main.cpp     # Main application entry point, UI logic, and smart initial scanning
+src/                        # Source files with clear separation of concerns
+  ├── main.cpp              # Main application entry point, UI logic, and smart initial scanning
   ├── event_processor.cpp/h # Unified event processing with batch operations and progress tracking
-  ├── database.cpp/h # Database operations with batch methods for EventProcessor
-  ├── asset.cpp/h  # Asset type detection, file metadata extraction, and processing logic
-  ├── file_watcher*.cpp/h # Cross-platform file system monitoring with event generation
+  ├── database.cpp/h        # Database operations with batch methods for EventProcessor
+  ├── asset.cpp/h           # Asset type detection, file metadata extraction, and processing logic
+  ├── file_watcher*.cpp/h   # Cross-platform file system monitoring with event generation
   ├── texture_manager.cpp/h # Texture loading, caching, and thumbnail generation including SVG
-  ├── 3d.cpp/h     # 3D model rendering and viewport functionality
-  ├── utils.cpp/h  # Utility functions for string formatting, file operations
-  └── theme.h      # UI theming configuration
-external/          # Minimal dependencies that can't use vcpkg (8MB)
-  ├── imgui/       # UI framework (needs backend compilation)
-  ├── glad/        # OpenGL function loading
-  ├── nanosvg/     # SVG rendering (not in vcpkg)
-  ├── fonts/       # Application resources
-  ├── miniaudio.h  # Audio metadata (not in vcpkg)
-  ├── stb_image_write.h # Image writing (single header)
-  └── README.md    # Explains why each dependency remains
-images/            # UI icons and textures
-db/                # SQLite database files
-tests/             # Unit tests with Catch2 framework
-readmes/           # Component-specific documentation
-vcpkg.json         # Dependency manifest with features
-CMakePresets.json  # Platform-specific build configurations
-Info.plist.in      # macOS app bundle template
+  ├── 3d.cpp/h              # 3D model rendering and viewport functionality
+  ├── utils.cpp/h           # Utility functions for string formatting, file operations
+  └── theme.h               # UI theming configuration
+external/                   # Minimal dependencies that can't use vcpkg (8MB)
+  ├── imgui/                # UI framework (needs backend compilation)
+  ├── glad/                 # OpenGL function loading
+  ├── nanosvg/              # SVG rendering (not in vcpkg)
+  ├── fonts/                # Application resources
+  ├── miniaudio.h           # Audio metadata (not in vcpkg)
+  ├── stb_image_write.h     # Image writing (single header)
+  └── README.md             # Explains why each dependency remains
+images/                     # UI icons and textures
+db/                         # SQLite database files
+tests/                      # Unit tests with Catch2 framework
+readmes/                    # Component-specific documentation
+vcpkg.json                  # Dependency manifest with features
+CMakePresets.json           # Platform-specific build configurations
+Info.plist.in               # macOS app bundle template
 ```
 
 **Note**: `vcpkg_installed/` directory is created during builds and should be added to .gitignore.
@@ -341,6 +438,17 @@ Info.plist.in      # macOS app bundle template
 - **Script**: .cs, .js, .lua, .py, .sh, .bat, .json, .xml, .yml, .yaml
 - **Document**: .txt, .md, .pdf, .doc, .docx
 - **Auxiliary**: .mtl, .log, .cache, .tmp, .bak (excluded from search)
+
+## Additional Documentation
+
+For more detailed information, see these component-specific documentation files:
+- `readmes/DEPENDENCIES.md` - Complete list of dependencies and sources
+- `readmes/FILE_WATCHER.md` - Real-time file monitoring system
+- `readmes/DATABASE.md` - SQLite asset storage system
+
+## License
+
+This project is open source. See LICENSE file for details.
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

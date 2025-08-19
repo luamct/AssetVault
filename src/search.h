@@ -6,6 +6,7 @@
 #include <atomic>
 #include <optional>
 #include <mutex>
+#include <unordered_map>
 #include "asset.h"
 #include "3d.h"
 
@@ -135,5 +136,5 @@ SearchQuery parse_search_query(const std::string& search_string,
 bool asset_matches_search(const Asset& asset, const SearchQuery& query);
 
 // Function to filter assets based on search query
-void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, std::mutex& assets_mutex);
+void filter_assets(SearchState& search_state, const std::unordered_map<std::string, Asset>& assets, std::mutex& assets_mutex);
 

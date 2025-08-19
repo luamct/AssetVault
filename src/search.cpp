@@ -373,7 +373,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   return true;
 }
 
-void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, std::mutex& assets_mutex) {
+void filter_assets(SearchState& search_state, const std::unordered_map<std::string, Asset>& assets, std::mutex& assets_mutex) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   search_state.filtered_assets.clear();
@@ -403,7 +403,7 @@ void filter_assets(SearchState& search_state, const std::vector<Asset>& assets, 
   LOG_TRACE("Filtering {} assets with query: '{}', type filters count: {}, path filters count: {}",
     total_assets, search_state.buffer, query.type_filters.size(), query.path_filters.size());
 
-  for (const auto& asset : assets) {
+  for (const auto& [key, asset] : assets) {
     // Skip ignored asset types
     if (Config::IGNORED_ASSET_TYPES.count(asset.type) > 0) {
       continue;

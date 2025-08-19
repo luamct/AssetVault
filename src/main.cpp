@@ -363,7 +363,7 @@ void on_file_event(const FileEvent& event) {
 }
 
 // Perform initial scan and generate events for EventProcessor
-void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, EventProcessor* event_processor) {
+void scan_for_changes(AssetDatabase& database, std::unordered_map<std::string, Asset>& assets, EventProcessor* event_processor) {
   namespace fs = std::filesystem;
   auto scan_start = std::chrono::high_resolution_clock::now();
 
@@ -446,7 +446,10 @@ void scan_for_changes(AssetDatabase& database, std::vector<Asset>& assets, Event
   // Load existing assets from database
   {
     std::lock_guard<std::mutex> lock(event_processor->get_assets_mutex());
-    assets = db_assets; // Load existing database assets into assets
+    // Load existing database assets into assets map
+    for (const auto& asset : db_assets) {
+      assets[asset.full_path.u8string()] = asset;
+    }
     LOG_INFO("Loaded {} existing assets from database", assets.size());
   }
 
@@ -477,7 +480,7 @@ int main() {
   LOG_INFO("AssetInventory application starting...");
 
   // Local variables
-  std::vector<Asset> assets;
+  std::unordered_map<std::string, Asset> assets;
   AssetDatabase database;
   FileWatcher file_watcher;
   TextureManager texture_manager;
@@ -587,10 +590,7 @@ int main() {
   // Create asset check lambda that safely checks if an asset exists
   auto asset_exists_check = [&assets](const std::filesystem::path& path) -> bool {
     std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
-    return std::any_of(assets.begin(), assets.end(), 
-                      [&path](const Asset& asset) { 
-                        return asset.full_path == path; 
-                      });
+    return assets.find(path.u8string()) != assets.end();
   };
   
   if (!file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event, asset_exists_check)) {

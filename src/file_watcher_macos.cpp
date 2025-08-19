@@ -130,9 +130,18 @@ class MacOSFileWatcher : public FileWatcherImpl {
       std::string path_str(paths[i]);
       std::filesystem::path file_path(path_str);
 
-      // Skip if it's the watched directory itself
-      if (file_path == watcher->watched_path) {
-        continue;
+      // Skip if it's the watched directory itself (normalize paths for comparison)
+      try {
+        auto normalized_file_path = std::filesystem::weakly_canonical(file_path);
+        auto normalized_watched_path = std::filesystem::weakly_canonical(watcher->watched_path);
+        if (normalized_file_path == normalized_watched_path) {
+          continue;
+        }
+      } catch (const std::filesystem::filesystem_error&) {
+        // If normalization fails, fall back to string comparison
+        if (file_path == watcher->watched_path) {
+          continue;
+        }
       }
 
       // Determine event type based on flags

@@ -14,7 +14,7 @@
 
 namespace fs = std::filesystem;
 
-EventProcessor::EventProcessor(AssetDatabase& database, std::vector<Asset>& assets,
+EventProcessor::EventProcessor(AssetDatabase& database, std::unordered_map<std::string, Asset>& assets,
     std::atomic<bool>& search_update_needed, TextureManager& texture_manager, size_t batch_size)
     : database_(database), assets_(assets), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
@@ -51,6 +51,11 @@ void EventProcessor::stop() {
     }
 
     LOG_INFO("EventProcessor stopped. Total processed: {}", processed_count_.load());
+}
+
+bool EventProcessor::has_asset_at_path(const std::string& path) {
+    std::lock_guard<std::mutex> lock(assets_mutex_);
+    return assets_.find(path) != assets_.end();
 }
 
 void EventProcessor::queue_event(const FileEvent& event) {
@@ -197,11 +202,10 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
     if (!files_to_insert.empty()) {
         database_.insert_assets_batch(files_to_insert);
 
-        // Batch update assets vector
+        // Batch update assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
-        assets_.reserve(assets_.size() + files_to_insert.size());
         for (const auto& file : files_to_insert) {
-            assets_.push_back(file);
+            assets_[file.full_path.u8string()] = file;
         }
     }
 }
@@ -238,17 +242,10 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
     if (!files_to_update.empty()) {
         database_.update_assets_batch(files_to_update);
 
-        // Batch update assets vector
+        // Batch update assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_update) {
-            int index = find_asset_index(file.full_path.u8string());
-            if (index >= 0) {
-                assets_[index] = file;
-            }
-            else {
-                // Asset not found, add it
-                assets_.push_back(file);
-            }
+            assets_[file.full_path.u8string()] = file;
         }
     }
 }
@@ -264,9 +261,9 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
         if (event.type == FileEventType::DirectoryDeleted) {
             LOG_DEBUG("Processing directory deletion for: {}", path_utf8);
             
-            // Get all assets under this directory from the in-memory vector
+            // Get all assets under this directory from the in-memory map
             std::lock_guard<std::mutex> lock(assets_mutex_);
-            for (const auto& asset : assets_) {
+            for (const auto& [key, asset] : assets_) {
                 std::string asset_path = asset.full_path.u8string();
                 // Check if asset is within the deleted directory
                 if (asset_path.find(path_utf8) == 0) {  // Path starts with directory
@@ -288,26 +285,13 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     if (!paths_to_delete.empty()) {
         database_.delete_assets_batch(paths_to_delete);
 
-        // Remove from in-memory assets vector
+        // Remove from in-memory assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
         
-        // Use partition to move all to-be-deleted items to the end
-        auto new_end = std::partition(assets_.begin(), assets_.end(),
-            [&paths_to_delete](const Asset& asset) {
-                std::string asset_path = asset.full_path.u8string();
-                
-                // Check if asset should be deleted
-                for (const auto& path : paths_to_delete) {
-                    if (asset_path == path) {
-                        return false;  // Should be deleted
-                    }
-                }
-                
-                return true;  // Keep this asset
-            });
-        
-        // Erase the deleted items
-        assets_.erase(new_end, assets_.end());
+        // Remove all deleted assets from the map
+        for (const auto& path : paths_to_delete) {
+            assets_.erase(path);
+        }
     }
 }
 
@@ -363,30 +347,21 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
     if (!paths_to_delete.empty()) {
         database_.delete_assets_batch(paths_to_delete);
 
-        // Remove from in-memory assets vector
+        // Remove from in-memory assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
-        auto new_end = std::partition(assets_.begin(), assets_.end(),
-            [&paths_to_delete](const Asset& asset) {
-                std::string asset_path = asset.full_path.u8string();
-                for (const auto& path : paths_to_delete) {
-                    if (asset_path == path) {
-                        return false;  // Should be deleted
-                    }
-                }
-                return true;  // Keep this asset
-            });
-        assets_.erase(new_end, assets_.end());
+        for (const auto& path : paths_to_delete) {
+            assets_.erase(path);
+        }
     }
 
     // Handle creations (renames within watched directory)
     if (!new_files.empty()) {
         database_.insert_assets_batch(new_files);
 
-        // Add to in-memory assets vector
+        // Add to in-memory assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
-        assets_.reserve(assets_.size() + new_files.size());
         for (const auto& file : new_files) {
-            assets_.push_back(file);
+            assets_[file.full_path.u8string()] = file;
         }
     }
 }
@@ -395,62 +370,32 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
 
 void EventProcessor::add_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
-
-    // Check if asset already exists (avoid duplicates)
-    int existing_index = find_asset_index(asset.full_path.u8string());
-    if (existing_index >= 0) {
-        assets_[existing_index] = asset; // Update existing
-    }
-    else {
-        assets_.push_back(asset); // Add new
-    }
+    assets_[asset.full_path.u8string()] = asset;
 }
 
 void EventProcessor::update_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
-
-    int index = find_asset_index(asset.full_path.u8string());
-    if (index >= 0) {
-        assets_[index] = asset;
-    }
-    else {
-        // Asset not found, add it
-        assets_.push_back(asset);
-        LOG_WARN("Updated asset not found in memory, adding: {}", asset.full_path.u8string());
-    }
+    assets_[asset.full_path.u8string()] = asset;
 }
 
 void EventProcessor::remove_asset(const std::string& path) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
-
-    int index = find_asset_index(path);
-    if (index >= 0) {
-        assets_.erase(assets_.begin() + index);
-    }
-    else {
-        LOG_WARN("Deleted asset not found in memory: {}", path);
-    }
+    assets_.erase(path);
 }
 
 void EventProcessor::rename_asset(const std::string& old_path, const std::string& new_path) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
 
-    int index = find_asset_index(old_path);
-    if (index >= 0) {
-        assets_[index].full_path = fs::u8path(new_path);
-        assets_[index].name = fs::path(new_path).filename().u8string();
+    auto it = assets_.find(old_path);
+    if (it != assets_.end()) {
+        Asset asset = it->second;
+        assets_.erase(it);
+        asset.full_path = fs::u8path(new_path);
+        asset.name = fs::path(new_path).filename().u8string();
+        assets_[new_path] = asset;
     }
 }
 
-int EventProcessor::find_asset_index(const std::string& path) {
-    // Linear search for now - can optimize with hash map later if needed
-    for (size_t i = 0; i < assets_.size(); ++i) {
-        if (assets_[i].full_path.u8string() == path) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
-}
 
 
 Asset EventProcessor::process_file(const std::filesystem::path& full_path, const std::chrono::system_clock::time_point& timestamp) {

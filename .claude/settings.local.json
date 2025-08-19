@@ -40,7 +40,11 @@
       "Bash(./build/AssetInventory.app/Contents/MacOS/AssetInventory)",
       "Bash(code:*)",
       "Bash(./build/FileWatcherTest:*)",
-      "Bash(export SPDLOG_LEVEL=debug)"
+      "Bash(export SPDLOG_LEVEL=debug)",
+      "Bash(./build/SearchTest:*)",
+      "Bash(./SearchTest \"[search]\" -s)",
+      "Bash(./SearchTest --list-tests)",
+      "Bash(./SearchTest --rng-seed 3790325891)"
     ],
     "deny": []
   }

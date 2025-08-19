@@ -1,8 +1,10 @@
 #include <catch2/catch_all.hpp>
+#include <unordered_map>
 #include "search.h"
 #include "asset.h"
 #include "test_helpers.h"
 #include "utils.h"
+#include "config.h"
 
 // Mock global for linking - we're not testing functions that use it
 class EventProcessor;
@@ -342,10 +344,12 @@ TEST_CASE("parse_search_query path filtering", "[search]") {
 }
 
 TEST_CASE("asset_matches_search path filtering", "[search]") {
-    Asset texture_in_textures = create_test_asset("monster", ".png", AssetType::_2D, "assets/textures/monster.png");
-    Asset texture_in_ui = create_test_asset("button", ".png", AssetType::_2D, "assets/textures/ui/button.png");
-    Asset model_in_models = create_test_asset("character", ".fbx", AssetType::_3D, "assets/models/character.fbx");
-    Asset sound_in_sounds = create_test_asset("explosion", ".wav", AssetType::Audio, "assets/sounds/explosion.wav");
+    // Use absolute paths that match the expected ASSET_ROOT_DIRECTORY structure
+    std::string asset_root = Config::ASSET_ROOT_DIRECTORY;
+    Asset texture_in_textures = create_test_asset("monster", ".png", AssetType::_2D, asset_root + "/textures/monster.png");
+    Asset texture_in_ui = create_test_asset("button", ".png", AssetType::_2D, asset_root + "/textures/ui/button.png");
+    Asset model_in_models = create_test_asset("character", ".fbx", AssetType::_3D, asset_root + "/models/character.fbx");
+    Asset sound_in_sounds = create_test_asset("explosion", ".wav", AssetType::Audio, asset_root + "/sounds/explosion.wav");
 
     SECTION("Single path filter matches") {
         SearchQuery query;
@@ -397,7 +401,7 @@ TEST_CASE("asset_matches_search path filtering", "[search]") {
     }
 
     SECTION("Path filter with spaces matches correctly") {
-        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, "assets/simple damage/folder/damage.png");
+        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/damage.png");
         
         SearchQuery query;
         query.path_filters = { "simple damage/folder" };
@@ -407,7 +411,7 @@ TEST_CASE("asset_matches_search path filtering", "[search]") {
     }
 
     SECTION("Path filter with spaces partial match") {
-        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, "assets/simple damage/folder/subfolder/damage.png");
+        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/subfolder/damage.png");
         
         SearchQuery query;
         query.path_filters = { "simple damage" };
@@ -417,8 +421,9 @@ TEST_CASE("asset_matches_search path filtering", "[search]") {
 }
 
 TEST_CASE("filter_assets functionality", "[search]") {
-    // Create test assets
-    std::vector<Asset> test_assets = {
+    // Create test assets map
+    std::unordered_map<std::string, Asset> test_assets;
+    auto assets_vector = std::vector<Asset>{
         create_test_asset("monster_texture", ".png", AssetType::_2D),
         create_test_asset("robot_texture", ".jpg", AssetType::_2D),
         create_test_asset("monster_model", ".fbx", AssetType::_3D),
@@ -426,6 +431,11 @@ TEST_CASE("filter_assets functionality", "[search]") {
         create_test_asset("background_music", ".mp3", AssetType::Audio),
         create_test_asset("shader", ".hlsl", AssetType::Shader)
     };
+    
+    // Convert to map
+    for (const auto& asset : assets_vector) {
+        test_assets[asset.full_path.u8string()] = asset;
+    }
 
     std::mutex test_mutex;
     SearchState search_state;
@@ -435,8 +445,15 @@ TEST_CASE("filter_assets functionality", "[search]") {
         filter_assets(search_state, test_assets, test_mutex);
 
         REQUIRE(search_state.filtered_assets.size() == 2);
-        REQUIRE(search_state.filtered_assets[0].name == "monster_texture");
-        REQUIRE(search_state.filtered_assets[1].name == "monster_model");
+        // Check that both monster assets are in results (order may vary with unordered_map)
+        bool has_monster_texture = false;
+        bool has_monster_model = false;
+        for (const auto& asset : search_state.filtered_assets) {
+            if (asset.name == "monster_texture") has_monster_texture = true;
+            if (asset.name == "monster_model") has_monster_model = true;
+        }
+        REQUIRE(has_monster_texture);
+        REQUIRE(has_monster_model);
     }
 
     SECTION("Filter by type") {
@@ -461,8 +478,15 @@ TEST_CASE("filter_assets functionality", "[search]") {
         filter_assets(search_state, test_assets, test_mutex);
 
         REQUIRE(search_state.filtered_assets.size() == 2);
-        REQUIRE(search_state.filtered_assets[0].name == "monster_texture");
-        REQUIRE(search_state.filtered_assets[1].name == "robot_texture");
+        // Check that both texture assets are in results (order may vary with unordered_map)
+        bool has_monster_texture = false;
+        bool has_robot_texture = false;
+        for (const auto& asset : search_state.filtered_assets) {
+            if (asset.name == "monster_texture") has_monster_texture = true;
+            if (asset.name == "robot_texture") has_robot_texture = true;
+        }
+        REQUIRE(has_monster_texture);
+        REQUIRE(has_robot_texture);
     }
 
     SECTION("No matches") {

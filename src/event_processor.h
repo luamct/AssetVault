@@ -7,6 +7,7 @@
 #include <queue>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 
 #include "database.h"
 #include "file_watcher.h"
@@ -18,7 +19,7 @@ class TextureManager;
 // Unified event processor for both initial scan and runtime file events
 class EventProcessor {
 public:
-    EventProcessor(AssetDatabase& database, std::vector<Asset>& assets,
+    EventProcessor(AssetDatabase& database, std::unordered_map<std::string, Asset>& assets,
         std::atomic<bool>& search_update_needed, TextureManager& texture_manager, size_t batch_size = 100);
     ~EventProcessor();
 
@@ -55,6 +56,9 @@ public:
 
     // Access to assets mutex for thread-safe filtering
     std::mutex& get_assets_mutex() { return assets_mutex_; }
+    
+    // Check if asset exists at path (thread-safe)
+    bool has_asset_at_path(const std::string& path);
 
 private:
     // Background thread function
@@ -75,12 +79,9 @@ private:
     void remove_asset(const std::string& path);
     void rename_asset(const std::string& old_path, const std::string& new_path);
 
-    // Find asset index by path (assumes assets mutex is locked)
-    int find_asset_index(const std::string& path);
-
     // References to global state
     AssetDatabase& database_;
-    std::vector<Asset>& assets_;
+    std::unordered_map<std::string, Asset>& assets_;
     std::atomic<bool>& search_update_needed_;
     TextureManager& texture_manager_;
 
