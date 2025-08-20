@@ -254,13 +254,10 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     std::vector<std::string> paths_to_delete;
     paths_to_delete.reserve(events.size());
     
-    // Collect all paths - file watchers generate individual events for each deleted item
+    // Collect all paths - file watchers handle the complexity of generating
+    // appropriate events for each platform's behavior
     for (const auto& event : events) {
         std::string path_utf8 = event.path.u8string();
-        
-        // File watchers (FSEvents, Windows ReadDirectoryChanges) generate individual
-        // deletion events for each file when a directory is deleted, so we don't need
-        // to manually find and delete child assets
         paths_to_delete.push_back(path_utf8);
         
         total_events_processed_++;  // Increment per event processed

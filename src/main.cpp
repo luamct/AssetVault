@@ -587,13 +587,7 @@ int main() {
   // Start file watcher after initial scan
   LOG_INFO("Starting file watcher...");
   
-  // Create asset check lambda that safely checks if an asset exists
-  auto asset_exists_check = [&assets](const std::filesystem::path& path) -> bool {
-    std::lock_guard<std::mutex> lock(g_event_processor->get_assets_mutex());
-    return assets.find(path.u8string()) != assets.end();
-  };
-  
-  if (!file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event, asset_exists_check)) {
+  if (!file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event, &assets, &g_event_processor->get_assets_mutex())) {
     LOG_ERROR("Failed to start file watcher");
     return -1;
   }

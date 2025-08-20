@@ -224,39 +224,31 @@ target_link_libraries(SearchTest PRIVATE
     Catch2::Catch2WithMain
 )
 
-# File watcher test executable
-add_executable(FileWatcherTest
-    tests/test_file_watcher.cpp
-    src/asset.cpp
-    src/utils.cpp
-    ${FILE_WATCHER_SOURCES}
-)
-
-if(MSVC)
-    set_property(TARGET FileWatcherTest PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
-
-# Include directories for file watcher test
-target_include_directories(FileWatcherTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/external
-    ${GLAD_DIR}/include
-    ${IMGUI_DIR}
-)
-
-# Link libraries for file watcher test
-target_link_libraries(FileWatcherTest PRIVATE
-    glad
-    assimp::assimp
-    glm::glm
-    spdlog::spdlog
-    Catch2::Catch2WithMain
-)
-
-# Platform-specific libraries for file watcher test
+# Platform-specific file watcher test executables
 if(PLATFORM_MACOS)
-    target_link_libraries(FileWatcherTest PRIVATE
+    add_executable(FileWatcherMacOSTest
+        tests/test_file_watcher_macos.cpp
+        src/asset.cpp
+        src/utils.cpp
+        ${FILE_WATCHER_SOURCES}
+    )
+
+    # Include directories for macOS file watcher test
+    target_include_directories(FileWatcherMacOSTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/external
+        ${GLAD_DIR}/include
+        ${IMGUI_DIR}
+    )
+
+    # Link libraries for macOS file watcher test
+    target_link_libraries(FileWatcherMacOSTest PRIVATE
+        glad
+        assimp::assimp
+        glm::glm
+        spdlog::spdlog
+        Catch2::Catch2WithMain
         ${COREFOUNDATION_LIBRARY}
         ${CORESERVICES_LIBRARY}
     )
@@ -265,7 +257,9 @@ endif()
 # Enable testing
 enable_testing()
 add_test(NAME SearchTests COMMAND SearchTest)
-add_test(NAME FileWatcherTests COMMAND FileWatcherTest)
+if(PLATFORM_MACOS)
+    add_test(NAME FileWatcherMacOSTests COMMAND FileWatcherMacOSTest)
+endif()
 
 # Set compiler warnings for our code
 if(MSVC)

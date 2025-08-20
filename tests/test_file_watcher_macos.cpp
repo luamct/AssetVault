@@ -12,36 +12,77 @@
 #include "asset.h"
 #include "database.h"
 
+// macOS-specific file watcher tests using FSEvents
+// These tests validate FSEvents behavior and macOS-specific file system operations.
+// 
+// Note: Different operating systems have different file system event behaviors:
+// - macOS: Uses FSEvents with rename events that can have multiple flags
+// - Windows: Uses ReadDirectoryChangesW with different event patterns  
+// - Linux: Uses inotify with its own event semantics
+//
+// Future: Create test_file_watcher_windows.cpp and test_file_watcher_linux.cpp
+// to validate platform-specific behaviors while maintaining consistent interfaces.
+
 // Mock asset database for testing
 class MockAssetDatabase {
-private:
-    std::vector<std::filesystem::path> tracked_assets;
-    
 public:
+    AssetMap assets_;
+    std::mutex assets_mutex_;
+    
     void add_asset(const std::filesystem::path& path) {
-        tracked_assets.push_back(path);
+        std::lock_guard<std::mutex> lock(assets_mutex_);
+        Asset asset;
+        
+        // Normalize path to handle /private prefix on macOS (FSEvents adds this)
+        std::filesystem::path normalized_path;
+        try {
+            normalized_path = std::filesystem::weakly_canonical(path);
+        } catch (const std::filesystem::filesystem_error&) {
+            normalized_path = path;
+        }
+        
+        asset.full_path = normalized_path;
+        asset.name = normalized_path.filename().string();
+        assets_[normalized_path.u8string()] = asset;
     }
     
     void remove_asset(const std::filesystem::path& path) {
-        auto it = std::find(tracked_assets.begin(), tracked_assets.end(), path);
-        if (it != tracked_assets.end()) {
-            tracked_assets.erase(it);
-        }
+        std::lock_guard<std::mutex> lock(assets_mutex_);
+        assets_.erase(path.u8string());
     }
     
     bool has_asset(const std::filesystem::path& path) const {
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(assets_mutex_));
         // Normalize paths for comparison (FSEvents adds /private prefix on macOS)
-        auto normalized_path = std::filesystem::weakly_canonical(path);
-        for (const auto& asset : tracked_assets) {
-            if (std::filesystem::weakly_canonical(asset) == normalized_path) {
-                return true;
-            }
+        std::string path_str = path.u8string();
+        
+        // Check exact match first
+        if (assets_.find(path_str) != assets_.end()) {
+            return true;
         }
+        
+        // Check normalized paths
+        try {
+            auto normalized_path = std::filesystem::weakly_canonical(path);
+            for (const auto& [asset_path, asset] : assets_) {
+                try {
+                    if (std::filesystem::weakly_canonical(std::filesystem::u8path(asset_path)) == normalized_path) {
+                        return true;
+                    }
+                } catch (const std::filesystem::filesystem_error&) {
+                    // Continue if normalization fails
+                }
+            }
+        } catch (const std::filesystem::filesystem_error&) {
+            // Fall back to string comparison if normalization fails
+        }
+        
         return false;
     }
     
     void clear() {
-        tracked_assets.clear();
+        std::lock_guard<std::mutex> lock(assets_mutex_);
+        assets_.clear();
     }
 };
 
@@ -50,7 +91,8 @@ class FileWatcherTestFixture {
 public:
     std::filesystem::path test_dir;
     MockAssetDatabase mock_db;
-    std::vector<FileEvent> captured_events;
+    mutable std::vector<FileEvent> captured_events;  // Legacy - for compatibility
+    std::shared_ptr<std::vector<FileEvent>> shared_events;  // Thread-safe events storage
     std::unique_ptr<FileWatcher> watcher;
     
     FileWatcherTestFixture() {
@@ -63,23 +105,28 @@ public:
     }
     
     ~FileWatcherTestFixture() {
-        // Clean up
+        // Clean up - ensure file watcher is completely stopped before destruction
         if (watcher) {
             watcher->stop_watching();
+            // Give time for all callbacks to complete and threads to shut down
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
         std::filesystem::remove_all(test_dir);
     }
     
     void start_watching() {
-        auto event_callback = [this](const FileEvent& event) {
-            captured_events.push_back(event);
+        // Create a thread-safe callback using a shared pointer to the events vector
+        // This ensures the callback data stays alive even if the test fixture is destroyed
+        auto events_ptr = std::make_shared<std::vector<FileEvent>>();
+        
+        auto event_callback = [events_ptr](const FileEvent& event) {
+            events_ptr->push_back(event);
         };
         
-        auto asset_check = [this](const std::filesystem::path& path) {
-            return mock_db.has_asset(path);
-        };
+        watcher->start_watching(test_dir.string(), event_callback, &mock_db.assets_, &mock_db.assets_mutex_);
         
-        watcher->start_watching(test_dir.string(), event_callback, asset_check);
+        // Store the shared pointer so we can access events later
+        shared_events = events_ptr;
         
         // Give file watcher time to initialize
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -87,7 +134,7 @@ public:
     
     void wait_for_events(size_t expected_count = 1, int timeout_ms = 2000) {
         auto start = std::chrono::steady_clock::now();
-        while (captured_events.size() < expected_count) {
+        while (get_events().size() < expected_count) {
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - start).count();
             if (elapsed > timeout_ms) {
@@ -100,7 +147,18 @@ public:
     }
     
     void clear_events() {
+        if (shared_events) {
+            shared_events->clear();
+        }
         captured_events.clear();
+    }
+    
+    const std::vector<FileEvent>& get_events() const {
+        if (shared_events) {
+            // Copy shared events to legacy vector for compatibility
+            captured_events = *shared_events;
+        }
+        return captured_events;
     }
     
     // Helper to find events for a specific file (normalizes paths)
@@ -108,7 +166,7 @@ public:
         std::vector<FileEvent> matching_events;
         auto normalized_target = std::filesystem::weakly_canonical(file_path);
         
-        for (const auto& event : captured_events) {
+        for (const auto& event : get_events()) {
             try {
                 auto normalized_event = std::filesystem::weakly_canonical(event.path);
                 if (normalized_event == normalized_target) {
@@ -125,7 +183,7 @@ public:
     }
 };
 
-TEST_CASE("File watcher rename event handling", "[file_watcher]") {
+TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     FileWatcherTestFixture fixture;
     
     SECTION("File moved into watched directory (not previously tracked)") {
@@ -305,7 +363,7 @@ TEST_CASE("File watcher rename event handling", "[file_watcher]") {
         REQUIRE(!std::filesystem::exists(file));
         
         // We should have at least one event (could be Delete, or Rename treated as delete)
-        REQUIRE(fixture.captured_events.size() >= 1);
+        REQUIRE(fixture.get_events().size() >= 1);
     }
     
     SECTION("File modified (previously tracked)") {
@@ -346,7 +404,7 @@ TEST_CASE("File watcher rename event handling", "[file_watcher]") {
         REQUIRE(content.find("modified content") != std::string::npos);
         
         // We should have at least one event for this file
-        REQUIRE(fixture.captured_events.size() >= 1);
+        REQUIRE(fixture.get_events().size() >= 1);
         
         // Cleanup
         std::filesystem::remove(file);
@@ -381,8 +439,8 @@ TEST_CASE("File watcher rename event handling", "[file_watcher]") {
         int file_deletion_count = 0;
         int dir_deletion_count = 0;
         
-        std::cout << "Directory deletion test - captured " << fixture.captured_events.size() << " events:" << std::endl;
-        for (const auto& event : fixture.captured_events) {
+        std::cout << "Directory deletion test - captured " << fixture.get_events().size() << " events:" << std::endl;
+        for (const auto& event : fixture.get_events()) {
             std::string event_type_str;
             switch (event.type) {
                 case FileEventType::Deleted: event_type_str = "Deleted"; file_deletion_count++; break;
@@ -403,15 +461,182 @@ TEST_CASE("File watcher rename event handling", "[file_watcher]") {
 #elif defined(_WIN32)
         // On Windows, check what actually happens
         std::cout << "Windows behavior - file deletions: " << file_deletion_count << ", dir deletions: " << dir_deletion_count << std::endl;
-        REQUIRE(fixture.captured_events.size() >= 3);  // Should get at least file events
+        REQUIRE(fixture.get_events().size() >= 3);  // Should get at least file events
 #else
         // Linux/other platforms
-        REQUIRE(fixture.captured_events.size() >= 3);
+        REQUIRE(fixture.get_events().size() >= 3);
 #endif
     }
 }
 
-TEST_CASE("Directory deletion event behavior", "[file_watcher]") {
+TEST_CASE("macOS FSEvents directory copy behavior", "[file_watcher_macos]") {
+    FileWatcherTestFixture fixture;
+    
+    SECTION("Directory copy generates individual file events") {
+        // Setup: Create source directory with files outside watched area
+        auto source_dir = std::filesystem::temp_directory_path() / "source_dir";
+        std::filesystem::create_directory(source_dir);
+        
+        std::vector<std::filesystem::path> source_files;
+        for (int i = 1; i <= 3; i++) {
+            auto file = source_dir / ("file" + std::to_string(i) + ".txt");
+            std::ofstream(file) << "test content " << i;
+            source_files.push_back(file);
+        }
+        
+        // Start watching
+        fixture.start_watching();
+        fixture.clear_events();
+        
+        // Action: Copy entire directory into watched area
+        auto dest_dir = fixture.test_dir / "copied_dir";
+        std::filesystem::copy(source_dir, dest_dir, std::filesystem::copy_options::recursive);
+        
+        // Wait for events - should get events for directory + each file
+        fixture.wait_for_events(4);  // 1 directory + 3 files
+        
+        // Count creation events
+        int file_creation_count = 0;
+        int dir_creation_count = 0;
+        
+        std::cout << "Directory copy test - captured " << fixture.get_events().size() << " events:" << std::endl;
+        for (const auto& event : fixture.get_events()) {
+            std::string event_type_str;
+            switch (event.type) {
+                case FileEventType::Created: event_type_str = "Created"; file_creation_count++; break;
+                case FileEventType::DirectoryCreated: event_type_str = "DirectoryCreated"; dir_creation_count++; break;
+                default: event_type_str = "Other"; break;
+            }
+            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+        }
+        
+        // Assert: Should get individual creation events
+        REQUIRE(file_creation_count >= 3);  // One for each file
+        REQUIRE(dir_creation_count >= 1);   // At least one for directory
+        
+        // Cleanup
+        std::filesystem::remove_all(source_dir);
+        std::filesystem::remove_all(dest_dir);
+    }
+}
+
+TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
+    FileWatcherTestFixture fixture;
+    
+    SECTION("Directory moved in generates events for all contents") {
+        // macOS FSEvents behavior: When a directory is moved into the watched area,
+        // FSEvents generates a single Renamed event for the directory.
+        // Our file watcher then scans the directory contents and emits individual events.
+        
+        // Setup: Create directory with files outside watched area
+        auto external_dir = std::filesystem::temp_directory_path() / "external_dir";
+        std::filesystem::create_directory(external_dir);
+        
+        for (int i = 1; i <= 3; i++) {
+            auto file = external_dir / ("file" + std::to_string(i) + ".txt");
+            std::ofstream(file) << "test content " << i;
+        }
+        
+        // Create subdirectory with file
+        auto subdir = external_dir / "subdir";
+        std::filesystem::create_directory(subdir);
+        std::ofstream(subdir / "nested.txt") << "nested content";
+        
+        // Start watching
+        fixture.start_watching();
+        fixture.clear_events();
+        
+        // Action: Move directory into watched area
+        auto dest_dir = fixture.test_dir / "moved_dir";
+        std::filesystem::rename(external_dir, dest_dir);
+        
+        // Wait for events - should get events for all contents
+        fixture.wait_for_events(6);  // 2 directories + 4 files
+        
+        // Count events
+        int file_creation_count = 0;
+        int dir_creation_count = 0;
+        
+        std::cout << "Directory move-in test - captured " << fixture.get_events().size() << " events:" << std::endl;
+        for (const auto& event : fixture.get_events()) {
+            std::string event_type_str;
+            switch (event.type) {
+                case FileEventType::Created: event_type_str = "Created"; file_creation_count++; break;
+                case FileEventType::DirectoryCreated: event_type_str = "DirectoryCreated"; dir_creation_count++; break;
+                default: event_type_str = "Other"; break;
+            }
+            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+        }
+        
+        // Assert: Should generate events for all contents
+        REQUIRE(file_creation_count == 4);  // 3 files in root + 1 in subdir
+        REQUIRE(dir_creation_count == 2);   // moved_dir + subdir
+        
+        // Cleanup
+        std::filesystem::remove_all(dest_dir);
+    }
+    
+    SECTION("Directory moved out generates events for tracked contents") {
+        // macOS FSEvents behavior: When a tracked directory is moved out of the watched area,
+        // FSEvents generates a Renamed event with both Created and Renamed flags.
+        // Our file watcher detects this as a move-out and emits deletion events for all tracked children.
+        
+        // Setup: Create directory with files in watched area
+        auto test_dir_in_watched = fixture.test_dir / "test_dir";
+        std::filesystem::create_directory(test_dir_in_watched);
+        
+        std::vector<fs::path> test_files;
+        for (int i = 1; i <= 3; i++) {
+            auto file = test_dir_in_watched / ("file" + std::to_string(i) + ".txt");
+            std::ofstream(file) << "test content " << i;
+            test_files.push_back(file);
+            fixture.mock_db.add_asset(file);  // Track these files
+        }
+        
+        // Track the directory itself
+        fixture.mock_db.add_asset(test_dir_in_watched);
+        
+        // Start watching
+        fixture.start_watching();
+        fixture.clear_events();
+        
+        // Action: Move directory out of watched area
+        auto external_dest = std::filesystem::temp_directory_path() / ("moved_out_dir_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()));
+        std::filesystem::rename(test_dir_in_watched, external_dest);
+        
+        // Wait for events - should get deletion events for all tracked contents
+        fixture.wait_for_events(1);  // At least the directory deletion event
+        
+        // Count deletion events
+        int file_deletion_count = 0;
+        int dir_deletion_count = 0;
+        
+        std::cout << "Directory move-out test - captured " << fixture.get_events().size() << " events:" << std::endl;
+        for (const auto& event : fixture.get_events()) {
+            std::string event_type_str;
+            switch (event.type) {
+                case FileEventType::Created: event_type_str = "Created"; break;
+                case FileEventType::Modified: event_type_str = "Modified"; break;
+                case FileEventType::Deleted: event_type_str = "Deleted"; file_deletion_count++; break;
+                case FileEventType::DirectoryDeleted: event_type_str = "DirectoryDeleted"; dir_deletion_count++; break;
+                case FileEventType::DirectoryCreated: event_type_str = "DirectoryCreated"; break;
+                case FileEventType::Renamed: event_type_str = "Renamed"; break;
+                default: event_type_str = "Other"; break;
+            }
+            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+        }
+        
+        // Assert: For move-out, file watcher generates deletion events for all tracked child assets
+        // plus the directory deletion event (as per the user's architectural requirement)
+        REQUIRE(dir_deletion_count == 1);   // Directory deletion event
+        REQUIRE(file_deletion_count == 3);  // Individual file deletion events for tracked children
+        
+        // Cleanup
+        std::filesystem::remove_all(external_dest);
+    }
+}
+
+TEST_CASE("macOS FSEvents directory deletion behavior", "[file_watcher_macos]") {
     FileWatcherTestFixture fixture;
     
     SECTION("Directory deletion generates individual file events") {
@@ -443,8 +668,8 @@ TEST_CASE("Directory deletion event behavior", "[file_watcher]") {
         int file_deletion_count = 0;
         int dir_deletion_count = 0;
         
-        std::cout << "Directory deletion test - captured " << fixture.captured_events.size() << " events:" << std::endl;
-        for (const auto& event : fixture.captured_events) {
+        std::cout << "Directory deletion test - captured " << fixture.get_events().size() << " events:" << std::endl;
+        for (const auto& event : fixture.get_events()) {
             std::string event_type_str;
             switch (event.type) {
                 case FileEventType::Deleted: event_type_str = "Deleted"; file_deletion_count++; break;
@@ -465,10 +690,10 @@ TEST_CASE("Directory deletion event behavior", "[file_watcher]") {
 #elif defined(_WIN32)
         // On Windows, check what actually happens
         std::cout << "Windows behavior - file deletions: " << file_deletion_count << ", dir deletions: " << dir_deletion_count << std::endl;
-        REQUIRE(fixture.captured_events.size() >= 3);  // Should get at least file events
+        REQUIRE(fixture.get_events().size() >= 3);  // Should get at least file events
 #else
         // Linux/other platforms
-        REQUIRE(fixture.captured_events.size() >= 3);
+        REQUIRE(fixture.get_events().size() >= 3);
 #endif
     }
 }

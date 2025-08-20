@@ -31,7 +31,7 @@ FileWatcher::FileWatcher() : p_impl(nullptr) {
 
 FileWatcher::~FileWatcher() { stop_watching(); }
 
-bool FileWatcher::start_watching(const std::string& path, FileEventCallback callback, AssetExistsCallback asset_check) {
+bool FileWatcher::start_watching(const std::string& path, FileEventCallback callback, AssetMap* assets, std::mutex* assets_mutex) {
   if (!p_impl) {
     LOG_ERROR("No file watcher implementation available");
     return false;
@@ -40,7 +40,7 @@ bool FileWatcher::start_watching(const std::string& path, FileEventCallback call
   watched_path = path;
   is_watching_flag = true;
 
-  return p_impl->start_watching(path, callback, asset_check);
+  return p_impl->start_watching(path, callback, assets, assets_mutex);
 }
 
 void FileWatcher::stop_watching() {

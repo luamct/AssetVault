@@ -93,7 +93,7 @@ Now I want to cover directory operations. Clear the current todo list and add th
 - Directory moved out: Similar to above, but since we don't have the files on disk, we have to check the assets variable to list all child files and emit delete events for each
 - Directory Renamed within: Two events are triggered for this operation, and each event should fall into one of the previous cases 
 - Directory deleted (to trash): These are treated as moved out, so the logic above handles it
-- Directory deleted permanentely: Events are triggered for each file, so its simple
+- Directory deleted permanentely: Events are triggered for each file, so it should be simple
 
 Like the previous implementation for files, checking the assets variable should cover most cases without the need for doing file operations, with the exception of a moved in folder, since the files are not tracked and also don't trigger events individually.
 

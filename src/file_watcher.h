@@ -5,7 +5,12 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+#include "asset.h"
+
+namespace fs = std::filesystem;
 
 // Forward declarations for platform-specific implementations
 class FileWatcherImpl;
@@ -16,19 +21,19 @@ enum class FileEventType { Created, Modified, Deleted, Renamed, DirectoryCreated
 // File event structure
 struct FileEvent {
   FileEventType type;
-  std::filesystem::path path;
-  std::filesystem::path old_path;  // For rename events
+  fs::path path;
+  fs::path old_path;  // For rename events
   std::chrono::system_clock::time_point timestamp;
 
-  FileEvent(FileEventType t, const std::filesystem::path& p, const std::filesystem::path& old = "")
+  FileEvent(FileEventType t, const fs::path& p, const fs::path& old = "")
       : type(t), path(p), old_path(old), timestamp(std::chrono::system_clock::now()) {}
 };
 
 // Callback type for file events
 using FileEventCallback = std::function<void(const FileEvent&)>;
 
-// Callback type for checking if an asset exists in the database
-using AssetExistsCallback = std::function<bool(const std::filesystem::path&)>;
+// Asset map type alias
+using AssetMap = std::unordered_map<std::string, Asset>;
 
 // Main file watcher class
 class FileWatcher {
@@ -37,7 +42,7 @@ class FileWatcher {
   ~FileWatcher();
 
   // Start watching a directory
-  bool start_watching(const std::string& path, FileEventCallback callback, AssetExistsCallback asset_check = nullptr);
+  bool start_watching(const std::string& path, FileEventCallback callback, AssetMap* assets = nullptr, std::mutex* assets_mutex = nullptr);
 
   // Stop watching
   void stop_watching();
@@ -66,7 +71,7 @@ class FileWatcher {
 class FileWatcherImpl {
  public:
   virtual ~FileWatcherImpl() = default;
-  virtual bool start_watching(const std::string& path, FileEventCallback callback, AssetExistsCallback asset_check = nullptr) = 0;
+  virtual bool start_watching(const std::string& path, FileEventCallback callback, AssetMap* assets = nullptr, std::mutex* assets_mutex = nullptr) = 0;
   virtual void stop_watching() = 0;
   virtual bool is_watching() const = 0;
 };

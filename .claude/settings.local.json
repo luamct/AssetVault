@@ -44,7 +44,15 @@
       "Bash(./build/SearchTest:*)",
       "Bash(./SearchTest \"[search]\" -s)",
       "Bash(./SearchTest --list-tests)",
-      "Bash(./SearchTest --rng-seed 3790325891)"
+      "Bash(./SearchTest --rng-seed 3790325891)",
+      "Bash(./build/FileWatcherMacOSTest:*)",
+      "Bash(for i in {1..5})",
+      "Bash(do echo \"=== Run $i ===\")",
+      "Bash(/dev/null)",
+      "Bash(done)",
+      "Bash(for i in {1..10})",
+      "Bash(do echo \"=== Test run $i ===\")",
+      "Bash(./FileWatcherMacOSTest)"
     ],
     "deny": []
   }

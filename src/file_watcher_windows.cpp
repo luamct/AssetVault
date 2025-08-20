@@ -17,14 +17,14 @@
 // Structure to track pending file events
 struct PendingFileEvent {
   FileEventType original_type;
-  std::filesystem::path path;
-  std::filesystem::path old_path;  // For rename events
+  fs::path path;
+  fs::path old_path;  // For rename events
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
   PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
 
-  PendingFileEvent(FileEventType type, const std::filesystem::path& p, const std::filesystem::path& old = std::filesystem::path())
+  PendingFileEvent(FileEventType type, const fs::path& p, const fs::path& old = fs::path())
       : original_type(type), path(p), old_path(old), last_activity(std::chrono::steady_clock::now()), is_active(true) {}
 };
 
@@ -36,6 +36,8 @@ class WindowsFileWatcher : public FileWatcherImpl {
   std::atomic<bool> should_stop;
   std::atomic<bool> is_watching_flag;
   FileEventCallback callback;
+  AssetMap* assets_;
+  std::mutex* assets_mutex_;
   std::string watched_path;
 
   // Buffer for file change notifications
@@ -43,7 +45,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
   DWORD bytes_returned;
 
   // Timer-based event tracking
-  std::unordered_map<std::filesystem::path, PendingFileEvent> pending_events;
+  std::unordered_map<fs::path, PendingFileEvent> pending_events;
   std::mutex pending_events_mutex;
   std::thread timer_thread;
   std::atomic<bool> timer_should_stop;
@@ -60,7 +62,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
 
   ~WindowsFileWatcher() { stop_watching(); }
 
-  bool start_watching(const std::string& path, FileEventCallback cb, AssetExistsCallback asset_check) override {
+  bool start_watching(const std::string& path, FileEventCallback cb, AssetMap* assets, std::mutex* assets_mutex) override {
     if (is_watching_flag.load()) {
       LOG_ERROR("Already watching a directory");
       return false;
@@ -68,6 +70,8 @@ class WindowsFileWatcher : public FileWatcherImpl {
 
     watched_path = path;
     callback = cb;
+    assets_ = assets;
+    assets_mutex_ = assets_mutex;
 
     // Create event for signaling
     h_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -148,7 +152,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
   void timer_loop() {
     while (!timer_should_stop.load()) {
       auto now = std::chrono::steady_clock::now();
-      std::vector<std::pair<std::filesystem::path, PendingFileEvent>> events_to_process;
+      std::vector<std::pair<fs::path, PendingFileEvent>> events_to_process;
 
       {
         std::lock_guard<std::mutex> lock(pending_events_mutex);
@@ -196,7 +200,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
     }
   }
 
-  void process_raw_file_event(FileEventType raw_type, const std::filesystem::path& full_path, const std::filesystem::path& old_path = std::filesystem::path()) {
+  void process_raw_file_event(FileEventType raw_type, const fs::path& full_path, const fs::path& old_path = fs::path()) {
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
     // For Deleted and Renamed, process immediately
@@ -266,7 +270,7 @@ class WindowsFileWatcher : public FileWatcherImpl {
       std::wstring wide_name(p_notify->FileName, p_notify->FileNameLength / sizeof(WCHAR));
       
       // Create full path using fs::path to handle Unicode properly
-      std::filesystem::path full_path = std::filesystem::path(watched_path) / wide_name;
+      fs::path full_path = fs::path(watched_path) / wide_name;
 
       // Determine raw event type
       FileEventType raw_event_type = FileEventType::Modified;  // Default
