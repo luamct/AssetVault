@@ -443,8 +443,10 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         for (const auto& event : fixture.get_events()) {
             std::string event_type_str;
             switch (event.type) {
-                case FileEventType::Deleted: event_type_str = "Deleted"; file_deletion_count++; break;
-                case FileEventType::DirectoryDeleted: event_type_str = "DirectoryDeleted"; dir_deletion_count++; break;
+                case FileEventType::Deleted: 
+                    event_type_str = event.is_directory ? "DirectoryDeleted" : "Deleted";
+                    if (event.is_directory) dir_deletion_count++; else file_deletion_count++;
+                    break;
                 case FileEventType::Created: event_type_str = "Created"; break;
                 case FileEventType::Modified: event_type_str = "Modified"; break;
                 case FileEventType::Renamed: event_type_str = "Renamed"; break;
@@ -503,8 +505,10 @@ TEST_CASE("macOS FSEvents directory copy behavior", "[file_watcher_macos]") {
         for (const auto& event : fixture.get_events()) {
             std::string event_type_str;
             switch (event.type) {
-                case FileEventType::Created: event_type_str = "Created"; file_creation_count++; break;
-                case FileEventType::DirectoryCreated: event_type_str = "DirectoryCreated"; dir_creation_count++; break;
+                case FileEventType::Created: 
+                    event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
+                    if (event.is_directory) dir_creation_count++; else file_creation_count++;
+                    break;
                 default: event_type_str = "Other"; break;
             }
             std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
@@ -561,8 +565,10 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         for (const auto& event : fixture.get_events()) {
             std::string event_type_str;
             switch (event.type) {
-                case FileEventType::Created: event_type_str = "Created"; file_creation_count++; break;
-                case FileEventType::DirectoryCreated: event_type_str = "DirectoryCreated"; dir_creation_count++; break;
+                case FileEventType::Created: 
+                    event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
+                    if (event.is_directory) dir_creation_count++; else file_creation_count++;
+                    break;
                 default: event_type_str = "Other"; break;
             }
             std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
@@ -615,11 +621,14 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         for (const auto& event : fixture.get_events()) {
             std::string event_type_str;
             switch (event.type) {
-                case FileEventType::Created: event_type_str = "Created"; break;
+                case FileEventType::Created: 
+                    event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
+                    break;
                 case FileEventType::Modified: event_type_str = "Modified"; break;
-                case FileEventType::Deleted: event_type_str = "Deleted"; file_deletion_count++; break;
-                case FileEventType::DirectoryDeleted: event_type_str = "DirectoryDeleted"; dir_deletion_count++; break;
-                case FileEventType::DirectoryCreated: event_type_str = "DirectoryCreated"; break;
+                case FileEventType::Deleted: 
+                    event_type_str = event.is_directory ? "DirectoryDeleted" : "Deleted";
+                    if (event.is_directory) dir_deletion_count++; else file_deletion_count++;
+                    break;
                 case FileEventType::Renamed: event_type_str = "Renamed"; break;
                 default: event_type_str = "Other"; break;
             }
@@ -633,6 +642,145 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         
         // Cleanup
         std::filesystem::remove_all(external_dest);
+    }
+    
+    SECTION("Directory renamed within watched area (tracked directory)") {
+        // macOS FSEvents behavior: When a tracked directory is renamed within the watched area,
+        // FSEvents should generate events for both the old path (move-out) and new path (move-in).
+        // Our file watcher should emit deletion events for the old path and creation events for the new path.
+        
+        // Setup: Create directory with files in watched area
+        auto old_dir = fixture.test_dir / "old_dir_name";
+        std::filesystem::create_directory(old_dir);
+        
+        std::vector<fs::path> test_files;
+        for (int i = 1; i <= 3; i++) {
+            auto file = old_dir / ("file" + std::to_string(i) + ".txt");
+            std::ofstream(file) << "test content " << i;
+            test_files.push_back(file);
+            fixture.mock_db.add_asset(file);  // Track these files
+        }
+        
+        // Track the directory itself
+        fixture.mock_db.add_asset(old_dir);
+        
+        // Start watching
+        fixture.start_watching();
+        fixture.clear_events();
+        
+        // Action: Rename directory within watched area
+        auto new_dir = fixture.test_dir / "new_dir_name";
+        std::filesystem::rename(old_dir, new_dir);
+        
+        // Wait for events - should get deletion events for old path + creation events for new path
+        fixture.wait_for_events(4);  // At least 4 events total (old dir + 3 files + new dir + 3 files, but may be optimized)
+        
+        // Count deletion and creation events
+        int file_deletion_count = 0;
+        int dir_deletion_count = 0;
+        int file_creation_count = 0;
+        int dir_creation_count = 0;
+        
+        std::cout << "Directory rename test - captured " << fixture.get_events().size() << " events:" << std::endl;
+        for (const auto& event : fixture.get_events()) {
+            std::string event_type_str;
+            switch (event.type) {
+                case FileEventType::Created: 
+                    event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
+                    if (event.is_directory) dir_creation_count++; else file_creation_count++;
+                    break;
+                case FileEventType::Deleted: 
+                    event_type_str = event.is_directory ? "DirectoryDeleted" : "Deleted";
+                    if (event.is_directory) dir_deletion_count++; else file_deletion_count++;
+                    break;
+                case FileEventType::Modified: event_type_str = "Modified"; break;
+                case FileEventType::Renamed: event_type_str = "Renamed"; break;
+                default: event_type_str = "Other"; break;
+            }
+            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+        }
+        
+        // Assert: Should get both deletion events (for old path) and creation events (for new path)
+        // The exact number may vary based on FSEvents behavior, but we should have both operations
+        REQUIRE(file_deletion_count >= 1);  // At least some file deletion events
+        REQUIRE(dir_deletion_count >= 1);   // At least directory deletion event
+        REQUIRE(file_creation_count >= 1);  // At least some file creation events  
+        REQUIRE(dir_creation_count >= 1);   // At least directory creation event
+        
+        // Verify the new directory exists and old doesn't
+        REQUIRE(std::filesystem::exists(new_dir));
+        REQUIRE(!std::filesystem::exists(old_dir));
+        
+        // Cleanup
+        std::filesystem::remove_all(new_dir);
+    }
+    
+    SECTION("Directory deleted to trash (tracked directory)") {
+        // macOS FSEvents behavior: When a directory is moved to trash, FSEvents treats it as a rename event
+        // (since trash is technically a move operation). Our file watcher should detect this as a move-out
+        // and emit deletion events for all tracked child assets.
+        
+        // Setup: Create directory with files in watched area
+        auto test_dir_to_trash = fixture.test_dir / "dir_to_trash";
+        std::filesystem::create_directory(test_dir_to_trash);
+        
+        std::vector<fs::path> test_files;
+        for (int i = 1; i <= 3; i++) {
+            auto file = test_dir_to_trash / ("file" + std::to_string(i) + ".txt");
+            std::ofstream(file) << "test content " << i;
+            test_files.push_back(file);
+            fixture.mock_db.add_asset(file);  // Track these files
+        }
+        
+        // Track the directory itself
+        fixture.mock_db.add_asset(test_dir_to_trash);
+        
+        // Start watching
+        fixture.start_watching();
+        fixture.clear_events();
+        
+        // Action: Move directory to trash (simulate by moving to a trash-like location)
+        // Note: We can't actually use the real macOS trash in a unit test, so we simulate
+        // the behavior by moving to a location outside the watched directory
+        auto trash_location = std::filesystem::temp_directory_path() / "trash" / "dir_to_trash";
+        std::filesystem::create_directories(trash_location.parent_path());
+        std::filesystem::rename(test_dir_to_trash, trash_location);
+        
+        // Wait for events - should get deletion events for all tracked content
+        fixture.wait_for_events(4);  // 3 files + 1 directory
+        
+        // Count deletion events
+        int file_deletion_count = 0;
+        int dir_deletion_count = 0;
+        
+        std::cout << "Directory trash test - captured " << fixture.get_events().size() << " events:" << std::endl;
+        for (const auto& event : fixture.get_events()) {
+            std::string event_type_str;
+            switch (event.type) {
+                case FileEventType::Created: 
+                    event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
+                    break;
+                case FileEventType::Deleted: 
+                    event_type_str = event.is_directory ? "DirectoryDeleted" : "Deleted";
+                    if (event.is_directory) dir_deletion_count++; else file_deletion_count++;
+                    break;
+                case FileEventType::Modified: event_type_str = "Modified"; break;
+                case FileEventType::Renamed: event_type_str = "Renamed"; break;
+                default: event_type_str = "Other"; break;
+            }
+            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+        }
+        
+        // Assert: Should get deletion events for all tracked content (same as move-out)
+        REQUIRE(file_deletion_count == 3);  // Individual file deletion events for tracked children
+        REQUIRE(dir_deletion_count == 1);   // Directory deletion event
+        
+        // Verify the directory no longer exists in watched area but exists in trash location
+        REQUIRE(!std::filesystem::exists(test_dir_to_trash));
+        REQUIRE(std::filesystem::exists(trash_location));
+        
+        // Cleanup
+        std::filesystem::remove_all(trash_location.parent_path());
     }
 }
 
@@ -672,8 +820,10 @@ TEST_CASE("macOS FSEvents directory deletion behavior", "[file_watcher_macos]") 
         for (const auto& event : fixture.get_events()) {
             std::string event_type_str;
             switch (event.type) {
-                case FileEventType::Deleted: event_type_str = "Deleted"; file_deletion_count++; break;
-                case FileEventType::DirectoryDeleted: event_type_str = "DirectoryDeleted"; dir_deletion_count++; break;
+                case FileEventType::Deleted: 
+                    event_type_str = event.is_directory ? "DirectoryDeleted" : "Deleted";
+                    if (event.is_directory) dir_deletion_count++; else file_deletion_count++;
+                    break;
                 case FileEventType::Created: event_type_str = "Created"; break;
                 case FileEventType::Modified: event_type_str = "Modified"; break;
                 case FileEventType::Renamed: event_type_str = "Renamed"; break;

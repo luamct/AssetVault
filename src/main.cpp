@@ -417,8 +417,8 @@ void scan_for_changes(AssetDatabase& database, std::unordered_map<std::string, A
     auto db_it = db_map.find(path);
     if (db_it == db_map.end()) {
       // File not in database - create a Created event
-      FileEventType event_type = fs::is_directory(path) ? FileEventType::DirectoryCreated : FileEventType::Created;
-      FileEvent event(event_type, path);
+      bool is_dir = fs::is_directory(path);
+      FileEvent event(FileEventType::Created, path, "", is_dir);
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
@@ -430,8 +430,7 @@ void scan_for_changes(AssetDatabase& database, std::unordered_map<std::string, A
   for (const auto& db_asset : db_assets) {
     if (current_files.find(db_asset.full_path) == current_files.end()) {
       // File no longer exists - create a Deleted event
-      FileEventType event_type = db_asset.is_directory ? FileEventType::DirectoryDeleted : FileEventType::Deleted;
-      FileEvent event(event_type, db_asset.full_path);
+      FileEvent event(FileEventType::Deleted, db_asset.full_path, "", db_asset.is_directory);
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }

@@ -131,14 +131,12 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     for (const auto& event : batch) {
         switch (event.type) {
         case FileEventType::Created:
-        case FileEventType::DirectoryCreated:
             created_events.push_back(event);
             break;
         case FileEventType::Modified:
             modified_events.push_back(event);
             break;
         case FileEventType::Deleted:
-        case FileEventType::DirectoryDeleted:
             deleted_events.push_back(event);
             break;
         case FileEventType::Renamed:
@@ -218,7 +216,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
     for (const auto& event : events) {
         try {
             // Skip directory modifications - content changes will be handled as individual file events
-            if (!fs::exists(event.path) || fs::is_directory(event.path)) {
+            if (!fs::exists(event.path) || event.is_directory) {
                 total_events_processed_++;  // Count skipped directories
                 continue;
             }

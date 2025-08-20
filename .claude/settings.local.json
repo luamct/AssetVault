@@ -52,7 +52,8 @@
       "Bash(done)",
       "Bash(for i in {1..10})",
       "Bash(do echo \"=== Test run $i ===\")",
-      "Bash(./FileWatcherMacOSTest)"
+      "Bash(./FileWatcherMacOSTest)",
+      "Bash(./FileWatcherMacOSTest:*)"
     ],
     "deny": []
   }
