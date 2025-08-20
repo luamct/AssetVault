@@ -79,7 +79,9 @@ void render_clickable_path(const std::string& full_path, SearchState& search_sta
     // Check if we need to wrap to next line
     if (i > 0) {
       if (current_line_width + separator_width + segment_width > available_width) {
-        // Start new line - no separator at the beginning of new line
+        // Add separator at end of current line, then wrap to new line
+        ImGui::SameLine(0, 2.0f);
+        ImGui::TextColored(Theme::TEXT_SECONDARY, " /");
         current_line_width = segment_width;
       }
       else {
