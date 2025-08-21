@@ -53,7 +53,10 @@
       "Bash(for i in {1..10})",
       "Bash(do echo \"=== Test run $i ===\")",
       "Bash(./FileWatcherMacOSTest)",
-      "Bash(./FileWatcherMacOSTest:*)"
+      "Bash(./FileWatcherMacOSTest:*)",
+      "Bash(export VCPKG_ROOT=\"/c/Users/luamc/vcpkg\")",
+      "Bash(VCPKG_ROOT=\"/c/Users/luamc/vcpkg\" cmake --preset windows-static)",
+      "Bash(VCPKG_ROOT=\"/c/Users/luamc/vcpkg\" cmake -G \"Visual Studio 17 2022\" -A x64 -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_TOOLCHAIN_FILE=/c/Users/luamc/vcpkg/scripts/buildsystems/vcpkg.cmake -B build)"
     ],
     "deny": []
   }

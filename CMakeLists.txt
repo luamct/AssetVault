@@ -18,13 +18,7 @@ elseif(UNIX)
     set(PLATFORM_LINUX TRUE)
 endif()
 
-# Static linking configuration for distribution builds
-if(PLATFORM_WINDOWS)
-    # Use static runtime for Windows distribution builds
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    # Exclude conflicting runtime libraries
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB:LIBCMT")
-elseif(PLATFORM_MACOS)
+if(PLATFORM_MACOS)
     # macOS deployment target for compatibility
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment version")
 endif()
@@ -72,10 +66,6 @@ set(GLAD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/glad)
 add_library(glad STATIC ${GLAD_DIR}/src/glad.c)
 target_include_directories(glad PUBLIC ${GLAD_DIR}/include)
 
-if(MSVC)
-    set_property(TARGET glad PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
-
 # Add Dear ImGui - compiled from source for customization
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui)
 set(IMGUI_SOURCES
@@ -91,10 +81,6 @@ set(IMGUI_SOURCES
 add_library(imgui STATIC ${IMGUI_SOURCES})
 target_include_directories(imgui PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_link_libraries(imgui PRIVATE glfw)
-
-if(MSVC)
-    set_property(TARGET imgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
 
 # File watcher sources - native implementations only
 if(PLATFORM_WINDOWS)
@@ -147,11 +133,6 @@ if(PLATFORM_MACOS)
     )
 endif()
 
-# Set runtime library for main executable
-if(MSVC)
-    set_property(TARGET AssetInventory PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
-
 # Include directories
 target_include_directories(AssetInventory PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -175,7 +156,11 @@ target_link_libraries(AssetInventory PRIVATE
 
 # Platform-specific system libraries
 if(PLATFORM_WINDOWS)
-    target_link_libraries(AssetInventory PRIVATE legacy_stdio_definitions)
+    target_link_libraries(AssetInventory PRIVATE 
+        legacy_stdio_definitions
+        # Additional Windows runtime libraries for static linking
+        kernel32 user32 shell32 uuid ole32 oleaut32 advapi32 ws2_32
+    )
 elseif(PLATFORM_MACOS)
     # macOS frameworks
     find_library(COCOA_LIBRARY Cocoa)
@@ -202,10 +187,6 @@ add_executable(SearchTest
     src/utils.cpp
 )
 
-if(MSVC)
-    set_property(TARGET SearchTest PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
-
 # Include directories for test
 target_include_directories(SearchTest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -223,6 +204,14 @@ target_link_libraries(SearchTest PRIVATE
     spdlog::spdlog
     Catch2::Catch2WithMain
 )
+
+# Platform-specific libraries for SearchTest
+if(PLATFORM_WINDOWS)
+    target_link_libraries(SearchTest PRIVATE 
+        legacy_stdio_definitions
+        kernel32 user32 shell32 uuid ole32 oleaut32 advapi32 ws2_32
+    )
+endif()
 
 # Platform-specific file watcher test executables
 if(PLATFORM_MACOS)

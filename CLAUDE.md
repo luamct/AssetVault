@@ -48,35 +48,79 @@ AssetInventory is a C++ desktop application for managing game assets, built with
 ## Build Commands
 
 ### Unified vcpkg Build System
-The project now uses vcpkg for unified cross-platform dependency management with static linking for distribution builds.
+The project now uses vcpkg for unified cross-platform dependency management. 
+
+**Windows Note:** Use **Git Bash** for all commands to ensure cross-platform compatibility and avoid PowerShell/Command Prompt differences.
+
+#### Windows Setup (Git Bash)
 
 **Prerequisites:**
-- Install vcpkg: `git clone https://github.com/microsoft/vcpkg $HOME/vcpkg && $HOME/vcpkg/bootstrap-vcpkg.sh`
-- Set environment: `export VCPKG_ROOT="$HOME/vcpkg"`
+- Install vcpkg:
+  ```bash
+  git clone https://github.com/Microsoft/vcpkg.git /c/vcpkg
+  /c/vcpkg/bootstrap-vcpkg.bat
+  ```
+- Set environment variable:
+  ```bash
+  export VCPKG_ROOT="/c/vcpkg"
+  ```
+
+**Build Commands:**
+```bash
+# Configure with dynamic runtime (always run from project root)
+export VCPKG_ROOT="/c/vcpkg"
+cmake -G "Visual Studio 17 2022" -A x64 -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_TOOLCHAIN_FILE=/c/vcpkg/scripts/buildsystems/vcpkg.cmake -B build
+cmake --build build --config Release
+
+# Run application (from project root)
+./build/Release/AssetInventory.exe
+
+# Run unit tests (from project root)
+./build/Release/SearchTest.exe
+
+# Clean build artifacts
+rm -rf build/ vcpkg_installed/
+```
+
+**Note:** Windows users should use **Git Bash** for the best cross-platform development experience.
+
+#### macOS/Linux Setup
+
+**Prerequisites:**
+- Install vcpkg:
+  ```bash
+  git clone https://github.com/microsoft/vcpkg $HOME/vcpkg
+  $HOME/vcpkg/bootstrap-vcpkg.sh
+  ```
+- Set environment:
+  ```bash
+  export VCPKG_ROOT="$HOME/vcpkg"
+  ```
 
 **Build Commands:**
 ```bash
 # Configure with platform preset (always run from project root)
 export VCPKG_ROOT="$HOME/vcpkg"  # Set vcpkg path
-cmake --preset <preset-name>      # Configure with preset (outputs to build/)
-cmake --build build --config Release  # Build application
-
-# Available presets:
-# - windows-static: Windows build with static linking for distribution
-# - macos: macOS build with app bundle support
-# - linux-static: Linux build with static linking for AppImage
+cmake --preset macos              # or linux-static
+cmake --build build --config Release
 
 # Run application (from project root)
 ./build/AssetInventory.app/Contents/MacOS/AssetInventory  # macOS
-./build/AssetInventory.exe                                # Windows
 ./build/AssetInventory                                    # Linux
 
 # Run unit tests (from project root)
 ./build/SearchTest
+./build/FileWatcherTest
 
 # Clean build artifacts
 rm -rf build/
 ```
+
+**Available presets:**
+- `macos`: macOS build with app bundle support
+- `linux-static`: Linux build with static linking for AppImage
+
+**Note:** Windows builds use dynamic runtime (`x64-windows` triplet) for better compatibility.
 
 ### Directory Management
 - **Always stay in project root directory** when running commands
@@ -87,6 +131,26 @@ rm -rf build/
 
 ## Quick Start
 
+### Windows Quick Start (Git Bash)
+```bash
+# Clone the repository
+git clone https://github.com/luamct/AssetInventory.git
+cd AssetInventory
+
+# Set up vcpkg (one-time setup)
+git clone https://github.com/Microsoft/vcpkg.git /c/vcpkg
+/c/vcpkg/bootstrap-vcpkg.bat
+export VCPKG_ROOT="/c/vcpkg"
+
+# Configure and build with vcpkg (using dynamic runtime)
+cmake -G "Visual Studio 17 2022" -A x64 -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_TOOLCHAIN_FILE=/c/vcpkg/scripts/buildsystems/vcpkg.cmake -B build
+cmake --build build --config Release
+
+# Run the application
+./build/Release/AssetInventory.exe
+```
+
+### macOS/Linux Quick Start
 ```bash
 # Clone the repository
 git clone https://github.com/luamct/AssetInventory.git
@@ -98,11 +162,12 @@ git clone https://github.com/microsoft/vcpkg $HOME/vcpkg
 $HOME/vcpkg/bootstrap-vcpkg.sh
 
 # Configure and build with vcpkg
-cmake --preset macos  # or windows-static, linux-static
+cmake --preset macos  # or linux-static
 cmake --build build --config Release
 
 # Run the application
 ./build/AssetInventory.app/Contents/MacOS/AssetInventory  # macOS
+./build/AssetInventory                                    # Linux
 ```
 
 ### Adding Assets
@@ -192,10 +257,29 @@ Uses Catch2 header-only framework for fast, lightweight unit testing focused on 
 - **FileWatcherTest**: Cross-platform file system monitoring and event generation
 
 **Running Tests (Recommended - CTest):**
+
+*Windows (Git Bash):*
+```bash
+# Run all tests using preset (from project root directory)
+ctest --test-dir build --output-on-failure
+
+# Run tests in parallel for faster execution
+ctest --test-dir build --parallel 4
+
+# Run specific test suite
+ctest --test-dir build -R SearchTests        # Run only search tests
+
+# Verbose output with detailed information
+ctest --test-dir build --verbose
+
+# Run tests and stop on first failure
+ctest --test-dir build --stop-on-failure
+```
+
+*macOS/Linux:*
 ```bash
 # Run all tests using preset (from project root directory)
 ctest --preset macos              # macOS
-ctest --preset windows-static     # Windows  
 ctest --preset linux-static       # Linux
 
 # Alternative: Run from any directory by specifying build directory
@@ -219,6 +303,26 @@ ctest --list-presets
 ```
 
 **Running Individual Test Executables:**
+
+*Windows (Git Bash):*
+```bash
+# Build and run search tests
+./build/Release/SearchTest.exe
+
+# Run tests with specific tags
+./build/Release/SearchTest.exe "[search]"
+
+# Show verbose output
+./build/Release/SearchTest.exe -s
+
+# List all available tests
+./build/Release/SearchTest.exe --list-tests
+
+# Run with specific random seed (for debugging)
+./build/Release/SearchTest.exe --rng-seed 12345
+```
+
+*macOS/Linux:*
 ```bash
 # Build and run search tests
 ./build/SearchTest
