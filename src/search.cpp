@@ -429,4 +429,3 @@ void filter_assets(SearchState& search_state, const std::unordered_map<std::stri
   LOG_INFO("Search for \"{}\" completed in {:.1f} ms. Filtered {}/{} assets",
     search_state.buffer, duration.count() / 1000.0, filtered_count, total_assets);
 }
-

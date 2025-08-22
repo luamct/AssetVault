@@ -363,6 +363,7 @@ ctest --list-presets
 - **Path Normalization**: Handles cross-platform path differences (/private prefix on macOS)
 - **Thread Safety**: Tests validate thread-safe operations and mutex usage
 - **Performance Validation**: O(1) vs O(n) lookup performance verification
+- **FSEvents Testing**: macOS-specific file watcher tests covering atomic saves, metadata filtering, and directory operations
 
 **Adding New Tests:**
 1. Add to existing test files: `tests/test_search.cpp`, `tests/test_file_watcher.cpp`
@@ -504,8 +505,11 @@ Info.plist.in               # macOS app bundle template
 
 ### File Event Processing Guidelines
 - **Created events**: Generated when files exist in filesystem but not in database
-- **Modified events**: Generated when files exist in both but have newer timestamps
+- **Modified events**: Generated when files exist in both but have newer timestamps, OR when atomic save pattern detected
 - **Deleted events**: Generated when files exist in database but not in filesystem
+- **Atomic save detection**: macOS apps (Preview, TextEdit) use flag combination `Renamed + IsFile + XattrMod + Cloned (0x418800)` - these generate Modified events
+- **Metadata-only renames**: Events where file exists and is tracked are ignored (no spurious delete/create pairs)
+- **Rename filtering**: Only generate events for actual moves - `Created` when file exists AND not tracked, `Deleted` when file doesn't exist AND is tracked
 - **Event publishing timing**: Include debug output for event publishing performance measurement
 - **FileEvent constructor**: Always use parameterized constructor `FileEvent(type, path)` - no default constructor available
 
@@ -533,6 +537,8 @@ Info.plist.in               # macOS app bundle template
 - **Performance**: Initial scan optimized, no more 110-second delays on large asset directories
 - **Distribution ready**: Static linking ensures self-contained executables
 - **Warning-free builds**: Resolved macOS version compatibility warnings by updating deployment target to 15.0, suppressed deprecated API warnings with pragmas
+- **macOS atomic save handling**: FSEvents properly detects and processes atomic saves from macOS apps as Modified events instead of false deletions
+- **Enhanced file watcher tests**: Comprehensive test coverage including atomic saves, metadata filtering, and temporary file handling
 
 ### Supported Asset Types
 - **Texture**: .png, .jpg, .jpeg, .gif, .bmp, .tga, .hdr, .svg (with pre-rasterization)

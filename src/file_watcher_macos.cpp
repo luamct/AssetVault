@@ -47,6 +47,54 @@ class MacOSFileWatcher : public FileWatcherImpl {
   
   // Store this instance for the callback
   static MacOSFileWatcher* current_instance;
+  
+  // Helper method to format FSEvents flags into readable string
+  static std::string format_fsevents_flags(FSEventStreamEventFlags flags) {
+    std::string flag_names;
+    if (flags & kFSEventStreamEventFlagItemCreated) flag_names += "Created ";
+    if (flags & kFSEventStreamEventFlagItemRemoved) flag_names += "Removed ";
+    if (flags & kFSEventStreamEventFlagItemModified) flag_names += "Modified ";
+    if (flags & kFSEventStreamEventFlagItemRenamed) flag_names += "Renamed ";
+    if (flags & kFSEventStreamEventFlagItemIsDir) flag_names += "IsDir ";
+    if (flags & kFSEventStreamEventFlagItemIsFile) flag_names += "IsFile ";
+    if (flags & kFSEventStreamEventFlagItemIsSymlink) flag_names += "IsSymlink ";
+    if (flags & kFSEventStreamEventFlagItemIsHardlink) flag_names += "IsHardlink ";
+    if (flags & kFSEventStreamEventFlagItemIsLastHardlink) flag_names += "IsLastHardlink ";
+    if (flags & kFSEventStreamEventFlagItemFinderInfoMod) flag_names += "FinderInfoMod ";
+    if (flags & kFSEventStreamEventFlagItemChangeOwner) flag_names += "ChangeOwner ";
+    if (flags & kFSEventStreamEventFlagItemXattrMod) flag_names += "XattrMod ";
+    if (flags & kFSEventStreamEventFlagItemInodeMetaMod) flag_names += "InodeMetaMod ";
+    if (flags & kFSEventStreamEventFlagItemCloned) flag_names += "Cloned ";
+    if (flags & kFSEventStreamEventFlagOwnEvent) flag_names += "OwnEvent ";
+    if (flags & kFSEventStreamEventFlagMustScanSubDirs) flag_names += "MustScanSubDirs ";
+    if (flags & kFSEventStreamEventFlagUserDropped) flag_names += "UserDropped ";
+    if (flags & kFSEventStreamEventFlagKernelDropped) flag_names += "KernelDropped ";
+    if (flags & kFSEventStreamEventFlagEventIdsWrapped) flag_names += "EventIdsWrapped ";
+    if (flags & kFSEventStreamEventFlagHistoryDone) flag_names += "HistoryDone ";
+    if (flags & kFSEventStreamEventFlagRootChanged) flag_names += "RootChanged ";
+    if (flags & kFSEventStreamEventFlagMount) flag_names += "Mount ";
+    if (flags & kFSEventStreamEventFlagUnmount) flag_names += "Unmount ";
+    
+    // Remove trailing space
+    if (!flag_names.empty() && flag_names.back() == ' ') {
+      flag_names.pop_back();
+    }
+    
+    return flag_names;
+  }
+  
+  // Helper method to detect atomic save operations
+  static bool is_atomic_save(FSEventStreamEventFlags flags) {
+    // Check for the exact combination: Renamed + IsFile + XattrMod + Cloned
+    const FSEventStreamEventFlags ATOMIC_SAVE_FLAGS = 
+      kFSEventStreamEventFlagItemRenamed |
+      kFSEventStreamEventFlagItemIsFile |
+      kFSEventStreamEventFlagItemXattrMod |
+      kFSEventStreamEventFlagItemCloned;
+    
+    // Must have all these flags set
+    return (flags & ATOMIC_SAVE_FLAGS) == ATOMIC_SAVE_FLAGS;
+  }
 
  public:
   MacOSFileWatcher()
@@ -166,53 +214,56 @@ class MacOSFileWatcher : public FileWatcherImpl {
         }
       }
       
-      // Debug: Log all flags for this event
-      LOG_DEBUG("FSEvents: Event for '{}' with flags: 0x{:X} (Created:{} Removed:{} Modified:{} Renamed:{} IsDir:{})",
-                relative_path, flags,
-                (flags & kFSEventStreamEventFlagItemCreated) ? "Y" : "N",
-                (flags & kFSEventStreamEventFlagItemRemoved) ? "Y" : "N", 
-                (flags & kFSEventStreamEventFlagItemModified) ? "Y" : "N",
-                (flags & kFSEventStreamEventFlagItemRenamed) ? "Y" : "N",
-                (flags & kFSEventStreamEventFlagItemIsDir) ? "Y" : "N");
+      // Debug: Log only positive flags for this event
+      std::string flag_names = format_fsevents_flags(flags);
+      LOG_DEBUG("FSEvents: '{}' [0x{:X}] {}", relative_path, flags, flag_names);
       
       // Check Renamed flag first as it can be combined with other flags
       if (flags & kFSEventStreamEventFlagItemRenamed) {
-        // A rename event means either:
-        // 1. File/Directory moved FROM this path (if asset exists in DB) -> Deleted
-        // 2. File/Directory moved TO this path (if asset doesn't exist in DB) -> Created
-        // 3. Both, which is basically a rename within this path -> Deleted + Created
-        
-        if (watcher->assets_ && watcher->assets_mutex_) {
-          bool is_tracked;
-          bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
+        // Check if this is an atomic save operation (file modified via temp file swap)
+        if (is_atomic_save(flags)) {
+          // This is an atomic save - treat as a modification
+          watcher->add_pending_event(FileEventType::Modified, file_path);
+        } else if (watcher->assets_ && watcher->assets_mutex_) {
+          // Not an atomic save - handle as a real rename/move
+          // Only trigger events for actual moves, not metadata-only renames:
+          // - Created: file exists AND is NOT tracked (moved in)
+          // - Deleted: file doesn't exist AND IS tracked (moved out)
+          // - Otherwise: ignore (metadata change or already handled)
           
-          // Check if tracked in a separate scope to release the lock before calling handle_directory_moved_out
+          bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
+          bool file_exists = fs::exists(file_path);
+          bool is_tracked;
+          
+          // Check if tracked in database
           {
             std::lock_guard<std::mutex> lock(*watcher->assets_mutex_);
             is_tracked = watcher->assets_->find(file_path.u8string()) != watcher->assets_->end();
           }
           
-          if (is_tracked) {
-            // Asset was tracked at this path - file/directory moved away/deleted
+          if (file_exists && !is_tracked) {
+            // File exists and is not tracked - it was moved TO this path
+            if (is_directory) {
+              // Directory moved in - need to scan and emit events for all contained files
+              watcher->scan_and_emit_directory_contents(file_path);
+            } else {
+              // Single file moved in
+              watcher->add_pending_event(FileEventType::Created, file_path);
+            }
+          } else if (!file_exists && is_tracked) {
+            // File doesn't exist but is tracked - it was moved FROM this path
             if (is_directory) {
               // Directory moved out - emit deletion events for all tracked child assets
               watcher->handle_directory_moved_out(file_path);
             } else {
+              // Single file moved out
               watcher->add_pending_event(FileEventType::Deleted, file_path);
             }
           } else {
-            // Asset wasn't tracked at this path - file/directory moved here
-            if (is_directory && fs::exists(file_path)) {
-              // Directory moved in - need to scan and emit events for all contained files
-              watcher->scan_and_emit_directory_contents(file_path);
-            } else if (!is_directory) {
-              // Single file moved in
-              watcher->add_pending_event(FileEventType::Created, file_path);
-            }
+            // File exists and is tracked (metadata change) OR doesn't exist and isn't tracked (temp file)
+            // In both cases, we don't need to generate any events
+            LOG_DEBUG("FSEvents: Ignoring rename event for '{}' (exists:{}, tracked:{})", relative_path, file_exists, is_tracked);
           }
-        } else {
-          // No assets provided - fall back to simple rename event
-          watcher->add_pending_event(FileEventType::Renamed, file_path);
         }
       } else if (flags & kFSEventStreamEventFlagItemRemoved) {
         // Handle removal events - this should come before Created check
