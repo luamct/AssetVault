@@ -1062,8 +1062,12 @@ int main() {
         // Audio handling for sound assets
 
         // Load the audio file if it's different from the currently loaded one
-        if (selected_asset.full_path.u8string() != audio_manager.get_current_file()) {
-          bool loaded = audio_manager.load_audio(selected_asset.full_path.u8string());
+        const std::string asset_path = selected_asset.full_path.u8string();
+        const std::string current_file = audio_manager.get_current_file();
+        
+        if (asset_path != current_file) {
+          LOG_DEBUG("Main: Audio file changed from '{}' to '{}'", current_file, asset_path);
+          bool loaded = audio_manager.load_audio(asset_path);
           if (loaded) {
             // Set initial volume to match our slider default
             audio_manager.set_volume(0.5f);
@@ -1071,6 +1075,8 @@ int main() {
             if (search_state.auto_play_audio) {
               audio_manager.play();
             }
+          } else {
+            LOG_DEBUG("Main: Failed to load audio, current_file is now '{}'", audio_manager.get_current_file());
           }
         }
 

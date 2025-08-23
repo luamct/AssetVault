@@ -67,9 +67,9 @@ The project now uses vcpkg for unified cross-platform dependency management.
 
 **Build Commands:**
 ```bash
-# Configure with dynamic runtime (always run from project root)
+# Configure and build (always run from project root)
 export VCPKG_ROOT="/c/vcpkg"
-cmake -G "Visual Studio 17 2022" -A x64 -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_TOOLCHAIN_FILE=/c/vcpkg/scripts/buildsystems/vcpkg.cmake -B build
+cmake --preset windows
 cmake --build build --config Release
 
 # Run application (from project root)
@@ -117,10 +117,9 @@ rm -rf build/
 ```
 
 **Available presets:**
+- `windows`: Windows build with dynamic runtime
 - `macos`: macOS build with app bundle support
 - `linux-static`: Linux build with static linking for AppImage
-
-**Note:** Windows builds use dynamic runtime (`x64-windows` triplet) for better compatibility.
 
 ### Directory Management
 - **Always stay in project root directory** when running commands
@@ -142,8 +141,8 @@ git clone https://github.com/Microsoft/vcpkg.git /c/vcpkg
 /c/vcpkg/bootstrap-vcpkg.bat
 export VCPKG_ROOT="/c/vcpkg"
 
-# Configure and build with vcpkg (using dynamic runtime)
-cmake -G "Visual Studio 17 2022" -A x64 -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_TOOLCHAIN_FILE=/c/vcpkg/scripts/buildsystems/vcpkg.cmake -B build
+# Configure and build with vcpkg
+cmake --preset windows
 cmake --build build --config Release
 
 # Run the application

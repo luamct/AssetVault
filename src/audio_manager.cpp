@@ -1,9 +1,23 @@
 #include "audio_manager.h"
 #include "logger.h"
+#include <algorithm>
+#include <cctype>
 
-// Include miniaudio implementation
+// Enable OGG/Vorbis support with stb_vorbis
+// Include stb_vorbis header so miniaudio can detect it
+#define STB_VORBIS_HEADER_ONLY
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4701) // potentially uninitialized local variable
+#endif
+#include "miniaudio/stb_vorbis.c"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+// Include miniaudio implementation - it will detect stb_vorbis is available
 #define MINIAUDIO_IMPLEMENTATION
-#include "miniaudio.h"
+#include "miniaudio/miniaudio.h"
 
 AudioManager::AudioManager()
   : engine_(nullptr)
@@ -81,10 +95,19 @@ bool AudioManager::load_audio(const std::string& filepath) {
   // Allocate sound
   current_sound_ = new ma_sound;
 
-  // Use flags for better streaming performance
-  ma_uint32 flags = MA_SOUND_FLAG_STREAM | MA_SOUND_FLAG_NO_PITCH | MA_SOUND_FLAG_NO_SPATIALIZATION;
+  // Use flags for better performance, but not streaming for OGG files to allow duration detection
+  ma_uint32 flags = MA_SOUND_FLAG_NO_PITCH | MA_SOUND_FLAG_NO_SPATIALIZATION;
 
-  // Load the sound file with streaming to reduce memory usage and improve performance
+  // Check if this is an OGG file - if so, don't use streaming to allow duration detection
+  std::string extension = filepath.substr(filepath.find_last_of('.'));
+  std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+
+  // Use streaming for larger files except OGG where we need duration
+  if (extension != ".ogg") {
+    flags |= MA_SOUND_FLAG_STREAM;
+  }
+
+  // Load the sound file (streaming disabled for OGG to allow duration detection)
   ma_result result = ma_sound_init_from_file(engine_, filepath.c_str(), flags, NULL, NULL, current_sound_);
   if (result != MA_SUCCESS) {
     LOG_ERROR("Failed to load audio file: {}. Error: {}", filepath, static_cast<int>(result));
