@@ -5,10 +5,10 @@
 #include <chrono>
 #include <atomic>
 #include <optional>
+#include <map>
 #include <mutex>
 #include <unordered_map>
 #include "asset.h"
-#include "3d.h"
 
 // Token types for search query parsing
 enum class SearchTokenType {
@@ -110,7 +110,6 @@ struct SearchState {
 
   // Model preview state
   int model_preview_row = -1;    // Which row has the expanded preview
-  Model current_model;
 
   // Audio playback settings
   bool auto_play_audio = true;
@@ -135,6 +134,71 @@ SearchQuery parse_search_query(const std::string& search_string,
 // Function to check if an asset matches the search query
 bool asset_matches_search(const Asset& asset, const SearchQuery& query);
 
-// Function to filter assets based on search query
-void filter_assets(SearchState& search_state, const std::unordered_map<std::string, Asset>& assets, std::mutex& assets_mutex);
+// Forward declarations
+class AssetDatabase;
+class SearchIndex;
+
+// Function to filter assets based on search query using search index
+void filter_assets(SearchState& search_state, const std::map<std::string, Asset>& assets, 
+                  std::mutex& assets_mutex, SearchIndex& search_index);
+
+// Entry in the sorted token index
+struct TokenEntry {
+    std::string token;
+    std::vector<uint32_t> asset_ids;  // Sorted for efficient intersection
+    
+    TokenEntry() = default;
+    TokenEntry(const std::string& t) : token(t) {}
+    
+    // For binary search in sorted vector
+    bool operator<(const TokenEntry& other) const {
+        return token < other.token;
+    }
+};
+
+// Main search index class
+class SearchIndex {
+public:
+    explicit SearchIndex(AssetDatabase* database);
+    
+    // Index management
+    bool build_from_database();
+    bool load_from_database();
+    bool save_to_database() const;
+    
+    // Asset operations
+    void add_asset(uint32_t asset_id, const Asset& asset);
+    void remove_asset(uint32_t asset_id);
+    void update_asset(uint32_t asset_id, const Asset& asset);
+    
+    // Search operations
+    std::vector<uint32_t> search_prefix(const std::string& prefix) const;
+    std::vector<uint32_t> search_terms(const std::vector<std::string>& terms) const;
+    
+    // Utilities
+    void clear();
+    size_t get_token_count() const;
+    size_t get_memory_usage() const;
+    
+    // Debug utility to print all tokens (for testing)
+    void debug_print_tokens() const;
+    
+private:
+    AssetDatabase* database_;
+    std::vector<TokenEntry> sorted_tokens_;  // Binary searchable
+    
+    // Tokenization
+    std::vector<std::string> tokenize_asset(const Asset& asset) const;
+    std::vector<std::string> tokenize_string(const std::string& text) const;
+    bool is_valid_token(const std::string& token) const;
+    
+    // Index operations
+    void rebuild_sorted_index();
+    std::vector<uint32_t> intersect_results(const std::vector<std::vector<uint32_t>>& results) const;
+    
+    // Database operations
+    bool save_token_to_db(const std::string& token, uint32_t& token_id) const;
+    bool save_token_assets_to_db(uint32_t token_id, const std::vector<uint32_t>& asset_ids) const;
+    bool clear_database_index() const;
+};
 

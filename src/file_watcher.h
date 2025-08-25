@@ -3,6 +3,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -35,7 +36,7 @@ struct FileEvent {
 using FileEventCallback = std::function<void(const FileEvent&)>;
 
 // Asset map type alias
-using AssetMap = std::unordered_map<std::string, Asset>;
+using AssetMap = std::map<std::string, Asset>;
 
 // Main file watcher class
 class FileWatcher {

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <filesystem>
+#include <map>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -15,12 +16,14 @@
 
 // Forward declarations
 class TextureManager;
+class SearchIndex;
 
 // Unified event processor for both initial scan and runtime file events
 class EventProcessor {
 public:
-    EventProcessor(AssetDatabase& database, std::unordered_map<std::string, Asset>& assets,
-        std::atomic<bool>& search_update_needed, TextureManager& texture_manager, size_t batch_size = 100);
+    EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
+        std::atomic<bool>& search_update_needed, TextureManager& texture_manager, 
+        SearchIndex& search_index, size_t batch_size = 100);
     ~EventProcessor();
 
     // Start/stop the background processing thread
@@ -81,9 +84,10 @@ private:
 
     // References to global state
     AssetDatabase& database_;
-    std::unordered_map<std::string, Asset>& assets_;
+    std::map<std::string, Asset>& assets_;
     std::atomic<bool>& search_update_needed_;
     TextureManager& texture_manager_;
+    SearchIndex& search_index_;
 
     // Processing thread and synchronization
     std::thread processing_thread_;

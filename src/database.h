@@ -20,7 +20,7 @@ public:
   bool drop_tables();
 
   // Asset operations
-  bool insert_asset(const Asset& file);
+  bool insert_asset(Asset& file);  // Non-const to update ID after insertion
   bool update_asset(const Asset& file);
   bool delete_asset(const std::string& full_path);
   bool delete_assets_by_directory(const std::string& directory_path);
@@ -39,7 +39,7 @@ public:
   uint64_t get_size_by_type(AssetType type);
 
   // Batch operations
-  bool insert_assets_batch(const std::vector<Asset>& files);
+  bool insert_assets_batch(std::vector<Asset>& files);  // Non-const to update IDs after insertion
   bool update_assets_batch(const std::vector<Asset>& files);
   bool delete_assets_batch(const std::vector<std::string>& paths);
   bool clear_all_assets();

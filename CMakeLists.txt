@@ -145,7 +145,6 @@ target_include_directories(AssetInventory PRIVATE
 
 # Link libraries
 target_link_libraries(AssetInventory PRIVATE
-    glfw
     OpenGL::GL
     unofficial::sqlite3::sqlite3
     imgui
@@ -179,13 +178,28 @@ elseif(PLATFORM_MACOS)
     )
 endif()
 
+# Create a shared library for test utilities to avoid recompilation
+add_library(AssetInventoryCore STATIC
+    src/asset.cpp
+    src/database.cpp
+    src/search.cpp
+    src/utils.cpp
+)
+
+target_include_directories(AssetInventoryCore PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/external
+)
+
+target_link_libraries(AssetInventoryCore PUBLIC
+    unofficial::sqlite3::sqlite3
+    spdlog::spdlog
+)
+
 # Unit test executable
 add_executable(SearchTest
     tests/test_search.cpp
     tests/test_helpers.cpp
-    src/search.cpp
-    src/asset.cpp
-    src/utils.cpp
 )
 
 # Include directories for test
@@ -199,10 +213,10 @@ target_include_directories(SearchTest PRIVATE
 
 # Link libraries for test
 target_link_libraries(SearchTest PRIVATE 
+    AssetInventoryCore
     glad 
     assimp::assimp
     glm::glm
-    spdlog::spdlog
     Catch2::Catch2WithMain
 )
 
@@ -218,8 +232,6 @@ endif()
 if(PLATFORM_MACOS)
     add_executable(FileWatcherMacOSTest
         tests/test_file_watcher_macos.cpp
-        src/asset.cpp
-        src/utils.cpp
         ${FILE_WATCHER_SOURCES}
     )
 
@@ -234,10 +246,10 @@ if(PLATFORM_MACOS)
 
     # Link libraries for macOS file watcher test
     target_link_libraries(FileWatcherMacOSTest PRIVATE
+        AssetInventoryCore
         glad
         assimp::assimp
         glm::glm
-        spdlog::spdlog
         Catch2::Catch2WithMain
         ${COREFOUNDATION_LIBRARY}
         ${CORESERVICES_LIBRARY}
@@ -247,6 +259,58 @@ endif()
 # Enable testing
 enable_testing()
 add_test(NAME SearchTests COMMAND SearchTest)
+
+# Add Database test executable
+add_executable(DbTest
+    tests/test_db.cpp
+)
+
+target_include_directories(DbTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
+target_link_libraries(DbTest PRIVATE
+    AssetInventoryCore
+    Catch2::Catch2WithMain
+)
+
+add_test(NAME DbTests COMMAND DbTest)
+
+# Add Search Index test executable
+add_executable(SearchIndexTest
+    tests/test_search_index.cpp
+)
+
+target_include_directories(SearchIndexTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
+target_link_libraries(SearchIndexTest PRIVATE
+    AssetInventoryCore
+    Catch2::Catch2WithMain
+)
+
+add_test(NAME SearchIndexTests COMMAND SearchIndexTest)
+
+# Add EventProcessor test executable
+add_executable(EventProcessorTest
+    tests/test_event_processor.cpp
+)
+
+target_include_directories(EventProcessorTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
+target_link_libraries(EventProcessorTest PRIVATE
+    AssetInventoryCore
+    Catch2::Catch2WithMain
+)
+
+add_test(NAME EventProcessorTests COMMAND EventProcessorTest)
+
 if(PLATFORM_MACOS)
     add_test(NAME FileWatcherMacOSTests COMMAND FileWatcherMacOSTest)
 endif()

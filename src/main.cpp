@@ -6,6 +6,7 @@
 #include <chrono>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -365,7 +366,7 @@ void on_file_event(const FileEvent& event) {
 }
 
 // Perform initial scan and generate events for EventProcessor
-void scan_for_changes(AssetDatabase& database, std::unordered_map<std::string, Asset>& assets, EventProcessor* event_processor) {
+void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& assets, EventProcessor* event_processor) {
   namespace fs = std::filesystem;
   auto scan_start = std::chrono::high_resolution_clock::now();
 
@@ -481,12 +482,14 @@ int main() {
   LOG_INFO("AssetInventory application starting...");
 
   // Local variables
-  std::unordered_map<std::string, Asset> assets;
+  std::map<std::string, Asset> assets;
   AssetDatabase database;
   FileWatcher file_watcher;
   TextureManager texture_manager;
   AudioManager audio_manager;
   SearchState search_state;
+  Model current_model;  // 3D model preview state
+  SearchIndex search_index(&database);  // Search index for fast lookups
 
   // Initialize database
   if (!database.initialize(Config::DATABASE_PATH)) {
@@ -500,8 +503,16 @@ int main() {
     database.clear_all_assets();
   }
 
+  // Initialize search index from database
+  LOG_INFO("Initializing search index...");
+  if (!search_index.load_from_database()) {
+    LOG_ERROR("Failed to initialize search index");
+    return -1;
+  }
+  LOG_INFO("Search index initialized with {} tokens", search_index.get_token_count());
+
   // Initialize unified event processor for both initial scan and runtime events
-  g_event_processor = new EventProcessor(database, assets, search_state.update_needed, texture_manager, Config::EVENT_PROCESSOR_BATCH_SIZE);
+  g_event_processor = new EventProcessor(database, assets, search_state.update_needed, texture_manager, search_index, Config::EVENT_PROCESSOR_BATCH_SIZE);
   if (!g_event_processor->start()) {
     LOG_ERROR("Failed to start EventProcessor");
     return -1;
@@ -618,7 +629,7 @@ int main() {
       int fb_height = static_cast<int>(avail_height);
 
       // Render the 3D preview
-      render_3d_preview(fb_width, fb_height, search_state.current_model, texture_manager);
+      render_3d_preview(fb_width, fb_height, current_model, texture_manager);
     }
 
     // Process texture invalidation queue (thread-safe, once per frame)
@@ -632,7 +643,7 @@ int main() {
 
       if (elapsed >= Config::SEARCH_DEBOUNCE_MS) {
         // Execute the search
-        filter_assets(search_state, assets, g_event_processor->get_assets_mutex());
+        filter_assets(search_state, assets, g_event_processor->get_assets_mutex(), search_index);
         search_state.last_buffer = search_state.buffer;
         search_state.pending_search = false;
       }
@@ -646,7 +657,7 @@ int main() {
     // Check if search needs to be updated due to asset changes
     if (search_state.update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
-      filter_assets(search_state, assets, g_event_processor->get_assets_mutex());
+      filter_assets(search_state, assets, g_event_processor->get_assets_mutex(), search_index);
     }
 
     // Create main window
@@ -687,7 +698,7 @@ int main() {
 
     if (enter_pressed) {
       // Immediate search on Enter key
-      filter_assets(search_state, assets, g_event_processor->get_assets_mutex());
+      filter_assets(search_state, assets, g_event_processor->get_assets_mutex(), search_index);
       search_state.last_buffer = current_input;
       search_state.input_tracking = current_input;
       search_state.pending_search = false;
@@ -748,7 +759,7 @@ int main() {
 
     // If any toggle changed, trigger immediate search
     if (any_toggle_changed) {
-      filter_assets(search_state, assets, g_event_processor->get_assets_mutex());
+      filter_assets(search_state, assets, g_event_processor->get_assets_mutex(), search_index);
       search_state.pending_search = false;
     }
 
@@ -973,12 +984,12 @@ int main() {
       // Check if selected asset is a model
       if (selected_asset.type == AssetType::_3D && texture_manager.is_preview_initialized()) {
         // Load the model if it's different from the currently loaded one
-        if (selected_asset.full_path.u8string() != search_state.current_model.path) {
+        if (selected_asset.full_path.u8string() != current_model.path) {
           LOG_DEBUG("=== Loading Model in Main ===");
           LOG_DEBUG("Selected asset: {}", selected_asset.full_path.u8string());
           Model model;
           if (load_model(selected_asset.full_path.u8string(), model, texture_manager)) {
-            set_current_model(search_state.current_model, model);
+            set_current_model(current_model, model);
             LOG_DEBUG("Model loaded successfully in main");
           }
           else {
@@ -988,7 +999,7 @@ int main() {
         }
 
         // Get the current model for displaying info
-        const Model& current_model = get_current_model(search_state.current_model);
+        const Model& current_model_ref = get_current_model(current_model);
 
         // 3D Preview Viewport for models
         ImVec2 viewport_size(avail_width, avail_height);
@@ -1034,10 +1045,10 @@ int main() {
         ImGui::Text("%s", format_file_size(selected_asset.size).c_str());
 
         // Display vertex and face counts from the loaded model
-        if (current_model.loaded) {
+        if (current_model_ref.loaded) {
           int vertex_count =
-            static_cast<int>(current_model.vertices.size() / 8);             // 8 floats per vertex (3 pos + 3 normal + 2 tex)
-          int face_count = static_cast<int>(current_model.indices.size() / 3); // 3 indices per triangle
+            static_cast<int>(current_model_ref.vertices.size() / 8);             // 8 floats per vertex (3 pos + 3 normal + 2 tex)
+          int face_count = static_cast<int>(current_model_ref.indices.size() / 3); // 3 indices per triangle
 
           ImGui::TextColored(Theme::TEXT_LABEL, "Vertices: ");
           ImGui::SameLine();
@@ -1362,7 +1373,7 @@ int main() {
   texture_manager.cleanup();
 
   // Cleanup 3D preview resources
-  cleanup_model(search_state.current_model);
+  cleanup_model(current_model);
 
   // Cleanup
   ImGui_ImplOpenGL3_Shutdown();

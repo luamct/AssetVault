@@ -13,6 +13,7 @@ enum class AssetType { _2D, _3D, Audio, Font, Shader, Document, Archive, Directo
 
 // Asset information struct
 struct Asset {
+  uint32_t id = 0;           // Unique database ID (0 means not yet assigned)
   std::string name;          // File name (without path)
   std::string extension;     // File extension (lowercase)
   std::filesystem::path full_path; // Full path to the file
@@ -21,7 +22,7 @@ struct Asset {
   bool is_directory = false; // Whether this is a directory
   AssetType type;            // Asset type enum
 
-  Asset() : size(0), type(AssetType::Unknown) {}
+  Asset() : id(0), size(0), type(AssetType::Unknown) {}
 };
 
 // Asset type utility functions

@@ -68,17 +68,39 @@ bool AssetDatabase::create_tables() {
         CREATE INDEX IF NOT EXISTS idx_assets_full_path ON assets(full_path);
         CREATE INDEX IF NOT EXISTS idx_assets_asset_type ON assets(asset_type);
         CREATE INDEX IF NOT EXISTS idx_assets_extension ON assets(extension);
+        
+        -- Search index tables
+        CREATE TABLE IF NOT EXISTS tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT UNIQUE NOT NULL
+        );
+        
+        CREATE TABLE IF NOT EXISTS token_assets (
+            token_id INTEGER NOT NULL,
+            asset_id INTEGER NOT NULL,
+            PRIMARY KEY (token_id, asset_id),
+            FOREIGN KEY (token_id) REFERENCES tokens(id) ON DELETE CASCADE,
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens(token);
+        CREATE INDEX IF NOT EXISTS idx_token_assets_token ON token_assets(token_id);
+        CREATE INDEX IF NOT EXISTS idx_token_assets_asset ON token_assets(asset_id);
     )";
 
   return execute_sql(create_table_sql);
 }
 
 bool AssetDatabase::drop_tables() {
-  const std::string drop_table_sql = "DROP TABLE IF EXISTS assets;";
+  const std::string drop_table_sql = R"(
+    DROP TABLE IF EXISTS token_assets;
+    DROP TABLE IF EXISTS tokens;
+    DROP TABLE IF EXISTS assets;
+  )";
   return execute_sql(drop_table_sql);
 }
 
-bool AssetDatabase::insert_asset(const Asset& file) {
+bool AssetDatabase::insert_asset(Asset& file) {
   const std::string sql = R"(
         INSERT OR REPLACE INTO assets
         (name, extension, full_path, size, last_modified, is_directory, asset_type, updated_at)
@@ -96,6 +118,9 @@ bool AssetDatabase::insert_asset(const Asset& file) {
     success = (rc == SQLITE_DONE);
     if (!success) {
       print_sqlite_error("inserting asset");
+    } else {
+      // Get the auto-generated ID
+      file.id = static_cast<uint32_t>(sqlite3_last_insert_rowid(db_));
     }
   }
 
@@ -368,7 +393,7 @@ uint64_t AssetDatabase::get_size_by_type(AssetType type) {
   return total_size;
 }
 
-bool AssetDatabase::insert_assets_batch(const std::vector<Asset>& files) {
+bool AssetDatabase::insert_assets_batch(std::vector<Asset>& files) {
   if (files.empty()) {
     return true;
   }
@@ -379,7 +404,7 @@ bool AssetDatabase::insert_assets_batch(const std::vector<Asset>& files) {
   }
 
   bool success = true;
-  for (const auto& file : files) {
+  for (auto& file : files) {  // Non-const to allow ID updates
     if (!insert_asset(file)) {
       success = false;
       break;
@@ -524,6 +549,7 @@ bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const Asset&
 Asset AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
   Asset file;
 
+  file.id = sqlite3_column_int(stmt, 0);  // ID is the first column
   file.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
   file.extension = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
 

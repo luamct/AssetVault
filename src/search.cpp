@@ -1,16 +1,17 @@
 #include "search.h"
+#include "database.h"
 #include "utils.h"
 #include "config.h"
 #include "event_processor.h"
 #include "logger.h"
 #include "asset.h"
-#include "imgui.h"
-#include "theme.h"
 #include <sstream>
+#include <iostream>
 #include <algorithm>
 #include <mutex>
 #include <regex>
 #include <unordered_set>
+#include <cctype>
 
 // SearchTokenizer Implementation
 SearchTokenizer::SearchTokenizer(const std::string& input)
@@ -373,7 +374,8 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   return true;
 }
 
-void filter_assets(SearchState& search_state, const std::unordered_map<std::string, Asset>& assets, std::mutex& assets_mutex) {
+void filter_assets(SearchState& search_state, const std::map<std::string, Asset>& assets, 
+                   std::mutex& assets_mutex, SearchIndex& search_index) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   search_state.filtered_assets.clear();
@@ -400,19 +402,102 @@ void filter_assets(SearchState& search_state, const std::unordered_map<std::stri
   std::lock_guard<std::mutex> lock(assets_mutex);
 
   total_assets = assets.size();
-  LOG_TRACE("Filtering {} assets with query: '{}', type filters count: {}, path filters count: {}",
+  LOG_TRACE("Using SearchIndex for {} assets with query: '{}', type filters count: {}, path filters count: {}",
     total_assets, search_state.buffer, query.type_filters.size(), query.path_filters.size());
 
+  // Create ID-to-asset lookup map for efficient candidate lookup
+  std::unordered_map<uint32_t, const Asset*> id_to_asset;
   for (const auto& [key, asset] : assets) {
+    if (asset.id > 0) {
+      id_to_asset[asset.id] = &asset;
+    }
+  }
+
+  // Use search index for text queries, fall back to full scan for filter-only queries
+  std::vector<uint32_t> candidate_ids;
+  
+  if (!query.text_query.empty()) {
+    // Use search index for text search (O(log n) performance)
+    std::vector<std::string> search_terms;
+    std::stringstream ss(to_lowercase(query.text_query));
+    std::string term;
+    while (ss >> term) {
+      if (term.length() > 2) {  // Only use terms longer than 2 characters
+        search_terms.push_back(term);
+      }
+    }
+    
+    if (!search_terms.empty()) {
+      candidate_ids = search_index.search_terms(search_terms);
+      LOG_TRACE("Search index returned {} candidates for {} valid terms", candidate_ids.size(), search_terms.size());
+    } else {
+      // All search terms were too short - ignore them and show all assets like empty search
+      LOG_TRACE("All search terms too short (<=2 chars), treating as empty search");
+      for (const auto& [key, asset] : assets) {
+        if (asset.id > 0) {
+          candidate_ids.push_back(asset.id);
+        }
+      }
+    }
+  } else {
+    // No text query - show all assets for type/path filters
+    LOG_TRACE("No text query, showing all assets");
+    for (const auto& [key, asset] : assets) {
+      if (asset.id > 0) {  // Only include assets with valid IDs
+        candidate_ids.push_back(asset.id);
+      }
+    }
+  }
+
+  // Convert asset IDs to Asset objects and apply remaining filters
+  for (uint32_t asset_id : candidate_ids) {
+    // Efficient O(1) lookup using ID-to-asset map
+    auto it = id_to_asset.find(asset_id);
+    if (it == id_to_asset.end()) {
+      continue; // Asset ID not found in current assets (might be stale index)
+    }
+    
+    const Asset& asset = *it->second;
+    
     // Skip ignored asset types
     if (Config::IGNORED_ASSET_TYPES.count(asset.type) > 0) {
       continue;
     }
 
-    if (asset_matches_search(asset, query)) {
-      search_state.filtered_assets.push_back(asset);
-      filtered_count++;
+    // Apply type filters (if any)
+    if (!query.type_filters.empty()) {
+      bool type_matches = false;
+      for (AssetType filter_type : query.type_filters) {
+        if (asset.type == filter_type) {
+          type_matches = true;
+          break;
+        }
+      }
+      if (!type_matches) {
+        continue;
+      }
     }
+
+    // Apply path filters (if any)
+    if (!query.path_filters.empty()) {
+      bool path_matches = false;
+      std::string path_lower = to_lowercase(asset.full_path.u8string());
+      
+      for (const std::string& path_filter : query.path_filters) {
+        std::string filter_lower = to_lowercase(path_filter);
+        if (path_lower.find(filter_lower) != std::string::npos) {
+          path_matches = true;
+          break;
+        }
+      }
+      if (!path_matches) {
+        continue;
+      }
+    }
+
+    // Asset passed all filters
+    search_state.filtered_assets.push_back(asset);
+    filtered_count++;
   }
 
   // Initialize loaded range for infinite scroll
@@ -426,6 +511,338 @@ void filter_assets(SearchState& search_state, const std::unordered_map<std::stri
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
 
-  LOG_INFO("Search for \"{}\" completed in {:.1f} ms. Filtered {}/{} assets",
-    search_state.buffer, duration.count() / 1000.0, filtered_count, total_assets);
+  LOG_INFO("Search for \"{}\" completed in {:.1f} ms. Filtered {}/{} assets ({} candidates)",
+    search_state.buffer, duration.count() / 1000.0, filtered_count, total_assets, candidate_ids.size());
+}
+
+// SearchIndex Implementation
+
+SearchIndex::SearchIndex(AssetDatabase* database) : database_(database) {
+}
+
+std::vector<std::string> SearchIndex::tokenize_asset(const Asset& asset) const {
+    std::vector<std::string> tokens;
+    
+    // Tokenize filename (without extension)
+    auto name_tokens = tokenize_string(asset.name);
+    tokens.insert(tokens.end(), name_tokens.begin(), name_tokens.end());
+    
+    // Add extension as a token
+    if (!asset.extension.empty()) {
+        tokens.push_back(to_lowercase(asset.extension));
+    }
+    
+    // Tokenize path segments
+    std::string path_str = asset.full_path.u8string();
+    size_t pos = 0;
+    while ((pos = path_str.find('/', pos)) != std::string::npos) {
+        pos++;
+        size_t next_pos = path_str.find('/', pos);
+        if (next_pos == std::string::npos) next_pos = path_str.length();
+        
+        if (next_pos > pos) {
+            std::string segment = path_str.substr(pos, next_pos - pos);
+            if (segment != asset.name) {  // Don't duplicate filename
+                auto segment_tokens = tokenize_string(segment);
+                tokens.insert(tokens.end(), segment_tokens.begin(), segment_tokens.end());
+            }
+        }
+        pos = next_pos;
+    }
+    
+    // Remove duplicates and invalid tokens
+    std::unordered_set<std::string> unique_tokens;
+    std::vector<std::string> result;
+    
+    for (const auto& token : tokens) {
+        if (is_valid_token(token) && unique_tokens.find(token) == unique_tokens.end()) {
+            unique_tokens.insert(token);
+            result.push_back(token);
+        }
+    }
+    
+    return result;
+}
+
+std::vector<std::string> SearchIndex::tokenize_string(const std::string& text) const {
+    std::vector<std::string> tokens;
+    std::string current_token;
+    std::string lower_text = to_lowercase(text);
+    
+    for (char c : lower_text) {
+        if (std::isalnum(c)) {
+            current_token += c;
+        } else if (!current_token.empty()) {
+            // Split on non-alphanumeric characters
+            if (is_valid_token(current_token)) {
+                tokens.push_back(current_token);
+            }
+            current_token.clear();
+        }
+        
+        // Also handle camelCase by splitting on uppercase letters
+        // This is done in the lowercase string, so we need a different approach
+        // For now, we'll rely on the above splitting on non-alphanumeric
+    }
+    
+    // Add final token if any
+    if (!current_token.empty() && is_valid_token(current_token)) {
+        tokens.push_back(current_token);
+    }
+    
+    return tokens;
+}
+
+bool SearchIndex::is_valid_token(const std::string& token) const {
+    // Ignore tokens with length <= 2 as specified in requirements
+    if (token.length() <= 2) {
+        return false;
+    }
+    
+    // Must contain at least one alphabetic character
+    bool has_alpha = false;
+    for (char c : token) {
+        if (std::isalpha(c)) {
+            has_alpha = true;
+            break;
+        }
+    }
+    
+    return has_alpha;
+}
+
+std::vector<uint32_t> SearchIndex::search_prefix(const std::string& prefix) const {
+    if (prefix.length() <= 2) {
+        return {};  // Ignore short queries
+    }
+    
+    std::string lower_prefix = to_lowercase(prefix);
+    
+    // Find the range of tokens that start with this prefix
+    TokenEntry search_token(lower_prefix);
+    
+    // Find lower bound (first token >= prefix)
+    auto lower = std::lower_bound(sorted_tokens_.begin(), sorted_tokens_.end(), search_token);
+    
+    // Find upper bound (first token > next_prefix)
+    std::string next_prefix = lower_prefix;
+    if (!next_prefix.empty()) {
+        next_prefix.back()++;
+        TokenEntry next_token(next_prefix);
+        auto upper = std::lower_bound(sorted_tokens_.begin(), sorted_tokens_.end(), next_token);
+        
+        // Collect all asset IDs from tokens in range
+        std::unordered_set<uint32_t> result_set;
+        for (auto it = lower; it != upper; ++it) {
+            if (it->token.substr(0, lower_prefix.length()) == lower_prefix) {
+                for (uint32_t asset_id : it->asset_ids) {
+                    result_set.insert(asset_id);
+                }
+            }
+        }
+        
+        // Convert to sorted vector
+        std::vector<uint32_t> result(result_set.begin(), result_set.end());
+        std::sort(result.begin(), result.end());
+        return result;
+    }
+    
+    return {};
+}
+
+std::vector<uint32_t> SearchIndex::search_terms(const std::vector<std::string>& terms) const {
+    if (terms.empty()) {
+        return {};
+    }
+    
+    std::vector<std::vector<uint32_t>> term_results;
+    term_results.reserve(terms.size());
+    
+    // Get results for each term
+    for (const auto& term : terms) {
+        auto results = search_prefix(term);
+        if (results.empty()) {
+            // If any term has no results, the intersection is empty
+            return {};
+        }
+        term_results.push_back(std::move(results));
+    }
+    
+    // Intersect all results
+    return intersect_results(term_results);
+}
+
+std::vector<uint32_t> SearchIndex::intersect_results(const std::vector<std::vector<uint32_t>>& results) const {
+    if (results.empty()) {
+        return {};
+    }
+    
+    if (results.size() == 1) {
+        return results[0];
+    }
+    
+    // Start with the smallest result set
+    auto current_result = results[0];
+    for (size_t i = 1; i < results.size(); ++i) {
+        std::vector<uint32_t> intersection;
+        std::set_intersection(
+            current_result.begin(), current_result.end(),
+            results[i].begin(), results[i].end(),
+            std::back_inserter(intersection)
+        );
+        current_result = std::move(intersection);
+        
+        if (current_result.empty()) {
+            break;  // Early termination
+        }
+    }
+    
+    return current_result;
+}
+
+void SearchIndex::add_asset(uint32_t asset_id, const Asset& asset) {
+    auto tokens = tokenize_asset(asset);
+    if (tokens.empty()) {
+        return; // Nothing to index
+    }
+    
+    // Add tokens to the sorted index
+    for (const auto& token : tokens) {
+        // Find if token already exists
+        TokenEntry search_token(token);
+        auto it = std::lower_bound(sorted_tokens_.begin(), sorted_tokens_.end(), search_token);
+        
+        if (it != sorted_tokens_.end() && it->token == token) {
+            // Token exists, add asset ID if not already present
+            auto& asset_ids = it->asset_ids;
+            auto asset_it = std::lower_bound(asset_ids.begin(), asset_ids.end(), asset_id);
+            if (asset_it == asset_ids.end() || *asset_it != asset_id) {
+                asset_ids.insert(asset_it, asset_id);
+            }
+        } else {
+            // Token doesn't exist, create new entry
+            TokenEntry new_entry(token);
+            new_entry.asset_ids.push_back(asset_id);
+            sorted_tokens_.insert(it, std::move(new_entry));
+        }
+    }
+}
+
+void SearchIndex::remove_asset(uint32_t asset_id) {
+    // Remove asset ID from all tokens
+    for (auto it = sorted_tokens_.begin(); it != sorted_tokens_.end(); ) {
+        auto& asset_ids = it->asset_ids;
+        auto asset_it = std::find(asset_ids.begin(), asset_ids.end(), asset_id);
+        
+        if (asset_it != asset_ids.end()) {
+            asset_ids.erase(asset_it);
+            
+            // If no more assets reference this token, remove the token entirely
+            if (asset_ids.empty()) {
+                it = sorted_tokens_.erase(it);
+            } else {
+                ++it;
+            }
+        } else {
+            ++it;
+        }
+    }
+}
+
+void SearchIndex::update_asset(uint32_t asset_id, const Asset& asset) {
+    LOG_DEBUG("SearchIndex: Updating asset {} ({})", asset_id, asset.name);
+    
+    // For updates, we remove the old asset and add the new one
+    // This ensures that any changed tokens are properly updated
+    remove_asset(asset_id);
+    add_asset(asset_id, asset);
+}
+
+bool SearchIndex::build_from_database() {
+    LOG_INFO("Building search index from database...");
+    
+    // Clear existing index
+    clear();
+    
+    // Get all assets from database
+    auto assets = database_->get_all_assets();
+    if (assets.empty()) {
+        LOG_INFO("No assets found in database");
+        return true;
+    }
+    
+    // Build token to asset ID mapping
+    std::unordered_map<std::string, std::vector<uint32_t>> token_map;
+    
+    for (const auto& asset : assets) {
+        if (asset.id == 0) {
+            LOG_ERROR("Asset has invalid ID (0): {}", asset.full_path.u8string());
+            continue;
+        }
+        
+        auto tokens = tokenize_asset(asset);
+        for (const auto& token : tokens) {
+            token_map[token].push_back(asset.id);
+        }
+    }
+    
+    // Convert to sorted vector structure
+    sorted_tokens_.reserve(token_map.size());
+    for (auto& [token, asset_ids] : token_map) {
+        // Sort asset IDs for efficient intersection
+        std::sort(asset_ids.begin(), asset_ids.end());
+        
+        TokenEntry entry(token);
+        entry.asset_ids = std::move(asset_ids);
+        sorted_tokens_.push_back(std::move(entry));
+    }
+    
+    // Sort tokens for binary search
+    std::sort(sorted_tokens_.begin(), sorted_tokens_.end());
+    
+    LOG_INFO("Search index built: {} tokens for {} assets", sorted_tokens_.size(), assets.size());
+    return true;
+}
+
+bool SearchIndex::load_from_database() {
+    // For initial implementation, we'll always rebuild from assets
+    // TODO: Implement database storage/loading of index
+    LOG_DEBUG("Loading search index from database (fallback to rebuild)");
+    return build_from_database();
+}
+
+bool SearchIndex::save_to_database() const {
+    // For initial implementation, we don't persist the index
+    // TODO: Implement database storage of index
+    LOG_DEBUG("Saving search index to database (not yet implemented)");
+    return true;
+}
+
+void SearchIndex::clear() {
+    sorted_tokens_.clear();
+}
+
+size_t SearchIndex::get_token_count() const {
+    return sorted_tokens_.size();
+}
+
+size_t SearchIndex::get_memory_usage() const {
+    size_t total = 0;
+    for (const auto& entry : sorted_tokens_) {
+        total += entry.token.size();
+        total += entry.asset_ids.size() * sizeof(uint32_t);
+    }
+    return total + sorted_tokens_.size() * sizeof(TokenEntry);
+}
+
+void SearchIndex::debug_print_tokens() const {
+    std::cout << "=== DEBUG: All tokens in index ===\n";
+    for (const auto& entry : sorted_tokens_) {
+        std::cout << "Token: '" << entry.token << "' -> assets: ";
+        for (uint32_t asset_id : entry.asset_ids) {
+            std::cout << asset_id << " ";
+        }
+        std::cout << "\n";
+    }
+    std::cout << "=== End of tokens ===\n";
 }

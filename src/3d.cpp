@@ -422,6 +422,9 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
     }
   }
 
+  // Clear any existing OpenGL errors before we start
+  while (glGetError() != GL_NO_ERROR) {}
+  
   // Create OpenGL buffers
   glGenVertexArrays(1, &model.vao);
   glGenBuffers(1, &model.vbo);
@@ -435,23 +438,25 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   glBindVertexArray(model.vao);
 
   glBindBuffer(GL_ARRAY_BUFFER, model.vbo);
+  
   glBufferData(GL_ARRAY_BUFFER, model.vertices.size() * sizeof(float), model.vertices.data(), GL_STATIC_DRAW);
   
   // Check for OpenGL errors
   GLenum error = glGetError();
   if (error != GL_NO_ERROR) {
     LOG_ERROR("OpenGL error after vertex buffer creation: {}", error);
+    cleanup_model(model);
     return false;
   }
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.ebo);
-  glBufferData(
-    GL_ELEMENT_ARRAY_BUFFER, model.indices.size() * sizeof(unsigned int), model.indices.data(), GL_STATIC_DRAW
-  );
+  
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indices.size() * sizeof(unsigned int), model.indices.data(), GL_STATIC_DRAW);
   
   error = glGetError();
   if (error != GL_NO_ERROR) {
     LOG_ERROR("OpenGL error after index buffer creation: {}", error);
+    cleanup_model(model);
     return false;
   }
 

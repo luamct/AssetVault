@@ -64,8 +64,19 @@
       "Bash(where cl)",
       "Bash(./build/Release/AudioTest.exe)",
       "Bash(cp:*)",
-      "Bash(./Release/OggTest.exe)"
+      "Bash(./Release/OggTest.exe)",
+      "Bash(./build/AssetIDTest)",
+      "Bash(build/AssetIDTest)",
+      "Bash(./AssetIDTest)",
+      "Bash(./SearchIndexTest)",
+      "Bash(./build/EventProcessorTest:*)",
+      "Bash(SPDLOG_LEVEL=debug ./build/EventProcessorTest)",
+      "Bash(./build/SearchIndexTest)",
+      "Bash(SPDLOG_LEVEL=debug ./build/AssetInventory.app/Contents/MacOS/AssetInventory)"
     ],
-    "deny": []
+    "deny": [],
+    "additionalDirectories": [
+      "/Users/luamct/GameDev"
+    ]
   }
 }

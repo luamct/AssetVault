@@ -9,15 +9,17 @@
 
 #include "config.h"
 #include "logger.h"
+#include "search.h"
 #include "texture_manager.h"
 #include "utils.h"
 
 namespace fs = std::filesystem;
 
-EventProcessor::EventProcessor(AssetDatabase& database, std::unordered_map<std::string, Asset>& assets,
-    std::atomic<bool>& search_update_needed, TextureManager& texture_manager, size_t batch_size)
+EventProcessor::EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
+    std::atomic<bool>& search_update_needed, TextureManager& texture_manager, 
+    SearchIndex& search_index, size_t batch_size)
     : database_(database), assets_(assets), search_update_needed_(search_update_needed),
-    texture_manager_(texture_manager), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
+    texture_manager_(texture_manager), search_index_(search_index), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
     root_path_(Config::ASSET_ROOT_DIRECTORY) {
 }
@@ -204,6 +206,8 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_insert) {
             assets_[file.full_path.u8string()] = file;
+            // Update search index for new asset
+            search_index_.add_asset(file.id, file);
         }
     }
 }
@@ -222,6 +226,16 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
             }
 
             Asset file_info = process_file(event.path, event.timestamp);
+            
+            // Preserve the existing asset ID if it exists
+            {
+                std::lock_guard<std::mutex> lock(assets_mutex_);
+                auto it = assets_.find(event.path.u8string());
+                if (it != assets_.end()) {
+                    file_info.id = it->second.id;
+                }
+            }
+            
             files_to_update.push_back(file_info);
             total_events_processed_++;  // Increment per file processed
 
@@ -244,6 +258,8 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_update) {
             assets_[file.full_path.u8string()] = file;
+            // Update search index for modified asset
+            search_index_.update_asset(file.id, file);
         }
     }
 }
@@ -266,14 +282,29 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
 
     // Batch delete all paths from database
     if (!paths_to_delete.empty()) {
+        // Get asset IDs before deletion for search index cleanup
+        std::vector<uint32_t> deleted_asset_ids;
+        {
+            std::lock_guard<std::mutex> lock(assets_mutex_);
+            for (const auto& path : paths_to_delete) {
+                auto it = assets_.find(path);
+                if (it != assets_.end() && it->second.id > 0) {
+                    deleted_asset_ids.push_back(it->second.id);
+                }
+            }
+        }
+
         database_.delete_assets_batch(paths_to_delete);
 
-        // Remove from in-memory assets map
+        // Remove from in-memory assets map and search index
         std::lock_guard<std::mutex> lock(assets_mutex_);
-        
-        // Remove all deleted assets from the map
-        for (const auto& path : paths_to_delete) {
+        for (size_t i = 0; i < paths_to_delete.size(); ++i) {
+            const auto& path = paths_to_delete[i];
             assets_.erase(path);
+            // Remove from search index if we have the ID
+            if (i < deleted_asset_ids.size()) {
+                search_index_.remove_asset(deleted_asset_ids[i]);
+            }
         }
     }
 }
@@ -328,12 +359,29 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
 
     // Handle deletions (moves outside watched directory)
     if (!paths_to_delete.empty()) {
+        // Get asset IDs before deletion for search index cleanup
+        std::vector<uint32_t> deleted_asset_ids;
+        {
+            std::lock_guard<std::mutex> lock(assets_mutex_);
+            for (const auto& path : paths_to_delete) {
+                auto it = assets_.find(path);
+                if (it != assets_.end() && it->second.id > 0) {
+                    deleted_asset_ids.push_back(it->second.id);
+                }
+            }
+        }
+
         database_.delete_assets_batch(paths_to_delete);
 
-        // Remove from in-memory assets map
+        // Remove from in-memory assets map and search index
         std::lock_guard<std::mutex> lock(assets_mutex_);
-        for (const auto& path : paths_to_delete) {
+        for (size_t i = 0; i < paths_to_delete.size(); ++i) {
+            const auto& path = paths_to_delete[i];
             assets_.erase(path);
+            // Remove from search index if we have the ID
+            if (i < deleted_asset_ids.size()) {
+                search_index_.remove_asset(deleted_asset_ids[i]);
+            }
         }
     }
 
@@ -345,6 +393,8 @@ void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : new_files) {
             assets_[file.full_path.u8string()] = file;
+            // Add to search index for new asset
+            search_index_.add_asset(file.id, file);
         }
     }
 }
