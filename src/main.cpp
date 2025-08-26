@@ -391,9 +391,13 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
 
     LOG_INFO("Scanning directory: {}", Config::ASSET_ROOT_DIRECTORY);
 
-    // Single pass: Get all file paths
+    // Single pass: Get all file paths (with early filtering for ignored asset types)
     for (const auto& entry : fs::recursive_directory_iterator(root)) {
       try {
+        // Early filtering: skip directories and ignored asset types to reduce processing
+        if (entry.is_directory() || should_skip_asset(entry.path().extension().string())) {
+          continue;
+        }
         current_files.insert(entry.path());
       }
       catch (const fs::filesystem_error& e) {

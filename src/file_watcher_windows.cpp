@@ -13,6 +13,7 @@
 #include "config.h"
 #include "file_watcher.h"
 #include "logger.h"
+#include "asset.h"
 
 // Structure to track pending file events
 struct PendingFileEvent {
@@ -201,6 +202,12 @@ class WindowsFileWatcher : public FileWatcherImpl {
   }
 
   void process_raw_file_event(FileEventType raw_type, const fs::path& full_path, const fs::path& old_path = fs::path()) {
+    // Unified early filtering: skip directories, files without extensions, and ignored asset types
+    bool is_directory = fs::is_directory(full_path);
+    if (is_directory || !full_path.has_extension() || should_skip_asset(full_path.extension().string())) {
+      return;
+    }
+    
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
     // For Deleted and Renamed, process immediately

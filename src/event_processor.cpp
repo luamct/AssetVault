@@ -219,9 +219,9 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
     // Process all files first and increment progress per file
     for (const auto& event : events) {
         try {
-            // Skip directory modifications - content changes will be handled as individual file events
-            if (!fs::exists(event.path) || event.is_directory) {
-                total_events_processed_++;  // Count skipped directories
+            // Skip if file doesn't exist
+            if (!fs::exists(event.path)) {
+                total_events_processed_++;  // Count skipped
                 continue;
             }
 
@@ -474,7 +474,7 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
             // to avoid OpenGL context issues when called from background threads
         }
         else {
-            // Directory-specific information
+            // Directory-specific information (should never reach here due to file watcher filtering)
             file_info.type = AssetType::Directory;
             file_info.extension = "";
             file_info.size = 0;

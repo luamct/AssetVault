@@ -169,3 +169,54 @@ TEST_CASE("Database functionality", "[database]") {
     db.close();
     fs::remove(test_db);
 }
+
+TEST_CASE("Asset type filtering helper function", "[asset][filtering]") {
+    SECTION("should_skip_asset correctly identifies types to skip") {
+        // Test ignored types (should return true - these should be skipped)
+        REQUIRE(should_skip_asset(".txt"));    // Documents
+        REQUIRE(should_skip_asset(".md"));     
+        REQUIRE(should_skip_asset(".pdf"));    
+        REQUIRE(should_skip_asset(".doc"));    
+        
+        REQUIRE(should_skip_asset(".mtl"));    // Auxiliary
+        REQUIRE(should_skip_asset(".log"));    
+        REQUIRE(should_skip_asset(".cache")); 
+        REQUIRE(should_skip_asset(".tmp"));    
+        REQUIRE(should_skip_asset(".bak"));    
+        
+        REQUIRE(should_skip_asset(""));        // No extension (Unknown)
+        REQUIRE(should_skip_asset(".xyz"));    // Unknown extension
+        
+        // Case insensitive for ignored types too
+        REQUIRE(should_skip_asset(".TXT"));
+        REQUIRE(should_skip_asset(".MTL"));
+    }
+    
+    SECTION("should_skip_asset correctly identifies processable types") {
+        // Test processable types (should return false - these should NOT be skipped)
+        REQUIRE_FALSE(should_skip_asset(".fbx"));    // 3D models
+        REQUIRE_FALSE(should_skip_asset(".obj"));    
+        REQUIRE_FALSE(should_skip_asset(".png"));    // 2D textures
+        REQUIRE_FALSE(should_skip_asset(".jpg"));    
+        REQUIRE_FALSE(should_skip_asset(".wav"));    // Audio
+        REQUIRE_FALSE(should_skip_asset(".mp3"));    
+        REQUIRE_FALSE(should_skip_asset(".ttf"));    // Fonts
+        REQUIRE_FALSE(should_skip_asset(".glsl"));   // Shaders
+        REQUIRE_FALSE(should_skip_asset(".zip"));    // Archives
+        
+        // Test case insensitive processing
+        REQUIRE_FALSE(should_skip_asset(".FBX"));
+        REQUIRE_FALSE(should_skip_asset(".PNG"));
+        REQUIRE_FALSE(should_skip_asset(".WAV"));
+    }
+    
+    SECTION("should_skip_asset handles edge cases") {
+        // Empty strings and edge cases
+        REQUIRE(should_skip_asset(""));        // Empty - should skip
+        REQUIRE(should_skip_asset("noext"));   // No dot - should skip
+        REQUIRE(should_skip_asset("."));       // Just dot - should skip
+        
+        // Very long extensions (should still work)
+        REQUIRE(should_skip_asset(".verylongextension"));  // Unknown - should skip
+    }
+}

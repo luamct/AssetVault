@@ -188,7 +188,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     
     SECTION("File moved into watched directory (not previously tracked)") {
         // Setup: Create file outside watched directory
-        auto external_file = std::filesystem::temp_directory_path() / "external_test.txt";
+        auto external_file = std::filesystem::temp_directory_path() / "external_test.png";
         std::ofstream(external_file) << "test content";
         
         // Start watching
@@ -196,7 +196,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         fixture.clear_events();
         
         // Action: Move file into watched directory
-        auto internal_file = fixture.test_dir / "moved_in.txt";
+        auto internal_file = fixture.test_dir / "moved_in.png";
         std::filesystem::rename(external_file, internal_file);
         
         // Wait for events
@@ -221,7 +221,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     
     SECTION("File moved out of watched directory (previously tracked)") {
         // Setup: Create file in watched directory and track it
-        auto internal_file = fixture.test_dir / "tracked.txt";
+        auto internal_file = fixture.test_dir / "tracked.png";
         std::ofstream(internal_file) << "test content";
         fixture.mock_db.add_asset(internal_file);
         
@@ -230,7 +230,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         fixture.clear_events();
         
         // Action: Move file out of watched directory
-        auto external_file = std::filesystem::temp_directory_path() / "moved_out.txt";
+        auto external_file = std::filesystem::temp_directory_path() / "moved_out.png";
         std::filesystem::rename(internal_file, external_file);
         
         // Wait for events
@@ -255,7 +255,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     
     SECTION("File renamed within watched directory (previously tracked)") {
         // Setup: Create file in watched directory and track it
-        auto old_file = fixture.test_dir / "old_name.txt";
+        auto old_file = fixture.test_dir / "old_name.png";
         std::ofstream(old_file) << "test content";
         fixture.mock_db.add_asset(old_file);
         
@@ -264,7 +264,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         fixture.clear_events();
         
         // Action: Rename file within watched directory
-        auto new_file = fixture.test_dir / "new_name.txt";
+        auto new_file = fixture.test_dir / "new_name.png";
         std::filesystem::rename(old_file, new_file);
         
         // Wait for events - expecting at least 2 events (delete old, create new)
@@ -300,7 +300,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     
     SECTION("File copied into watched directory") {
         // Setup: Create source file
-        auto source_file = std::filesystem::temp_directory_path() / "source.txt";
+        auto source_file = std::filesystem::temp_directory_path() / "source.png";
         std::ofstream(source_file) << "test content";
         
         // Start watching
@@ -308,7 +308,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         fixture.clear_events();
         
         // Action: Copy file into watched directory
-        auto dest_file = fixture.test_dir / "copied.txt";
+        auto dest_file = fixture.test_dir / "copied.png";
         std::filesystem::copy_file(source_file, dest_file);
         
         // Wait for events
@@ -334,7 +334,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     
     SECTION("File deleted permanently (previously tracked)") {
         // Setup: Create file in watched directory and track it BEFORE starting watcher
-        auto file = fixture.test_dir / "to_delete.txt";
+        auto file = fixture.test_dir / "to_delete.png";
         {
             std::ofstream ofs(file);
             ofs << "test content";
@@ -368,7 +368,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     
     SECTION("File modified (previously tracked)") {
         // Setup: Create file in watched directory and track it BEFORE starting watcher
-        auto file = fixture.test_dir / "to_modify.txt";
+        auto file = fixture.test_dir / "to_modify.png";
         {
             std::ofstream ofs(file);
             ofs << "initial content";
@@ -417,7 +417,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         
         std::vector<std::filesystem::path> test_files;
         for (int i = 1; i <= 3; i++) {
-            auto file = test_subdir / ("file" + std::to_string(i) + ".txt");
+            auto file = test_subdir / ("file" + std::to_string(i) + ".png");
             std::ofstream(file) << "test content " << i;
             test_files.push_back(file);
             fixture.mock_db.add_asset(file);
@@ -471,7 +471,7 @@ TEST_CASE("macOS FSEvents directory copy behavior", "[file_watcher_macos]") {
         
         std::vector<std::filesystem::path> source_files;
         for (int i = 1; i <= 3; i++) {
-            auto file = source_dir / ("file" + std::to_string(i) + ".txt");
+            auto file = source_dir / ("file" + std::to_string(i) + ".png");
             std::ofstream(file) << "test content " << i;
             source_files.push_back(file);
         }
@@ -527,14 +527,14 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         std::filesystem::create_directory(external_dir);
         
         for (int i = 1; i <= 3; i++) {
-            auto file = external_dir / ("file" + std::to_string(i) + ".txt");
+            auto file = external_dir / ("file" + std::to_string(i) + ".png");
             std::ofstream(file) << "test content " << i;
         }
         
         // Create subdirectory with file
         auto subdir = external_dir / "subdir";
         std::filesystem::create_directory(subdir);
-        std::ofstream(subdir / "nested.txt") << "nested content";
+        std::ofstream(subdir / "nested.png") << "nested content";
         
         // Start watching
         fixture.start_watching();
@@ -583,7 +583,7 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         
         std::vector<fs::path> test_files;
         for (int i = 1; i <= 3; i++) {
-            auto file = test_dir_in_watched / ("file" + std::to_string(i) + ".txt");
+            auto file = test_dir_in_watched / ("file" + std::to_string(i) + ".png");
             std::ofstream(file) << "test content " << i;
             test_files.push_back(file);
             fixture.mock_db.add_asset(file);  // Track these files
@@ -645,7 +645,7 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         
         std::vector<fs::path> test_files;
         for (int i = 1; i <= 3; i++) {
-            auto file = old_dir / ("file" + std::to_string(i) + ".txt");
+            auto file = old_dir / ("file" + std::to_string(i) + ".png");
             std::ofstream(file) << "test content " << i;
             test_files.push_back(file);
             fixture.mock_db.add_asset(file);  // Track these files
@@ -716,7 +716,7 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         
         std::vector<fs::path> test_files;
         for (int i = 1; i <= 3; i++) {
-            auto file = test_dir_to_trash / ("file" + std::to_string(i) + ".txt");
+            auto file = test_dir_to_trash / ("file" + std::to_string(i) + ".png");
             std::ofstream(file) << "test content " << i;
             test_files.push_back(file);
             fixture.mock_db.add_asset(file);  // Track these files
@@ -789,7 +789,7 @@ TEST_CASE("macOS FSEvents atomic save detection", "[file_watcher_macos]") {
         // that would normally trigger our rename logic.
         
         // Setup: Create a tracked file
-        auto test_file = fixture.test_dir / "test_atomic_save.txt";
+        auto test_file = fixture.test_dir / "test_atomic_save.png";
         std::ofstream(test_file) << "initial content";
         fixture.mock_db.add_asset(test_file);
         

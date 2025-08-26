@@ -219,13 +219,13 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         REQUIRE(final_results.empty());
     }
     
-    SECTION("Multiple asset types are properly indexed") {
-        // Create assets of different types
+    SECTION("Multiple asset types are properly indexed (excluding ignored types)") {
+        // Create assets of different types (only non-ignored types)
         std::vector<std::pair<std::string, AssetType>> test_files = {
             {"model.fbx", AssetType::_3D},
             {"texture.png", AssetType::_2D},
             {"sound.wav", AssetType::Audio},
-            {"document.txt", AssetType::Document},
+            {"shader.glsl", AssetType::Shader},
             {"archive.zip", AssetType::Archive}
         };
         
@@ -365,6 +365,22 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         auto results = search_index.search_prefix("duplicate");
         REQUIRE(results.size() == 1);
         REQUIRE(results[0] == asset.id);
+    }
+    
+    SECTION("Asset filtering helper function works correctly") {
+        // Test the should_skip_asset function directly
+        
+        // Test ignored types (should return true - these should be skipped)
+        REQUIRE(should_skip_asset(".txt"));    // Documents
+        REQUIRE(should_skip_asset(".mtl"));    // Auxiliary
+        REQUIRE(should_skip_asset(".cache"));  // Auxiliary
+        REQUIRE(should_skip_asset(".xyz"));    // Unknown
+        REQUIRE(should_skip_asset(""));        // No extension (Unknown)
+        
+        // Test processable types (should return false - these should NOT be skipped)
+        REQUIRE_FALSE(should_skip_asset(".fbx"));    // 3D models
+        REQUIRE_FALSE(should_skip_asset(".png"));    // 2D textures
+        REQUIRE_FALSE(should_skip_asset(".wav"));    // Audio
     }
     
     cleanup();

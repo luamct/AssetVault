@@ -29,3 +29,6 @@ struct Asset {
 AssetType get_asset_type(const std::string& extension);
 std::string get_asset_type_string(AssetType type);
 AssetType get_asset_type_from_string(const std::string& type_string);
+
+// Early filtering helper - determines if asset should be skipped based on extension
+bool should_skip_asset(const std::string& extension);

@@ -139,3 +139,15 @@ AssetType get_asset_type_from_string(const std::string& type_string) {
   auto it = type_map.find(type_string);
   return (it != type_map.end()) ? it->second : AssetType::Unknown;
 }
+
+// Early filtering helper - determines if asset should be skipped based on extension
+// Returns true for asset types that should be ignored (Auxiliary, Unknown, Document, Directory)
+bool should_skip_asset(const std::string& extension) {
+  AssetType type = get_asset_type(extension);
+  
+  // Skip ignored asset types (same as Config::IGNORED_ASSET_TYPES)
+  return type == AssetType::Auxiliary || 
+         type == AssetType::Unknown || 
+         type == AssetType::Document || 
+         type == AssetType::Directory;
+}

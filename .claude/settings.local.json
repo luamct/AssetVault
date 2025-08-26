@@ -72,11 +72,13 @@
       "Bash(./build/EventProcessorTest:*)",
       "Bash(SPDLOG_LEVEL=debug ./build/EventProcessorTest)",
       "Bash(./build/SearchIndexTest)",
-      "Bash(SPDLOG_LEVEL=debug ./build/AssetInventory.app/Contents/MacOS/AssetInventory)"
+      "Bash(SPDLOG_LEVEL=debug ./build/AssetInventory.app/Contents/MacOS/AssetInventory)",
+      "Bash(touch:*)"
     ],
     "deny": [],
     "additionalDirectories": [
-      "/Users/luamct/GameDev"
+      "/Users/luamct/GameDev",
+      "/tmp"
     ]
   }
 }

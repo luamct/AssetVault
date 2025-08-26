@@ -1,7 +1,6 @@
 #include "search.h"
 #include "database.h"
 #include "utils.h"
-#include "config.h"
 #include "event_processor.h"
 #include "logger.h"
 #include "asset.h"
@@ -459,11 +458,6 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
     
     const Asset& asset = *it->second;
     
-    // Skip ignored asset types
-    if (Config::IGNORED_ASSET_TYPES.count(asset.type) > 0) {
-      continue;
-    }
-
     // Apply type filters (if any)
     if (!query.type_filters.empty()) {
       bool type_matches = false;
