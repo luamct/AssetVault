@@ -25,6 +25,15 @@
 // Future: Create test_file_watcher_windows.cpp and test_file_watcher_linux.cpp
 // to validate platform-specific behaviors while maintaining consistent interfaces.
 
+// Helper function to find the test files directory relative to the source file
+std::filesystem::path get_test_files_dir() {
+    // Use __FILE__ to get the location of this source file, then navigate to test files
+    // __FILE__ points to tests/test_file_watcher_macos.cpp
+    // Test files are at tests/files/ (same tests/ directory)
+    auto source_file_path = std::filesystem::path(__FILE__);
+    return source_file_path.parent_path() / "files";
+}
+
 // Mock asset database for testing
 class MockAssetDatabase {
 public:
@@ -152,7 +161,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         // watched_area/moved_in.png      <- Created event (file moved into watched area)
         
         // Setup: Copy test file to external location
-        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
+        auto source_file = get_test_files_dir() / "single_file.png";
         auto external_file = std::filesystem::temp_directory_path() / "external_test.png";
         std::filesystem::copy_file(source_file, external_file);
         
@@ -193,7 +202,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         // watched_area/                  <- Deleted event for tracked.png
         
         // Setup: Copy test file to watched directory and track it
-        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
+        auto source_file = get_test_files_dir() / "single_file.png";
         auto internal_file = fixture.test_dir / "tracked.png";
         std::filesystem::copy_file(source_file, internal_file);
         fixture.mock_db.add_asset(internal_file);
@@ -235,7 +244,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         // watched_area/                  <- Deleted event (old name)
         
         // Setup: Copy test file to watched directory and track it
-        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
+        auto source_file = get_test_files_dir() / "single_file.png";
         auto old_file = fixture.test_dir / "old_name.png";
         std::filesystem::copy_file(source_file, old_file);
         fixture.mock_db.add_asset(old_file);
@@ -287,7 +296,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         // watched_area/copied.png        <- Created event
         
         // Setup: Use pre-created test file
-        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
+        auto source_file = get_test_files_dir() / "single_file.png";
         
         // Start watching
         fixture.start_watching();
@@ -325,7 +334,7 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         // watched_area/                  <- Deleted event for to_delete.png (file no longer exists)
         
         // Setup: Copy test file to watched directory and track it BEFORE starting watcher
-        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
+        auto source_file = get_test_files_dir() / "single_file.png";
         auto file = fixture.test_dir / "to_delete.png";
         std::filesystem::copy_file(source_file, file);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));  // Let filesystem settle
@@ -367,13 +376,13 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     
     SECTION("File modified (previously tracked)") {
         // Test file structure:
-        // watched_area/to_modify.png     <- Created from tests/files/test_modify.txt, tracked in database
+        // watched_area/to_modify.png     <- Created from tests/files/test_modify.png, tracked in database
         // 
         // Expected result after modification:
         // watched_area/to_modify.png     <- Modified event (content changed)
         
         // Setup: Copy test file to watched directory and track it BEFORE starting watcher
-        auto source_file = std::filesystem::current_path() / "tests" / "files" / "test_modify.png";
+        auto source_file = get_test_files_dir() / "test_modify.png";
         auto file = fixture.test_dir / "to_modify.png";
         std::filesystem::copy_file(source_file, file);
         
@@ -439,7 +448,7 @@ TEST_CASE("macOS FSEvents directory copy behavior", "[file_watcher_macos]") {
         
         // Setup: Copy test files to temporary directory
         auto source_dir = std::filesystem::temp_directory_path() / "source_dir_copy";
-        auto test_files_dir = std::filesystem::current_path() / "tests" / "files" / "source_dir";
+        auto test_files_dir = get_test_files_dir() / "source_dir";
         std::filesystem::copy(test_files_dir, source_dir, std::filesystem::copy_options::recursive);
         
         // Start watching
@@ -503,7 +512,7 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         
         // Setup: Copy test files to temporary external directory
         auto external_dir = std::filesystem::temp_directory_path() / "external_move_dir";
-        auto test_files_dir = std::filesystem::current_path() / "tests" / "files" / "source_dir";
+        auto test_files_dir = get_test_files_dir() / "source_dir";
         std::filesystem::copy(test_files_dir, external_dir, std::filesystem::copy_options::recursive);
         
         // Start watching
@@ -555,7 +564,7 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         
         // Setup: Create directory with files in watched area using test files
         auto old_dir = fixture.test_dir / "old_dir_name";
-        auto test_files_dir = std::filesystem::current_path() / "tests" / "files" / "source_dir";
+        auto test_files_dir = get_test_files_dir() / "source_dir";
         std::filesystem::copy(test_files_dir, old_dir, std::filesystem::copy_options::recursive);
         
         // Track these files in mock database (they were "previously indexed")
@@ -637,7 +646,7 @@ TEST_CASE("macOS FSEvents unified directory deletion handling", "[file_watcher_m
         
         // Setup: Copy test directory structure to watched area
         fs::path test_delete_dir = fixture.test_dir / "test_delete_dir";
-        auto source_dir = std::filesystem::current_path() / "tests" / "files" / "delete_test_dir";
+        auto source_dir = get_test_files_dir() / "delete_test_dir";
         std::filesystem::copy(source_dir, test_delete_dir, std::filesystem::copy_options::recursive);
         
         // Define files that should be tracked
@@ -703,7 +712,7 @@ TEST_CASE("macOS FSEvents unified directory deletion handling", "[file_watcher_m
         
         // Setup: Copy test directory structure to watched area
         fs::path test_move_dir = fixture.test_dir / "move_out_test";
-        auto source_dir = std::filesystem::current_path() / "tests" / "files" / "move_test_dir";
+        auto source_dir = get_test_files_dir() / "move_test_dir";
         std::filesystem::copy(source_dir, test_move_dir, std::filesystem::copy_options::recursive);
         
         // Define files that should be tracked 
