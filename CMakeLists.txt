@@ -232,6 +232,7 @@ endif()
 if(PLATFORM_MACOS)
     add_executable(FileWatcherMacOSTest
         tests/test_file_watcher_macos.cpp
+        tests/test_helpers.cpp
         ${FILE_WATCHER_SOURCES}
     )
 

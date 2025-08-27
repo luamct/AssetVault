@@ -1,6 +1,7 @@
 #include "test_helpers.h"
 #include <filesystem>
 #include <chrono>
+#include <iostream>
 
 Asset create_test_asset(
     const std::string& name,
@@ -16,4 +17,42 @@ Asset create_test_asset(
     asset.last_modified = std::chrono::system_clock::now();
     asset.is_directory = false;
     return asset;
+}
+
+void print_file_events(const std::vector<FileEvent>& events, const std::string& label) {
+    std::cout << label << " - captured " << events.size() << " events:" << std::endl;
+    
+    for (const auto& event : events) {
+        std::string event_type_str;
+        switch (event.type) {
+            case FileEventType::Created: 
+                event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
+                break;
+            case FileEventType::Modified: 
+                event_type_str = "Modified";
+                break;
+            case FileEventType::Deleted: 
+                event_type_str = event.is_directory ? "DirectoryDeleted" : "Deleted";
+                break;
+            case FileEventType::Renamed: 
+                event_type_str = "Renamed";
+                break;
+            default: 
+                event_type_str = "Unknown";
+                break;
+        }
+        
+        std::cout << "  " << event_type_str << ": " << event.path.string();
+        
+        // If it's a rename event and has an old path, show it
+        if (event.type == FileEventType::Renamed && !event.old_path.empty()) {
+            std::cout << " (from: " << event.old_path.string() << ")";
+        }
+        
+        std::cout << std::endl;
+    }
+    
+    if (events.empty()) {
+        std::cout << "  (no events)" << std::endl;
+    }
 }

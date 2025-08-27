@@ -271,7 +271,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
               watcher->handle_directory_moved_in(file_path);
             } else if (!file_exists && has_tracked_assets) {
               // Directory doesn't exist but has tracked assets - it was moved FROM this path
-              watcher->handle_directory_moved_out(file_path);
+              watcher->emit_deletion_events_for_directory(file_path);
             } else {
               // Directory exists with tracked assets (in-place change) OR doesn't exist with no tracked assets (temp dir)
               LOG_DEBUG("FSEvents: Ignoring directory rename event for '{}' (exists:{}, has_tracked:{})", 
@@ -302,7 +302,15 @@ class MacOSFileWatcher : public FileWatcherImpl {
         // Handle removal events - this should come before Created check
         // because FSEvents can set both Created+Removed for deletion
         bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
-        watcher->add_pending_event(FileEventType::Deleted, file_path, fs::path(), is_directory);
+        
+        if (is_directory) {
+          // For directory deletion, emit events for all tracked assets under it
+          // This handles the case where FSEvents doesn't report individual file deletions
+          watcher->emit_deletion_events_for_directory(file_path);
+        } else {
+          // For file deletion, just emit the single event
+          watcher->add_pending_event(FileEventType::Deleted, file_path, fs::path(), false);
+        }
       } else if (flags & kFSEventStreamEventFlagItemCreated) {
         // Only treat as creation if it's NOT also a rename (rename takes precedence)
         if (!(flags & kFSEventStreamEventFlagItemRenamed)) {
@@ -456,49 +464,62 @@ class MacOSFileWatcher : public FileWatcherImpl {
     }
   }
   
-  void handle_directory_moved_out(const fs::path& dir_path) {
-    LOG_DEBUG("Handling directory moved out: {}", dir_path.string());
+  void emit_deletion_events_for_directory(const fs::path& dir_path) {
+    LOG_DEBUG("Emitting deletion events for directory: {}", dir_path.string());
     
-    // Get all tracked assets under this directory
-    if (assets_ && assets_mutex_) {
-      std::vector<fs::path> tracked_assets;
-      std::string dir_path_str = dir_path.u8string();
-      
-      {
-        std::lock_guard<std::mutex> lock(*assets_mutex_);
-        for (const auto& [path, asset] : *assets_) {
-          // Check if this asset path is under the directory path
-          if (path.find(dir_path_str) == 0) {
-            // Ensure it's actually a child path, not just a prefix match
-            if (path.length() > dir_path_str.length() && 
-                (dir_path_str.back() == '/' || path[dir_path_str.length()] == '/')) {
-              tracked_assets.push_back(fs::u8path(path));
-            } else if (path == dir_path_str) {
-              // Exact match - include the directory itself if it's tracked
-              tracked_assets.push_back(fs::u8path(path));
-            }
-          }
-        }
-      }
-      
-      LOG_DEBUG("Found {} tracked assets under moved-out directory", tracked_assets.size());
-      
-      // Emit deletion events for all tracked child assets
-      for (const auto& asset_path : tracked_assets) {
-        if (asset_path != dir_path) {  // Don't include the directory itself yet
-          bool is_dir = fs::is_directory(asset_path) || asset_path.extension().empty();
-          add_pending_event(FileEventType::Deleted, asset_path, fs::path(), is_dir);
-        }
-      }
-      
-      // Finally emit the directory deletion event
-      add_pending_event(FileEventType::Deleted, dir_path, fs::path(), true);
-    } else {
-      LOG_WARN("No assets provided for directory move-out handling");
-      // Fallback to just emitting directory deletion event
-      add_pending_event(FileEventType::Deleted, dir_path, fs::path(), true);
+    if (!assets_ || !assets_mutex_) {
+      LOG_WARN("No assets provided for directory deletion handling");
+      return;
     }
+    
+    std::string dir_path_str = dir_path.u8string();
+    size_t event_count = 0;
+    
+    {
+      std::lock_guard<std::mutex> lock(*assets_mutex_);
+      
+      // First, check if the directory itself is tracked as an asset
+      auto dir_it = assets_->find(dir_path_str);
+      if (dir_it != assets_->end()) {
+        if (callback) {
+          FileEvent event(FileEventType::Deleted, dir_path, fs::path(), true);  // is_directory = true
+          callback(event);
+          event_count++;
+        }
+      }
+      
+      // Then find all assets under this directory
+      // Ensure the directory path ends with / for proper prefix matching of child assets
+      if (!dir_path_str.empty() && dir_path_str.back() != '/') {
+        dir_path_str += '/';
+      }
+      
+      // Use binary search to find the first asset with path >= dir_path_str
+      auto it = assets_->lower_bound(dir_path_str);
+      
+      // Iterate through all assets that start with dir_path_str (child assets)
+      while (it != assets_->end()) {
+        const std::string& asset_path = it->first;
+        
+        // Check if this asset is still under the directory
+        if (asset_path.substr(0, dir_path_str.length()) != dir_path_str) {
+          break;  // No more assets under this directory
+        }
+        
+        // Emit deletion event for this asset
+        if (callback) {
+          FileEvent event(FileEventType::Deleted, fs::u8path(asset_path));
+          callback(event);
+          event_count++;
+        }
+        
+        ++it;
+      }
+    }
+    
+    LOG_DEBUG("Emitted {} deletion events for directory and assets under it", event_count);
   }
+  
 };
 
 // Static member definition

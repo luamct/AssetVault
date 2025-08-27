@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/cfg/env.h>
 
 // Log level enum for easy configuration
 enum class LogLevel {
@@ -19,6 +20,9 @@ enum class LogLevel {
 class Logger {
 public:
     static void initialize(LogLevel level = LogLevel::Info) {
+        // Load log level from SPDLOG_LEVEL environment variable if set
+        spdlog::cfg::load_env_levels();
+        
         // Create console sink with colors
         auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
         console_sink->set_level(static_cast<spdlog::level::level_enum>(level));
@@ -38,12 +42,27 @@ public:
         // Register as default logger
         spdlog::set_default_logger(logger);
         spdlog::flush_every(std::chrono::seconds(1));
+        
+        // Load environment levels again to override the programmatic level if SPDLOG_LEVEL is set
+        spdlog::cfg::load_env_levels();
     }
     
     static void set_level(LogLevel level) {
         spdlog::set_level(static_cast<spdlog::level::level_enum>(level));
     }
 };
+
+// Static initializer to load environment variables on first use
+struct SpdlogEnvLoader {
+    SpdlogEnvLoader() {
+        // This loads SPDLOG_LEVEL environment variable automatically
+        // Format: SPDLOG_LEVEL=debug or SPDLOG_LEVEL=logger_name=debug,other_logger=info
+        spdlog::cfg::load_env_levels();
+    }
+};
+
+// This will run once when logger.h is first included anywhere
+static SpdlogEnvLoader spdlog_env_loader;
 
 // Convenient macros
 #define LOG_TRACE(...)    spdlog::trace(__VA_ARGS__)

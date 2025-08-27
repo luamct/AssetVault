@@ -73,7 +73,11 @@
       "Bash(SPDLOG_LEVEL=debug ./build/EventProcessorTest)",
       "Bash(./build/SearchIndexTest)",
       "Bash(SPDLOG_LEVEL=debug ./build/AssetInventory.app/Contents/MacOS/AssetInventory)",
-      "Bash(touch:*)"
+      "Bash(touch:*)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents directory moved out with unified deletion handling\")",
+      "Bash(SPDLOG_LEVEL=trace ./build/FileWatcherMacOSTest \"macOS FSEvents directory moved out with unified deletion handling\" -s)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents directory move operations\" -s)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents directory copy behavior\" -s)"
     ],
     "deny": [],
     "additionalDirectories": [
