@@ -46,6 +46,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
   std::thread timer_thread;
   std::atomic<bool> timer_should_stop;
   
+  
   // Store this instance for the callback
   static MacOSFileWatcher* current_instance;
   
@@ -131,6 +132,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
 
     // Start timer thread for processing pending events
     timer_thread = std::thread(&MacOSFileWatcher::timer_loop, this);
+
 
     LOG_INFO("Started watching directory: {}", path);
     return true;
@@ -219,6 +221,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
       // Debug: Log only positive flags for this event
       std::string flag_names = format_fsevents_flags(flags);
       LOG_DEBUG("FSEvents: '{}' [0x{:X}] {}", relative_path, flags, flag_names);
+      
       
       // Check Renamed flag first as it can be combined with other flags
       if (flags & kFSEventStreamEventFlagItemRenamed) {
@@ -344,7 +347,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
         &context,
         paths_to_watch,
         kFSEventStreamEventIdSinceNow,
-        0.1,  // Latency in seconds
+        0.01,  // Latency in seconds - reduced to 10ms for timing analysis
         kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
     );
 
@@ -392,12 +395,9 @@ class MacOSFileWatcher : public FileWatcherImpl {
   }
 
   void add_pending_event(FileEventType type, const fs::path& path, const fs::path& old_path = fs::path(), bool is_directory = false) {
-    // For deletion events, don't filter - we need to process all deletions of tracked assets
-    // For other events, filter out directories and ignored asset types
-    if (type != FileEventType::Deleted) {
-      if (is_directory || !path.has_extension() || should_skip_asset(path.extension().string())) {
-        return;
-      }
+    // Filter out directories, ignored asset types and unknown file types
+    if (is_directory || !path.has_extension() || should_skip_asset(path.extension().string())) {
+      return;
     }
     
     // For Deleted and Renamed events, process immediately (don't debounce)
@@ -450,8 +450,6 @@ class MacOSFileWatcher : public FileWatcherImpl {
   void handle_directory_moved_in(const fs::path& dir_path) {
     LOG_DEBUG("Scanning directory for moved-in contents: {}", dir_path.string());
     
-    // First emit the directory creation event
-    add_pending_event(FileEventType::Created, dir_path, fs::path(), true);
     
     try {
       // Recursively scan the directory and emit Create events for all contents
@@ -478,15 +476,6 @@ class MacOSFileWatcher : public FileWatcherImpl {
     {
       std::lock_guard<std::mutex> lock(*assets_mutex_);
       
-      // First, check if the directory itself is tracked as an asset
-      auto dir_it = assets_->find(dir_path_str);
-      if (dir_it != assets_->end()) {
-        if (callback) {
-          FileEvent event(FileEventType::Deleted, dir_path, fs::path(), true);  // is_directory = true
-          callback(event);
-          event_count++;
-        }
-      }
       
       // Then find all assets under this directory
       // Ensure the directory path ends with / for proper prefix matching of child assets

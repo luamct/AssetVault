@@ -77,7 +77,12 @@
       "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents directory moved out with unified deletion handling\")",
       "Bash(SPDLOG_LEVEL=trace ./build/FileWatcherMacOSTest \"macOS FSEvents directory moved out with unified deletion handling\" -s)",
       "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents directory move operations\" -s)",
-      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents directory copy behavior\" -s)"
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents directory copy behavior\" -s)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"Directory copy generates individual file events - small files\" -s)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"small files\" -s)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents timing analysis for individual operations\" -s)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"Directory renamed within watched area\" -s)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents rename event handling\" -s)"
     ],
     "deny": [],
     "additionalDirectories": [

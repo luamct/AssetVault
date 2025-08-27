@@ -61,7 +61,7 @@ namespace Config {
     // =============================================================================
 
     // File watcher settings
-    constexpr int FILE_WATCHER_DEBOUNCE_MS = 50; // Reduced from 100ms for more responsive UI
+    constexpr int FILE_WATCHER_DEBOUNCE_MS = 50; // Time window to coalesce related events from the same files
 
     // Asset root directory
 #ifdef _WIN32

@@ -145,9 +145,16 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     FileWatcherTestFixture fixture;
     
     SECTION("File moved into watched directory (not previously tracked)") {
-        // Setup: Create file outside watched directory
+        // Test file structure:
+        // temp_dir/external_test.png     <- Source file (copied from tests/files/single_file.png)
+        // 
+        // Expected result after move:
+        // watched_area/moved_in.png      <- Created event (file moved into watched area)
+        
+        // Setup: Copy test file to external location
+        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
         auto external_file = std::filesystem::temp_directory_path() / "external_test.png";
-        std::ofstream(external_file) << "test content";
+        std::filesystem::copy_file(source_file, external_file);
         
         // Start watching
         fixture.start_watching();
@@ -178,9 +185,17 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     }
     
     SECTION("File moved out of watched directory (previously tracked)") {
-        // Setup: Create file in watched directory and track it
+        // Test file structure:
+        // watched_area/tracked.png       <- Tracked in database (copied from tests/files/single_file.png)
+        // 
+        // Expected result after move:
+        // temp_dir/moved_out.png         <- File moved outside watched area
+        // watched_area/                  <- Deleted event for tracked.png
+        
+        // Setup: Copy test file to watched directory and track it
+        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
         auto internal_file = fixture.test_dir / "tracked.png";
-        std::ofstream(internal_file) << "test content";
+        std::filesystem::copy_file(source_file, internal_file);
         fixture.mock_db.add_asset(internal_file);
         
         // Start watching
@@ -212,9 +227,17 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     }
     
     SECTION("File renamed within watched directory (previously tracked)") {
-        // Setup: Create file in watched directory and track it
+        // Test file structure:
+        // watched_area/old_name.png      <- Tracked in database (copied from tests/files/single_file.png)
+        // 
+        // Expected result after rename:
+        // watched_area/new_name.png      <- Created event (new name)
+        // watched_area/                  <- Deleted event (old name)
+        
+        // Setup: Copy test file to watched directory and track it
+        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
         auto old_file = fixture.test_dir / "old_name.png";
-        std::ofstream(old_file) << "test content";
+        std::filesystem::copy_file(source_file, old_file);
         fixture.mock_db.add_asset(old_file);
         
         // Start watching
@@ -257,9 +280,14 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     }
     
     SECTION("File copied into watched directory") {
-        // Setup: Create source file
-        auto source_file = std::filesystem::temp_directory_path() / "source.png";
-        std::ofstream(source_file) << "test content";
+        // Test file structure:
+        // tests/files/single_file.png    <- Source file (pre-created)
+        // 
+        // Expected result after copy:
+        // watched_area/copied.png        <- Created event
+        
+        // Setup: Use pre-created test file
+        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
         
         // Start watching
         fixture.start_watching();
@@ -285,18 +313,21 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
         }
         REQUIRE(found_created);
         
-        // Cleanup
-        std::filesystem::remove(source_file);
+        // Cleanup (source file is preserved)
         std::filesystem::remove(dest_file);
     }
     
     SECTION("File deleted permanently (previously tracked)") {
-        // Setup: Create file in watched directory and track it BEFORE starting watcher
+        // Test file structure:
+        // watched_area/to_delete.png     <- Tracked in database (copied from tests/files/single_file.png)
+        // 
+        // Expected result after deletion:
+        // watched_area/                  <- Deleted event for to_delete.png (file no longer exists)
+        
+        // Setup: Copy test file to watched directory and track it BEFORE starting watcher
+        auto source_file = std::filesystem::current_path() / "tests" / "files" / "single_file.png";
         auto file = fixture.test_dir / "to_delete.png";
-        {
-            std::ofstream ofs(file);
-            ofs << "test content";
-        }  // File closed automatically when ofs goes out of scope
+        std::filesystem::copy_file(source_file, file);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));  // Let filesystem settle
         fixture.mock_db.add_asset(file);
         
@@ -335,21 +366,31 @@ TEST_CASE("macOS FSEvents rename event handling", "[file_watcher_macos]") {
     }
     
     SECTION("File modified (previously tracked)") {
-        // Setup: Create file in watched directory and track it BEFORE starting watcher
-        auto file = fixture.test_dir / "to_modify.png";
-        {
-            std::ofstream ofs(file);
-            ofs << "initial content";
-        }  // File closed automatically when ofs goes out of scope
+        // Test file structure:
+        // watched_area/to_modify.txt     <- Created from tests/files/test_modify.txt, tracked in database
+        // 
+        // Expected result after modification:
+        // watched_area/to_modify.txt     <- Modified event (content changed)
+        
+        // Setup: Copy test file to watched directory and track it BEFORE starting watcher
+        auto source_file = std::filesystem::current_path() / "tests" / "files" / "test_modify.txt";
+        auto file = fixture.test_dir / "to_modify.txt";
+        std::filesystem::copy_file(source_file, file);
+        
+        // Ensure filesystem timestamp settles
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        // Track in database (simulating it was previously indexed)
         fixture.mock_db.add_asset(file);
         
         // Start watching
         fixture.start_watching();
         
-        // Wait for initial events to settle
+        // Wait for initial events to settle and clear any creation events from the copy
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         fixture.clear_events();
         
-        // Action: Modify file  
+        // Action: Modify file by appending content
         std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Ensure different timestamp
         std::ofstream(file, std::ios::app) << "\nmodified content";
         
@@ -391,16 +432,26 @@ TEST_CASE("macOS FSEvents directory copy behavior", "[file_watcher_macos]") {
     FileWatcherTestFixture fixture;
     
     SECTION("Directory copy generates individual file events") {
-        // Setup: Create source directory with files outside watched area
-        auto source_dir = std::filesystem::temp_directory_path() / "source_dir";
-        std::filesystem::create_directory(source_dir);
+        // Test file structure:
+        // tests/files/source_dir/
+        //   ├── file1.png
+        //   ├── file2.png
+        //   ├── file3.png
+        //   └── subdir/
+        //       └── subfile.png
+        // 
+        // Expected result after copy:
+        // watched_area/copied_dir/
+        //   ├── file1.png      <- Created event
+        //   ├── file2.png      <- Created event
+        //   ├── file3.png      <- Created event
+        //   └── subdir/
+        //       └── subfile.png <- Created event
         
-        std::vector<std::filesystem::path> source_files;
-        for (int i = 1; i <= 3; i++) {
-            auto file = source_dir / ("file" + std::to_string(i) + ".png");
-            std::ofstream(file) << "test content " << i;
-            source_files.push_back(file);
-        }
+        // Setup: Copy test files to temporary directory
+        auto source_dir = std::filesystem::temp_directory_path() / "source_dir_copy";
+        auto test_files_dir = std::filesystem::current_path() / "tests" / "files" / "source_dir";
+        std::filesystem::copy(test_files_dir, source_dir, std::filesystem::copy_options::recursive);
         
         // Start watching
         fixture.start_watching();
@@ -410,32 +461,26 @@ TEST_CASE("macOS FSEvents directory copy behavior", "[file_watcher_macos]") {
         auto dest_dir = fixture.test_dir / "copied_dir";
         std::filesystem::copy(source_dir, dest_dir, std::filesystem::copy_options::recursive);
         
-        // Wait for events - should get events for directory + each file
-        fixture.wait_for_events(4);  // 1 directory + 3 files
+        // Wait for events - should get events for each file (directories don't generate events)
+        fixture.wait_for_events(4);  // 4 files: file1.png, file2.png, file3.png, subdir/subfile.png
         
         // Count creation events
         int file_creation_count = 0;
-        int dir_creation_count = 0;
         
         std::cout << "Directory copy test - captured " << fixture.get_events().size() << " events:" << std::endl;
         for (const auto& event : fixture.get_events()) {
-            std::string event_type_str;
-            switch (event.type) {
-                case FileEventType::Created: 
-                    event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
-                    if (event.is_directory) dir_creation_count++; else file_creation_count++;
-                    break;
-                default: event_type_str = "Other"; break;
+            if (event.type == FileEventType::Created) {
+                file_creation_count++;
+                std::cout << "  Created: " << event.path.string() << std::endl;
+            } else {
+                std::cout << "  Other: " << event.path.string() << std::endl;
             }
-            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
         }
         
         print_file_events(fixture.get_events(), "Directory copy events:");
         
         // Assert: Should get individual creation events (FSEvents may report duplicates)
-        REQUIRE(file_creation_count >= 3);  // At least one for each file (may have duplicates)
-        // FSEvents doesn't always report directory creation events for copy operations
-        // REQUIRE(dir_creation_count >= 0);   // May or may not get directory events
+        REQUIRE(file_creation_count >= 4);  // At least one for each file (may have duplicates)
         
         // Cleanup
         std::filesystem::remove_all(source_dir);
@@ -447,23 +492,30 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
     FileWatcherTestFixture fixture;
     
     SECTION("Directory moved in generates events for all contents") {
+        // Test file structure being moved:
+        // external_dir/ (outside watched area)
+        //   ├── file1.png
+        //   ├── file2.png  
+        //   ├── file3.png
+        //   └── subdir/
+        //       └── subfile.png
+        //
         // macOS FSEvents behavior: When a directory is moved into the watched area,
         // FSEvents generates a single Renamed event for the directory.
         // Our file watcher then scans the directory contents and emits individual events.
+        //
+        // Expected result after move:
+        // watched_area/moved_dir/
+        //   ├── file1.png      <- Created event
+        //   ├── file2.png      <- Created event
+        //   ├── file3.png      <- Created event
+        //   └── subdir/
+        //       └── subfile.png <- Created event
         
-        // Setup: Create directory with files outside watched area
-        auto external_dir = std::filesystem::temp_directory_path() / "external_dir";
-        std::filesystem::create_directory(external_dir);
-        
-        for (int i = 1; i <= 3; i++) {
-            auto file = external_dir / ("file" + std::to_string(i) + ".png");
-            std::ofstream(file) << "test content " << i;
-        }
-        
-        // Create subdirectory with file
-        auto subdir = external_dir / "subdir";
-        std::filesystem::create_directory(subdir);
-        std::ofstream(subdir / "nested.png") << "nested content";
+        // Setup: Copy test files to temporary external directory
+        auto external_dir = std::filesystem::temp_directory_path() / "external_move_dir";
+        auto test_files_dir = std::filesystem::current_path() / "tests" / "files" / "source_dir";
+        std::filesystem::copy(test_files_dir, external_dir, std::filesystem::copy_options::recursive);
         
         // Start watching
         fixture.start_watching();
@@ -473,82 +525,87 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         auto dest_dir = fixture.test_dir / "moved_dir";
         std::filesystem::rename(external_dir, dest_dir);
         
-        // Wait for events - should get events for all contents
-        fixture.wait_for_events(6);  // 2 directories + 4 files
+        // Wait for events - should get events for all files
+        fixture.wait_for_events(4);  // 4 files: file1.png, file2.png, file3.png, subdir/subfile.png
         
         // Count events
         int file_creation_count = 0;
-        int dir_creation_count = 0;
         
         std::cout << "Directory move-in test - captured " << fixture.get_events().size() << " events:" << std::endl;
         for (const auto& event : fixture.get_events()) {
-            std::string event_type_str;
-            switch (event.type) {
-                case FileEventType::Created: 
-                    event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
-                    if (event.is_directory) dir_creation_count++; else file_creation_count++;
-                    break;
-                default: event_type_str = "Other"; break;
+            if (event.type == FileEventType::Created) {
+                file_creation_count++;
+                std::cout << "  Created: " << event.path.string() << std::endl;
+            } else {
+                std::cout << "  Other: " << event.path.string() << std::endl;
             }
-            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
         }
         
-        // Assert: Should generate events for all contents (FSEvents may not always report directory creation)
-        REQUIRE(file_creation_count == 4);  // 3 files in root + 1 in subdir
-        // FSEvents doesn't always report directory creation events for move operations
-        // REQUIRE(dir_creation_count >= 0);  // May or may not get directory events
+        // Assert: Should generate events for all files
+        REQUIRE(file_creation_count == 4);  // 4 files: 3 in root + 1 in subdir
         
         // Cleanup
         std::filesystem::remove_all(dest_dir);
     }
     SECTION("Directory renamed within watched area (tracked directory)") {
+        // Test file structure before rename:
+        // watched_area/old_dir_name/
+        //   ├── file1.png      <- Tracked in database
+        //   ├── file2.png      <- Tracked in database
+        //   └── file3.png      <- Tracked in database
+        //
         // macOS FSEvents behavior: When a tracked directory is renamed within the watched area,
         // FSEvents should generate events for both the old path (move-out) and new path (move-in).
         // Our file watcher should emit deletion events for the old path and creation events for the new path.
+        //
+        // Expected result after rename:
+        // watched_area/new_dir_name/
+        //   ├── file1.png      <- Deleted event (old path), Created event (new path)
+        //   ├── file2.png      <- Deleted event (old path), Created event (new path)
+        //   └── file3.png      <- Deleted event (old path), Created event (new path)
         
-        // Setup: Create directory with files in watched area
+        // Setup: Create directory with files in watched area using test files
         auto old_dir = fixture.test_dir / "old_dir_name";
-        std::filesystem::create_directory(old_dir);
+        auto test_files_dir = std::filesystem::current_path() / "tests" / "files" / "source_dir";
+        std::filesystem::copy(test_files_dir, old_dir, std::filesystem::copy_options::recursive);
         
-        std::vector<fs::path> test_files;
-        for (int i = 1; i <= 3; i++) {
-            auto file = old_dir / ("file" + std::to_string(i) + ".png");
-            std::ofstream(file) << "test content " << i;
-            test_files.push_back(file);
-            fixture.mock_db.add_asset(file);  // Track these files
+        // Track these files in mock database (they were "previously indexed")
+        std::vector<fs::path> test_files = {
+            old_dir / "file1.png",
+            old_dir / "file2.png",
+            old_dir / "file3.png"
+        };
+        for (const auto& file : test_files) {
+            fixture.mock_db.add_asset(file);
         }
         
-        // Track the directory itself
-        fixture.mock_db.add_asset(old_dir);
         
         // Start watching
         fixture.start_watching();
         fixture.clear_events();
-        
+        #
         // Action: Rename directory within watched area
         auto new_dir = fixture.test_dir / "new_dir_name";
         std::filesystem::rename(old_dir, new_dir);
         
         // Wait for events - should get deletion events for old path + creation events for new path
-        fixture.wait_for_events(4);  // At least 4 events total (old dir + 3 files + new dir + 3 files, but may be optimized)
+        fixture.wait_for_events(6);  // 6 file events (3 deletions + 3 creations)
         
         // Count deletion and creation events
         int file_deletion_count = 0;
-        int dir_deletion_count = 0;
         int file_creation_count = 0;
-        int dir_creation_count = 0;
         
         std::cout << "Directory rename test - captured " << fixture.get_events().size() << " events:" << std::endl;
         for (const auto& event : fixture.get_events()) {
             std::string event_type_str;
             switch (event.type) {
                 case FileEventType::Created: 
-                    event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
-                    if (event.is_directory) dir_creation_count++; else file_creation_count++;
+                    event_type_str = "Created";
+                    file_creation_count++;
                     break;
                 case FileEventType::Deleted: 
-                    event_type_str = event.is_directory ? "DirectoryDeleted" : "Deleted";
-                    if (event.is_directory) dir_deletion_count++; else file_deletion_count++;
+                    event_type_str = "Deleted";
+                    file_deletion_count++;
                     break;
                 case FileEventType::Modified: event_type_str = "Modified"; break;
                 case FileEventType::Renamed: event_type_str = "Renamed"; break;
@@ -559,11 +616,8 @@ TEST_CASE("macOS FSEvents directory move operations", "[file_watcher_macos]") {
         
         // Assert: Should get both deletion events (for old path) and creation events (for new path)
         // The exact number may vary based on FSEvents behavior, but we should have both operations
-        REQUIRE(file_deletion_count >= 1);  // At least some file deletion events
-        REQUIRE(dir_deletion_count >= 1);   // At least directory deletion event
-        REQUIRE(file_creation_count >= 1);  // At least some file creation events  
-        // FSEvents doesn't always report directory creation events for rename operations
-        // REQUIRE(dir_creation_count >= 0);   // May or may not get directory creation events
+        REQUIRE(file_deletion_count >= 3);  // At least file deletion events
+        REQUIRE(file_creation_count >= 3);  // At least file creation events
         
         // Verify the new directory exists and old doesn't
         REQUIRE(std::filesystem::exists(new_dir));
@@ -579,29 +633,32 @@ TEST_CASE("macOS FSEvents unified directory deletion handling", "[file_watcher_m
     FileWatcherTestFixture fixture;
     
     SECTION("Directory deletion with nested files") {
+        // Test file structure to be deleted:
+        // test_delete_dir/
+        //   ├── file1.png              <- Tracked in database, Deleted event expected
+        //   ├── file2.obj              <- Tracked in database, Deleted event expected
+        //   ├── subdir1/
+        //   │   ├── nested1.obj        <- Tracked in database, Deleted event expected
+        //   │   └── nested2.fbx        <- Tracked in database, Deleted event expected
+        //   └── subdir2/
+        //       └── deep.wav           <- Tracked in database, Deleted event expected
+        //
         // Test that emit_deletion_events_for_directory generates events for all tracked files
         // when a directory is deleted, even when FSEvents is inconsistent
         
-        // Create test directory structure
+        // Setup: Copy test directory structure to watched area
         fs::path test_delete_dir = fixture.test_dir / "test_delete_dir";
-        fs::create_directories(test_delete_dir);
-        fs::create_directories(test_delete_dir / "subdir1");
-        fs::create_directories(test_delete_dir / "subdir2");
+        auto source_dir = std::filesystem::current_path() / "tests" / "files" / "delete_test_dir";
+        std::filesystem::copy(source_dir, test_delete_dir, std::filesystem::copy_options::recursive);
         
-        // Create test files
+        // Define files that should be tracked
         std::vector<fs::path> test_files = {
-            test_delete_dir / "file1.txt",
-            test_delete_dir / "file2.png", 
+            test_delete_dir / "file1.png",
+            test_delete_dir / "file2.obj", 
             test_delete_dir / "subdir1" / "nested1.obj",
             test_delete_dir / "subdir1" / "nested2.fbx",
             test_delete_dir / "subdir2" / "deep.wav"
         };
-        
-        for (const auto& file_path : test_files) {
-            std::ofstream file(file_path);
-            file << "test content";
-            file.close();
-        }
         
         // Add all files to mock asset database (simulating they're tracked)
         {
@@ -646,25 +703,26 @@ TEST_CASE("macOS FSEvents unified directory deletion handling", "[file_watcher_m
     }
     
     SECTION("Directory move-out simulation") {
+        // Test file structure being moved out:
+        // move_out_test/
+        //   ├── move1.txt              <- Tracked in database, Deleted event expected
+        //   ├── move2.png              <- Tracked in database, Deleted event expected
+        //   └── subdir/
+        //       └── nested.obj         <- Tracked in database, Deleted event expected
+        //
         // Test unified deletion handling for directory move-out scenarios
         
-        // Create test directory structure
+        // Setup: Copy test directory structure to watched area
         fs::path test_move_dir = fixture.test_dir / "move_out_test";
-        fs::create_directories(test_move_dir);
+        auto source_dir = std::filesystem::current_path() / "tests" / "files" / "move_test_dir";
+        std::filesystem::copy(source_dir, test_move_dir, std::filesystem::copy_options::recursive);
         
-        // Create test files 
+        // Define files that should be tracked 
         std::vector<fs::path> test_files = {
             test_move_dir / "move1.txt",
             test_move_dir / "move2.png",
             test_move_dir / "subdir" / "nested.obj"
         };
-        
-        fs::create_directories(test_move_dir / "subdir");
-        for (const auto& file_path : test_files) {
-            std::ofstream file(file_path);
-            file << "move test content";
-            file.close();
-        }
         
         // Add files to mock asset database
         {
