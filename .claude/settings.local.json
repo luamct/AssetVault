@@ -82,7 +82,11 @@
       "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"small files\" -s)",
       "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents timing analysis for individual operations\" -s)",
       "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"Directory renamed within watched area\" -s)",
-      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents rename event handling\" -s)"
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"macOS FSEvents rename event handling\" -s)",
+      "Bash(cp:*)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"[MacOS] Files modified or overwritten within watched directory\")",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest [MacOS] Files modified or overwritten within watched directory -s)",
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest -s \"Files modified or overwritten within watched directory\")"
     ],
     "deny": [],
     "additionalDirectories": [

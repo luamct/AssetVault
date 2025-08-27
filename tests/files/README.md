@@ -8,7 +8,7 @@ This directory contains pre-created test files used by the file watcher unit tes
 tests/files/
 ├── README.md                    # This file
 ├── single_file.png              # Single file for copy tests
-├── test_modify.txt              # File for modification tests
+├── test_modify.png              # File for modification tests
 ├── source_dir/                  # Directory with multiple files for copy/move tests
 │   ├── file1.png
 │   ├── file2.png
