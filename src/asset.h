@@ -32,3 +32,4 @@ AssetType get_asset_type_from_string(const std::string& type_string);
 
 // Early filtering helper - determines if asset should be skipped based on extension
 bool should_skip_asset(const std::string& extension);
+

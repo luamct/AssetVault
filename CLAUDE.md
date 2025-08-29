@@ -566,3 +566,4 @@ ALWAYS prefer editing an existing file to creating a new one.
 NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 
 - Favor adding unit tests instead of creating scripts or manually testing things
+- Always use the Debug config during development

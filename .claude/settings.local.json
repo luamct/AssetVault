@@ -86,7 +86,12 @@
       "Bash(cp:*)",
       "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest \"[MacOS] Files modified or overwritten within watched directory\")",
       "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest [MacOS] Files modified or overwritten within watched directory -s)",
-      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest -s \"Files modified or overwritten within watched directory\")"
+      "Bash(SPDLOG_LEVEL=debug ./build/FileWatcherMacOSTest -s \"Files modified or overwritten within watched directory\")",
+      "Bash(./build/Debug/FileWatcherWindowsTest.exe)",
+      "Bash(./build/Debug/FileWatcherWindowsTest.exe:*)",
+      "Bash(./build/Release/FileWatcherWindowsTest.exe)",
+      "Bash(./build/Release/UtilsTest.exe)",
+      "Bash(./build/Debug/UtilsTest.exe)"
     ],
     "deny": [],
     "additionalDirectories": [

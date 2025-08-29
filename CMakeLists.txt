@@ -255,6 +255,32 @@ if(PLATFORM_MACOS)
         ${COREFOUNDATION_LIBRARY}
         ${CORESERVICES_LIBRARY}
     )
+elseif(WIN32)
+    add_executable(FileWatcherWindowsTest
+        tests/test_file_watcher_windows.cpp
+        tests/test_helpers.cpp
+        ${FILE_WATCHER_SOURCES}
+    )
+
+    # Include directories for Windows file watcher test
+    target_include_directories(FileWatcherWindowsTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/external
+        ${GLAD_DIR}/include
+        ${IMGUI_DIR}
+    )
+
+    # Link libraries for Windows file watcher test
+    target_link_libraries(FileWatcherWindowsTest PRIVATE
+        AssetInventoryCore
+        glad
+        assimp::assimp
+        glm::glm
+        Catch2::Catch2WithMain
+    )
+    
+    add_test(NAME FileWatcherWindowsTests COMMAND FileWatcherWindowsTest)
 endif()
 
 # Enable testing
@@ -295,6 +321,24 @@ target_link_libraries(EventProcessorTest PRIVATE
 )
 
 add_test(NAME EventProcessorTests COMMAND EventProcessorTest)
+
+# Add Utils test executable
+add_executable(UtilsTest
+    tests/test_utils.cpp
+    tests/test_helpers.cpp
+)
+
+target_include_directories(UtilsTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
+target_link_libraries(UtilsTest PRIVATE
+    AssetInventoryCore
+    Catch2::Catch2WithMain
+)
+
+add_test(NAME UtilsTests COMMAND UtilsTest)
 
 if(PLATFORM_MACOS)
     add_test(NAME FileWatcherMacOSTests COMMAND FileWatcherMacOSTest)

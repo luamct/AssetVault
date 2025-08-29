@@ -1,9 +1,14 @@
 #include "utils.h"
 #include "config.h"
+#include "asset.h"
 
 #include <algorithm>
 #include <cstdio>
-#include <filesystem> // Added for std::filesystem::current_path()
+#include <filesystem>
+#include <map>
+#include <vector>
+
+namespace fs = std::filesystem;
 
 // Function to truncate filename to specified length with ellipsis
 std::string truncate_filename(const std::string& filename, size_t max_length) {
@@ -100,4 +105,42 @@ void safe_strcpy(char* dest, size_t dest_size, const char* src) {
   strncpy(dest, src, dest_size - 1);
   dest[dest_size - 1] = '\0';  // Ensure null termination
 #endif
+}
+
+// Efficiently find all assets under a directory path using binary search O(log n + k)
+// where k is the number of assets found under the directory
+std::vector<std::filesystem::path> find_assets_under_directory(const std::map<std::string, Asset>& assets, const std::filesystem::path& dir_path) {
+  std::vector<std::filesystem::path> result;
+  
+  if (assets.empty()) {
+    return result;
+  }
+  
+  // Convert directory path to string and normalize to forward slashes for consistent matching
+  std::string dir_path_str = normalize_path_separators(dir_path.u8string());
+  if (!dir_path_str.empty() && dir_path_str.back() != '/') {
+    dir_path_str += '/';
+  }
+  
+  // Use binary search to find the first asset with path >= dir_path_str
+  auto it = assets.lower_bound(dir_path_str);
+  
+  // Iterate through all assets that start with dir_path_str (child assets)
+  while (it != assets.end()) {
+    const std::string& asset_path = it->first;
+    
+    // Normalize asset path for comparison to handle different path separators
+    std::string normalized_asset_path = normalize_path_separators(asset_path);
+    
+    // Check if this asset is still under the directory
+    if (normalized_asset_path.substr(0, dir_path_str.length()) != dir_path_str) {
+      break;  // No more assets under this directory
+    }
+    
+    // Add this asset to the result
+    result.push_back(fs::u8path(asset_path));
+    ++it;
+  }
+  
+  return result;
 }

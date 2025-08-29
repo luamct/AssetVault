@@ -3,6 +3,12 @@
 #include <cstdint>
 #include <string>
 #include <ctime>
+#include <filesystem>
+#include <map>
+#include <vector>
+
+// Forward declarations
+struct Asset;
 
 // String utility functions
 std::string truncate_filename(const std::string& filename, size_t max_length = 20);
@@ -19,3 +25,8 @@ void safe_localtime(std::tm* tm_buf, const std::time_t* time);
 
 // String copy utility functions
 void safe_strcpy(char* dest, size_t dest_size, const char* src);
+
+// Asset management utility functions
+// Efficiently find all assets under a directory path using binary search O(log n + k)  
+// Returns vector of asset paths that are children of the given directory
+std::vector<std::filesystem::path> find_assets_under_directory(const std::map<std::string, Asset>& assets, const std::filesystem::path& dir_path);

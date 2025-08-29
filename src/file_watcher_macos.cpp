@@ -13,6 +13,7 @@
 #include "file_watcher.h"
 #include "logger.h"
 #include "asset.h"
+#include "utils.h"
 
 // Structure to track pending file events
 struct PendingFileEvent {
@@ -470,43 +471,23 @@ class MacOSFileWatcher : public FileWatcherImpl {
       return;
     }
     
-    std::string dir_path_str = dir_path.u8string();
-    size_t event_count = 0;
+    // Use optimized O(log n) lookup to find tracked files under this path
+    std::vector<fs::path> files_to_delete;
     
     {
       std::lock_guard<std::mutex> lock(*assets_mutex_);
-      
-      
-      // Then find all assets under this directory
-      // Ensure the directory path ends with / for proper prefix matching of child assets
-      if (!dir_path_str.empty() && dir_path_str.back() != '/') {
-        dir_path_str += '/';
-      }
-      
-      // Use binary search to find the first asset with path >= dir_path_str
-      auto it = assets_->lower_bound(dir_path_str);
-      
-      // Iterate through all assets that start with dir_path_str (child assets)
-      while (it != assets_->end()) {
-        const std::string& asset_path = it->first;
-        
-        // Check if this asset is still under the directory
-        if (asset_path.substr(0, dir_path_str.length()) != dir_path_str) {
-          break;  // No more assets under this directory
-        }
-        
-        // Emit deletion event for this asset
-        if (callback) {
-          FileEvent event(FileEventType::Deleted, fs::u8path(asset_path));
-          callback(event);
-          event_count++;
-        }
-        
-        ++it;
+      files_to_delete = find_assets_under_directory(*assets_, dir_path);
+    }
+    
+    // Emit deletion events for all found assets
+    for (const auto& file_path : files_to_delete) {
+      if (callback) {
+        FileEvent event(FileEventType::Deleted, file_path);
+        callback(event);
       }
     }
     
-    LOG_DEBUG("Emitted {} deletion events for directory and assets under it", event_count);
+    LOG_DEBUG("Emitted {} deletion events for directory and assets under it", files_to_delete.size());
   }
   
 };
