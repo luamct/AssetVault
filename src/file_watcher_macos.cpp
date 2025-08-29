@@ -19,14 +19,13 @@
 struct PendingFileEvent {
   FileEventType original_type;
   fs::path path;
-  fs::path old_path;  // For rename events
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
   PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
 
-  PendingFileEvent(FileEventType type, const fs::path& p, const fs::path& old = fs::path())
-      : original_type(type), path(p), old_path(old), last_activity(std::chrono::steady_clock::now()), is_active(true) {}
+  PendingFileEvent(FileEventType type, const fs::path& p)
+      : original_type(type), path(p), last_activity(std::chrono::steady_clock::now()), is_active(true) {}
 };
 
 class MacOSFileWatcher : public FileWatcherImpl {
@@ -394,14 +393,14 @@ class MacOSFileWatcher : public FileWatcherImpl {
     CFRelease(path_cfstr);
   }
 
-  void add_pending_event(FileEventType type, const fs::path& path, const fs::path& old_path = fs::path()) {
+  void add_pending_event(FileEventType type, const fs::path& path) {
     // Filter out directories, ignored asset types and unknown file types  
     if (!path.has_extension() || should_skip_asset(path.extension().string())) {
       return;
     }
     
-    // For Deleted and Renamed events, process immediately (don't debounce)
-    if (type == FileEventType::Deleted || type == FileEventType::Renamed) {
+    // For Deleted events, process immediately (don't debounce)
+    if (type == FileEventType::Deleted) {
       // Get relative path for logging
       std::string relative_path = path.string();
       if (relative_path.find(watched_path) == 0) {
@@ -412,7 +411,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
       }
       
       if (callback) {
-        FileEvent event(type, path, old_path);
+        FileEvent event(type, path);
         callback(event);
       }
       return;
@@ -421,7 +420,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
     // Create or update the pending event (only for Created/Modified events)
-    pending_events[path] = PendingFileEvent(type, path, old_path);
+    pending_events[path] = PendingFileEvent(type, path);
   }
 
   void timer_loop() {
@@ -437,7 +436,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
 
         if (event.is_active && time_since_activity >= Config::FILE_WATCHER_DEBOUNCE_MS) {
           // Process the event
-          callback(FileEvent(event.original_type, event.path, event.old_path));
+          callback(FileEvent(event.original_type, event.path));
           
           it = pending_events.erase(it);
         } else {

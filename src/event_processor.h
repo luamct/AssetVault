@@ -74,13 +74,11 @@ private:
     void process_created_events(const std::vector<FileEvent>& events);
     void process_modified_events(const std::vector<FileEvent>& events);
     void process_deleted_events(const std::vector<FileEvent>& events);
-    void process_renamed_events(const std::vector<FileEvent>& events);
 
     // Asset manipulation methods (thread-safe)
     void add_asset(const Asset& asset);
     void update_asset(const Asset& asset);
     void remove_asset(const std::string& path);
-    void rename_asset(const std::string& old_path, const std::string& new_path);
 
     // References to global state
     AssetDatabase& database_;

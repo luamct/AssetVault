@@ -16,7 +16,7 @@ struct Asset {
   uint32_t id = 0;           // Unique database ID (0 means not yet assigned)
   std::string name;          // File name (without path)
   std::string extension;     // File extension (lowercase)
-  std::filesystem::path full_path; // Full path to the file
+  std::string full_path;     // Full path to the file (UTF-8 with normalized separators)
   uint64_t size;             // File size in bytes
   time_point last_modified;  // Last modification time (system clock - for user display)
   AssetType type;            // Asset type enum

@@ -377,13 +377,13 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
   // Get current database state
   std::vector<Asset> db_assets = database.get_all_assets();
   LOG_INFO("Database contains {} assets", db_assets.size());
-  std::unordered_map<std::filesystem::path, Asset> db_map;
+  std::unordered_map<std::string, Asset> db_map;
   for (const auto& asset : db_assets) {
     db_map[asset.full_path] = asset;
   }
 
   // Phase 1: Get filesystem paths (fast scan)
-  std::unordered_set<std::filesystem::path> current_files;
+  std::unordered_set<std::string> current_files;
   try {
     fs::path root(Config::ASSET_ROOT_DIRECTORY);
     if (!fs::exists(root) || !fs::is_directory(root)) {
@@ -400,7 +400,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
         if (entry.is_directory() || should_skip_asset(entry.path().extension().string())) {
           continue;
         }
-        current_files.insert(entry.path());
+        current_files.insert(normalize_path_separators(entry.path().u8string()));
       }
       catch (const fs::filesystem_error& e) {
         LOG_WARN("Could not access {}: {}", entry.path().u8string(), e.what());
@@ -426,7 +426,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
     auto db_it = db_map.find(path);
     if (db_it == db_map.end()) {
       // File not in database - create a Created event
-      FileEvent event(FileEventType::Created, path);
+      FileEvent event(FileEventType::Created, fs::u8path(path));
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
@@ -437,8 +437,8 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
   // Find files in database that no longer exist on filesystem
   for (const auto& db_asset : db_assets) {
     if (current_files.find(db_asset.full_path) == current_files.end()) {
-      // File no longer exists - create a Deleted event  
-      FileEvent event(FileEventType::Deleted, db_asset.full_path);
+      // File no longer exists - create a Deleted event
+      FileEvent event(FileEventType::Deleted, fs::u8path(db_asset.full_path));
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
@@ -455,7 +455,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
     std::lock_guard<std::mutex> lock(event_processor->get_assets_mutex());
     // Load existing database assets into assets map
     for (const auto& asset : db_assets) {
-      assets[asset.full_path.u8string()] = asset;
+      assets[asset.full_path] = asset;
     }
     LOG_INFO("Loaded {} existing assets from database", assets.size());
   }
@@ -611,6 +611,7 @@ int main() {
 
   // Main loop
   double last_time = glfwGetTime();
+  LOG_INFO("DEBUG: Entering main rendering loop");
   while (!glfwWindowShouldClose(window)) {
     double current_time = glfwGetTime();
     io.DeltaTime = (float) (current_time - last_time);
@@ -1021,11 +1022,11 @@ int main() {
       // Check if selected asset is a model
       if (selected_asset.type == AssetType::_3D && texture_manager.is_preview_initialized()) {
         // Load the model if it's different from the currently loaded one
-        if (selected_asset.full_path.u8string() != current_model.path) {
+        if (selected_asset.full_path != current_model.path) {
           LOG_DEBUG("=== Loading Model in Main ===");
-          LOG_DEBUG("Selected asset: {}", selected_asset.full_path.u8string());
+          LOG_DEBUG("Selected asset: {}", selected_asset.full_path);
           Model model;
-          if (load_model(selected_asset.full_path.u8string(), model, texture_manager)) {
+          if (load_model(selected_asset.full_path, model, texture_manager)) {
             set_current_model(current_model, model);
             LOG_DEBUG("Model loaded successfully in main");
           }
@@ -1067,7 +1068,7 @@ int main() {
         // 3D Model information
         ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
-        render_clickable_path(selected_asset.full_path.u8string(), search_state);
+        render_clickable_path(selected_asset.full_path, search_state);
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
         ImGui::SameLine();
@@ -1110,7 +1111,7 @@ int main() {
         // Audio handling for sound assets
 
         // Load the audio file if it's different from the currently loaded one
-        const std::string asset_path = selected_asset.full_path.u8string();
+        const std::string asset_path = selected_asset.full_path;
         const std::string current_file = audio_manager.get_current_file();
 
         if (asset_path != current_file) {
@@ -1285,7 +1286,7 @@ int main() {
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
-        render_clickable_path(selected_asset.full_path.u8string(), search_state);
+        render_clickable_path(selected_asset.full_path, search_state);
 
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);
@@ -1367,7 +1368,7 @@ int main() {
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
         ImGui::SameLine();
-        render_clickable_path(selected_asset.full_path.u8string(), search_state);
+        render_clickable_path(selected_asset.full_path, search_state);
 
         // Format and display last modified time
         auto time_t = std::chrono::system_clock::to_time_t(selected_asset.last_modified);

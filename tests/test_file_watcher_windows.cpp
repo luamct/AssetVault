@@ -37,7 +37,7 @@ public:
         std::lock_guard<std::mutex> lock(assets_mutex_);
         Asset asset;
         // Normalize path separators like the real application does
-        asset.full_path = fs::u8path(normalize_path_separators(path.u8string()));
+        asset.full_path = normalize_path_separators(path.u8string());
         asset.name = path.filename().string();
         assets_[normalize_path_separators(path.u8string())] = asset;
     }
@@ -302,11 +302,15 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         auto source_dir = get_test_files_dir() / "move_test_dir";
         fs::copy(source_dir, test_move_dir, fs::copy_options::recursive);
 
-        // Define files that should be tracked
+        // Create additional non-ASCII test file
+        std::ofstream(test_move_dir / "éspañol×.fbx") << "FBX content with non-ASCII filename";
+
+        // Define files that should be tracked (including non-ASCII)
         std::vector<fs::path> test_files = {
             test_move_dir / "move1.txt",
             test_move_dir / "move2.png",
-            test_move_dir / "subdir" / "nested.obj"
+            test_move_dir / "subdir" / "nested.obj",
+            test_move_dir / "éspañol×.fbx"  // Non-ASCII: Spanish accents + multiplication sign
         };
 
         // Add files to mock asset database
@@ -457,9 +461,6 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
                 file_delete_count++;
                 break;
             case FileEventType::Modified: event_type_str = "Modified"; break;
-            case FileEventType::Renamed:
-                event_type_str = "Renamed";
-                break;
             default: event_type_str = "Other"; break;
             }
             std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
@@ -647,13 +648,20 @@ TEST_CASE("[Windows] Directory and file deletion operations", "[file_watcher_win
         auto source_dir = get_test_files_dir() / "delete_test_dir";
         fs::copy(source_dir, test_delete_dir, fs::copy_options::recursive);
 
-        // Define files that should be tracked
+        // Create additional non-ASCII test files
+        fs::create_directories(test_delete_dir / "subdir2");
+        std::ofstream(test_delete_dir / "файл×.png") << "PNG content with non-ASCII filename";
+        std::ofstream(test_delete_dir / "subdir2" / "ñoël🎄.wav") << "WAV content with non-ASCII filename";
+
+        // Define files that should be tracked (including non-ASCII characters)
         std::vector<fs::path> test_files = {
             test_delete_dir / "file1.png",
-            test_delete_dir / "file2.obj",
+            test_delete_dir / "file2.obj", 
+            test_delete_dir / "файл×.png",  // Non-ASCII: Cyrillic + multiplication sign
             test_delete_dir / "subdir1" / "nested1.obj",
             test_delete_dir / "subdir1" / "nested2.fbx",
-            test_delete_dir / "subdir2" / "deep.wav"
+            test_delete_dir / "subdir2" / "deep.wav",
+            test_delete_dir / "subdir2" / "ñoël🎄.wav"  // Non-ASCII: accents + emoji
         };
 
         // Add all files to mock asset database (simulating they're tracked)

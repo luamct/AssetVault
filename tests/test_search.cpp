@@ -27,6 +27,12 @@ TEST_CASE("parse_search_query basic functionality", "[search]") {
         REQUIRE(query.type_filters.empty());
     }
 
+    SECTION("Non-ASCII text query") {
+        auto query = parse_search_query("mönster× tëxture");
+        REQUIRE(query.text_query == "mönster× tëxture");
+        REQUIRE(query.type_filters.empty());
+    }
+
     SECTION("Type only query") {
         auto query = parse_search_query("type=2d");
         REQUIRE(query.text_query.empty());
@@ -127,6 +133,7 @@ TEST_CASE("parse_search_query edge cases", "[search]") {
 
 TEST_CASE("asset_matches_search text matching", "[search]") {
     Asset asset = create_test_asset("monster_texture", ".png", AssetType::_2D, "assets/textures/monster_texture.png");
+    Asset non_ascii_asset = create_test_asset("mönster×_tëxture", ".png", AssetType::_2D, "assets/textures/mönster×_tëxture.png");
 
     SECTION("Name matching") {
         SearchQuery query;
@@ -168,6 +175,22 @@ TEST_CASE("asset_matches_search text matching", "[search]") {
 
         query.text_query = "TEXTURES";
         REQUIRE(asset_matches_search(asset, query) == true);
+    }
+
+    SECTION("Non-ASCII name matching") {
+        SearchQuery query;
+        query.text_query = "mönster";
+        
+        REQUIRE(asset_matches_search(asset, query) == false);          // ASCII asset doesn't match
+        REQUIRE(asset_matches_search(non_ascii_asset, query) == true); // Non-ASCII asset matches
+    }
+
+    SECTION("Non-ASCII character search with multiplication sign") {
+        SearchQuery query;
+        query.text_query = "×";
+        
+        REQUIRE(asset_matches_search(asset, query) == false);          // ASCII asset doesn't have ×
+        REQUIRE(asset_matches_search(non_ascii_asset, query) == true); // Non-ASCII asset has ×
     }
 }
 
@@ -597,7 +620,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     uint32_t id = 1;
     for (auto& asset : assets_vector) {
         asset.id = id++;
-        test_assets[asset.full_path.u8string()] = asset;
+        test_assets[asset.full_path] = asset;
     }
 
     std::mutex test_mutex;

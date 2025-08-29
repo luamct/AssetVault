@@ -12,7 +12,7 @@ Asset create_test_asset(
     asset.name = name;
     asset.extension = extension;
     asset.type = type;
-    asset.full_path = std::filesystem::path(path.empty() ? (name + extension) : path);
+    asset.full_path = path.empty() ? (name + extension) : path;
     asset.size = 1024; // Default size
     asset.last_modified = std::chrono::system_clock::now();
     return asset;
@@ -33,20 +33,12 @@ void print_file_events(const std::vector<FileEvent>& events, const std::string& 
             case FileEventType::Deleted: 
                 event_type_str = "Deleted";
                 break;
-            case FileEventType::Renamed: 
-                event_type_str = "Renamed";
-                break;
             default: 
                 event_type_str = "Unknown";
                 break;
         }
         
         std::cout << "  " << event_type_str << ": " << event.path.string();
-        
-        // If it's a rename event and has an old path, show it
-        if (event.type == FileEventType::Renamed && !event.old_path.empty()) {
-            std::cout << " (from: " << event.old_path.string() << ")";
-        }
         
         std::cout << std::endl;
     }

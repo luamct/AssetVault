@@ -18,17 +18,16 @@ namespace fs = std::filesystem;
 class FileWatcherImpl;
 
 // Event types for file system changes
-enum class FileEventType { Created, Modified, Deleted, Renamed };
+enum class FileEventType { Created, Modified, Deleted };
 
 // File event structure
 struct FileEvent {
   FileEventType type;
   fs::path path;
-  fs::path old_path;  // For rename events
   std::chrono::system_clock::time_point timestamp;
 
-  FileEvent(FileEventType t, const fs::path& p, const fs::path& old = "")
-      : type(t), path(p), old_path(old), timestamp(std::chrono::system_clock::now()) {}
+  FileEvent(FileEventType t, const fs::path& p)
+      : type(t), path(p), timestamp(std::chrono::system_clock::now()) {}
 };
 
 // Callback type for file events

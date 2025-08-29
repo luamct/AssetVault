@@ -128,7 +128,6 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     std::vector<FileEvent> created_events;
     std::vector<FileEvent> modified_events;
     std::vector<FileEvent> deleted_events;
-    std::vector<FileEvent> renamed_events;
 
     for (const auto& event : batch) {
         switch (event.type) {
@@ -140,9 +139,6 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
             break;
         case FileEventType::Deleted:
             deleted_events.push_back(event);
-            break;
-        case FileEventType::Renamed:
-            renamed_events.push_back(event);
             break;
         }
     }
@@ -156,9 +152,6 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     }
     if (!deleted_events.empty()) {
         process_deleted_events(deleted_events);
-    }
-    if (!renamed_events.empty()) {
-        process_renamed_events(renamed_events);
     }
 
     // Signal that search needs to be updated
@@ -205,7 +198,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
         // Batch update assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_insert) {
-            assets_[file.full_path.u8string()] = file;
+            assets_[file.full_path] = file;
             // Update search index for new asset
             search_index_.add_asset(file.id, file);
         }
@@ -241,7 +234,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
 
             // Queue texture invalidation for modified texture assets
             if (file_info.type == AssetType::_2D) {
-                texture_manager_.queue_texture_invalidation(event.path);
+                texture_manager_.queue_texture_invalidation(event.path.u8string());
             }
         }
         catch (const std::exception& e) {
@@ -257,7 +250,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
         // Batch update assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_update) {
-            assets_[file.full_path.u8string()] = file;
+            assets_[file.full_path] = file;
             // Update search index for modified asset
             search_index_.update_asset(file.id, file);
         }
@@ -277,7 +270,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
         total_events_processed_++;  // Increment per event processed
         
         // Queue texture invalidation for deleted assets
-        texture_manager_.queue_texture_invalidation(event.path);
+        texture_manager_.queue_texture_invalidation(event.path.u8string());
     }
 
     // Batch delete all paths from database
@@ -309,106 +302,17 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     }
 }
 
-void EventProcessor::process_renamed_events(const std::vector<FileEvent>& events) {
-    // Handle renames based on whether destination is within watched directory
-    std::vector<std::string> paths_to_delete;  // For moves outside watched directory
-    std::vector<std::string> old_paths;        // For renames within watched directory
-    std::vector<Asset> new_files;              // For renames within watched directory
-
-    paths_to_delete.reserve(events.size());
-    old_paths.reserve(events.size());
-    new_files.reserve(events.size());
-
-    for (const auto& event : events) {
-        try {
-            std::string event_path = event.path.u8string();
-            
-            // Check if the rename destination is within our watched directory
-            bool destination_in_watched_dir = event_path.find(root_path_) == 0;
-            
-            if (destination_in_watched_dir && std::filesystem::exists(event.path)) {
-                // File renamed/moved within watched directory - treat as proper rename
-                LOG_DEBUG("Rename event: '{}' moved within watched directory, treating as rename", event_path);
-                
-                // Since FSEvents only gives us the destination path, we need to find the old path
-                // by looking for assets that no longer exist
-                // For now, treat this as creation since we don't have the old path
-                Asset file_info = process_file(event.path, event.timestamp);
-                new_files.push_back(file_info);
-                
-                // Queue texture invalidation for new path if it's a texture asset
-                if (file_info.type == AssetType::_2D) {
-                    texture_manager_.queue_texture_invalidation(event.path);
-                }
-            } else {
-                // File moved outside watched directory (e.g., to Trash) - treat as deletion
-                LOG_DEBUG("Rename event: '{}' moved outside watched directory, treating as deletion", event_path);
-                paths_to_delete.push_back(event_path);
-                
-                // Queue texture invalidation for deleted asset
-                texture_manager_.queue_texture_invalidation(event.path);
-            }
-            
-            total_events_processed_++;  // Increment per file processed
-        }
-        catch (const std::exception& e) {
-            LOG_ERROR("Error processing renamed event for {}: {}", event.path.u8string(), e.what());
-            total_events_processed_++;  // Count failed attempts too
-        }
-    }
-
-    // Handle deletions (moves outside watched directory)
-    if (!paths_to_delete.empty()) {
-        // Get asset IDs before deletion for search index cleanup
-        std::vector<uint32_t> deleted_asset_ids;
-        {
-            std::lock_guard<std::mutex> lock(assets_mutex_);
-            for (const auto& path : paths_to_delete) {
-                auto it = assets_.find(path);
-                if (it != assets_.end() && it->second.id > 0) {
-                    deleted_asset_ids.push_back(it->second.id);
-                }
-            }
-        }
-
-        database_.delete_assets_batch(paths_to_delete);
-
-        // Remove from in-memory assets map and search index
-        std::lock_guard<std::mutex> lock(assets_mutex_);
-        for (size_t i = 0; i < paths_to_delete.size(); ++i) {
-            const auto& path = paths_to_delete[i];
-            assets_.erase(path);
-            // Remove from search index if we have the ID
-            if (i < deleted_asset_ids.size()) {
-                search_index_.remove_asset(deleted_asset_ids[i]);
-            }
-        }
-    }
-
-    // Handle creations (renames within watched directory)
-    if (!new_files.empty()) {
-        database_.insert_assets_batch(new_files);
-
-        // Add to in-memory assets map
-        std::lock_guard<std::mutex> lock(assets_mutex_);
-        for (const auto& file : new_files) {
-            assets_[file.full_path.u8string()] = file;
-            // Add to search index for new asset
-            search_index_.add_asset(file.id, file);
-        }
-    }
-}
 
 // Individual asset manipulation methods (still used by batch processing)
 
 void EventProcessor::add_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
-    assets_[asset.full_path.u8string()] = asset;
+    assets_[asset.full_path] = asset;
 }
 
 void EventProcessor::update_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
-    assets_[asset.full_path.u8string()] = asset;
+    assets_[asset.full_path] = asset;
 }
 
 void EventProcessor::remove_asset(const std::string& path) {
@@ -416,18 +320,6 @@ void EventProcessor::remove_asset(const std::string& path) {
     assets_.erase(path);
 }
 
-void EventProcessor::rename_asset(const std::string& old_path, const std::string& new_path) {
-    std::lock_guard<std::mutex> lock(assets_mutex_);
-
-    auto it = assets_.find(old_path);
-    if (it != assets_.end()) {
-        Asset asset = it->second;
-        assets_.erase(it);
-        asset.full_path = fs::u8path(new_path);
-        asset.name = fs::path(new_path).filename().u8string();
-        assets_[new_path] = asset;
-    }
-}
 
 
 
@@ -438,7 +330,7 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
         fs::path root(root_path_);
 
         // Basic file information (normalize path separators for consistent storage)
-        file_info.full_path = fs::u8path(normalize_path_separators(full_path.u8string()));
+        file_info.full_path = normalize_path_separators(full_path.u8string());
         file_info.name = full_path.filename().u8string();
         // File-specific information
         file_info.extension = full_path.extension().string();
@@ -461,7 +353,7 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
             }
         }
         catch (const fs::filesystem_error& e) {
-            LOG_WARN("Could not get file info for {}: {}", file_info.full_path.u8string(), e.what());
+            LOG_WARN("Could not get file info for {}: {}", file_info.full_path, e.what());
             file_info.size = 0;
             file_info.last_modified = timestamp;
         }
@@ -472,7 +364,7 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
     catch (const fs::filesystem_error& e) {
         LOG_ERROR("Error creating file info for {}: {}", full_path.u8string(), e.what());
         // Return minimal file info on error
-        file_info.full_path = fs::u8path(normalize_path_separators(full_path.u8string()));
+        file_info.full_path = normalize_path_separators(full_path.u8string());
         file_info.name = full_path.filename().u8string();
         file_info.last_modified = timestamp;
     }

@@ -91,7 +91,11 @@
       "Bash(./build/Debug/FileWatcherWindowsTest.exe:*)",
       "Bash(./build/Release/FileWatcherWindowsTest.exe)",
       "Bash(./build/Release/UtilsTest.exe)",
-      "Bash(./build/Debug/UtilsTest.exe)"
+      "Bash(./build/Debug/UtilsTest.exe)",
+      "Bash(./build/Release/FileWatcherWindowsTest.exe -c \"Directory move-out with tracked files\")",
+      "Bash(./build/Release/FileWatcherWindowsTest.exe --list-tests)",
+      "Bash(./build/Release/FileWatcherWindowsTest.exe \"[Windows] Directory and file deletion operations\")",
+      "Bash(./build/Release/FileWatcherWindowsTest.exe:*)"
     ],
     "deny": [],
     "additionalDirectories": [

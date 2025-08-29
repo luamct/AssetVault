@@ -21,7 +21,8 @@ std::string truncate_filename(const std::string& filename, size_t max_length) {
 // Function to convert string to lowercase for case-insensitive search
 std::string to_lowercase(const std::string& str) {
   std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(), ::tolower);
+  std::transform(result.begin(), result.end(), result.begin(), 
+    [](unsigned char c) { return std::tolower(c); });
   return result;
 }
 

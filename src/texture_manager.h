@@ -37,8 +37,8 @@ public:
   TextureCacheEntry get_asset_texture(const Asset& asset);
   const std::string& u8_path(const Asset& asset);
   void load_type_textures();
-  void cleanup_texture_cache(const std::filesystem::path& path);
-  bool get_texture_dimensions(const std::filesystem::path& file_path, int& width, int& height);
+  void cleanup_texture_cache(const std::string& path);
+  bool get_texture_dimensions(const std::string& file_path, int& width, int& height);
 
   // 3D model texture management
   unsigned int load_texture_for_model(const std::string& filepath);
@@ -49,7 +49,7 @@ public:
   static bool generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);
 
   // Texture cache invalidation (thread-safe)
-  void queue_texture_invalidation(const std::filesystem::path& file_path);
+  void queue_texture_invalidation(const std::string& file_path);
   void process_invalidation_queue();
   void clear_texture_cache(); // Clear all cached textures (for path encoding changes)
 
@@ -73,7 +73,7 @@ private:
   // Asset thumbnails and icons
   unsigned int default_texture_;
   std::unordered_map<AssetType, unsigned int> type_icons_;
-  std::unordered_map<std::filesystem::path, TextureCacheEntry> texture_cache_;
+  std::unordered_map<std::string, TextureCacheEntry> texture_cache_;
 
   // 3D Preview system
   unsigned int preview_texture_;
@@ -83,11 +83,14 @@ private:
   bool preview_initialized_;
 
   // Invalidation queue for thread-safe texture cache updates
-  std::queue<std::filesystem::path> invalidation_queue_;
+  std::queue<std::string> invalidation_queue_;
   mutable std::mutex invalidation_mutex_;
 
   // Cache of failed model loads to prevent infinite retry loops
-  std::unordered_set<std::filesystem::path> failed_models_cache_;
+  std::unordered_set<std::string> failed_models_cache_;
+  
+  // Cache of failed texture loads to prevent infinite retry loops  
+  std::unordered_set<std::string> failed_textures_cache_;
   
   // Audio control icons
   unsigned int play_icon_;

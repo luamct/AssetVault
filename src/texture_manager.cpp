@@ -9,13 +9,13 @@
 #include "logger.h"
 
 // Include stb_image for PNG loading
+#ifdef _WIN32
+#define STBI_WINDOWS_UTF8  // Enable UTF-8 support on Windows
+#endif
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include "stb_image_write.h"
-#pragma clang diagnostic pop
 
 // Include NanoSVG for SVG support
 #define NANOSVG_IMPLEMENTATION
@@ -46,7 +46,7 @@ bool TextureManager::initialize() {
 
   // Load type-specific textures
   load_type_textures();
-  
+
   // Load audio control icons
   play_icon_ = load_texture("images/play.png");
   pause_icon_ = load_texture("images/pause.png");
@@ -83,7 +83,7 @@ void TextureManager::cleanup_all_textures() {
     }
   }
   type_icons_.clear();
-  
+
   // Clean up audio control icons
   if (play_icon_ != 0) glDeleteTextures(1, &play_icon_);
   if (pause_icon_ != 0) glDeleteTextures(1, &pause_icon_);
@@ -234,7 +234,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
     // Generate thumbnail path using full relative path structure
     // TODO: Move this logic to Asset::thumbnail_path()
     std::filesystem::path asset_root(Config::ASSET_ROOT_DIRECTORY);
-    std::filesystem::path relative_path = std::filesystem::relative(asset.full_path, asset_root);
+    std::filesystem::path relative_path = std::filesystem::relative(std::filesystem::u8path(asset.full_path), asset_root);
     std::filesystem::path thumbnail_path = "thumbnails" / relative_path.replace_extension(".png");
 
     // Check if thumbnail exists and load it
@@ -246,7 +246,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
       }
 
       // Load thumbnail
-      unsigned int texture_id = load_texture(thumbnail_path.string().c_str());
+      unsigned int texture_id = load_texture(thumbnail_path.u8string().c_str());
       if (texture_id != 0) {
         // Cache the thumbnail using original asset path as key
         TextureCacheEntry& entry = texture_cache_[asset_path];
@@ -270,12 +270,12 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
         entry.height = Config::THUMBNAIL_SIZE;
         return entry;
       }
-      
-      if (is_preview_initialized() && std::filesystem::exists(asset.full_path)) {
-        if (generate_3d_model_thumbnail(asset_path.u8string(), relative_path.u8string(), *this)) {
+
+      if (is_preview_initialized() && std::filesystem::exists(std::filesystem::u8path(asset.full_path))) {
+        if (generate_3d_model_thumbnail(asset_path, relative_path.u8string(), *this)) {
           // Thumbnail was successfully generated, try to load it
           if (std::filesystem::exists(thumbnail_path)) {
-            unsigned int texture_id = load_texture(thumbnail_path.string().c_str());
+            unsigned int texture_id = load_texture(thumbnail_path.u8string().c_str());
             if (texture_id != 0) {
               // Cache the thumbnail using original asset path as key
               TextureCacheEntry& entry = texture_cache_[asset_path];
@@ -319,8 +319,18 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
     return it->second;
   }
 
+  // Check if texture has failed to load before (prevent infinite retry loops)
+  if (failed_textures_cache_.find(asset_path) != failed_textures_cache_.end()) {
+    auto icon_it = type_icons_.find(asset.type);
+    TextureCacheEntry entry;
+    entry.texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
+    entry.width = Config::THUMBNAIL_SIZE;
+    entry.height = Config::THUMBNAIL_SIZE;
+    return entry;
+  }
+
   // Check if file exists before attempting to load (defensive check for deleted files)
-  if (!std::filesystem::exists(asset.full_path)) {
+  if (!std::filesystem::exists(std::filesystem::u8path(asset.full_path))) {
     auto icon_it = type_icons_.find(asset.type);
     TextureCacheEntry entry;
     entry.texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
@@ -334,15 +344,17 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
 
   // Handle SVG files - render on-demand directly to OpenGL texture
   if (asset.extension == ".svg") {
-    texture_id = load_svg_texture(asset.full_path.string().c_str(), Config::SVG_THUMBNAIL_SIZE, Config::SVG_THUMBNAIL_SIZE, &width, &height);
+    texture_id = load_svg_texture(asset.full_path.c_str(), Config::SVG_THUMBNAIL_SIZE, Config::SVG_THUMBNAIL_SIZE, &width, &height);
   }
   else {
     // Load regular texture using stb_image
-    texture_id = load_texture(asset.full_path.string().c_str(), &width, &height);
+    texture_id = load_texture(asset.full_path.c_str(), &width, &height);
   }
 
   if (texture_id == 0) {
-    LOG_ERROR("Failed to load texture, returning default icon for: {}", asset_path.u8string());
+    LOG_ERROR("Failed to load texture, returning default icon for: {}", asset_path);
+    // Add to failed cache to prevent infinite retry loops
+    failed_textures_cache_.insert(asset_path);
     // Return type icon instead of 0
     auto icon_it = type_icons_.find(asset.type);
     TextureCacheEntry entry;
@@ -355,14 +367,14 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   // Cache the result
   TextureCacheEntry& entry = texture_cache_[asset_path];
   entry.texture_id = texture_id;
-  entry.file_path = asset_path.u8string();
+  entry.file_path = asset_path;
   entry.width = width;
   entry.height = height;
 
   return entry;
 }
 
-void TextureManager::cleanup_texture_cache(const std::filesystem::path& path) {
+void TextureManager::cleanup_texture_cache(const std::string& path) {
   auto cache_it = texture_cache_.find(path);
   if (cache_it != texture_cache_.end()) {
     if (cache_it->second.texture_id != 0) {
@@ -370,9 +382,12 @@ void TextureManager::cleanup_texture_cache(const std::filesystem::path& path) {
     }
     texture_cache_.erase(cache_it);
   }
+  
+  // Also remove from failed cache to allow retry
+  failed_textures_cache_.erase(path);
 }
 
-bool TextureManager::get_texture_dimensions(const std::filesystem::path& file_path, int& width, int& height) {
+bool TextureManager::get_texture_dimensions(const std::string& file_path, int& width, int& height) {
   auto it = texture_cache_.find(file_path);
   if (it != texture_cache_.end()) {
     width = it->second.width;
@@ -459,7 +474,7 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
 
   // Save as PNG
   int result = stbi_write_png(
-    thumbnail_path.string().c_str(),
+    thumbnail_path.u8string().c_str(),
     thumbnail_size, thumbnail_size, 4,
     pixels.data(),
     thumbnail_size * 4
@@ -708,7 +723,7 @@ void TextureManager::cleanup_preview_system() {
   }
 }
 
-void TextureManager::queue_texture_invalidation(const std::filesystem::path& file_path) {
+void TextureManager::queue_texture_invalidation(const std::string& file_path) {
   std::lock_guard<std::mutex> lock(invalidation_mutex_);
   invalidation_queue_.push(file_path);
 }
@@ -717,7 +732,7 @@ void TextureManager::process_invalidation_queue() {
   std::lock_guard<std::mutex> lock(invalidation_mutex_);
 
   while (!invalidation_queue_.empty()) {
-    const std::filesystem::path& file_path = invalidation_queue_.front();
+    const std::string& file_path = invalidation_queue_.front();
 
     // Remove from texture cache if present
     auto cache_it = texture_cache_.find(file_path);
@@ -742,4 +757,7 @@ void TextureManager::clear_texture_cache() {
     }
   }
   texture_cache_.clear();
+  
+  // Clear failed texture cache to allow retry after cache clear
+  failed_textures_cache_.clear();
 }

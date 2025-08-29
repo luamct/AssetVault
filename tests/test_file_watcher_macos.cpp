@@ -35,7 +35,7 @@ public:
     void add_asset(const fs::path& path) {
         std::lock_guard<std::mutex> lock(assets_mutex_);
         Asset asset;
-        asset.full_path = path;
+        asset.full_path = path.u8string();
         asset.name = path.filename().string();
         assets_[path.u8string()] = asset;
     }
@@ -195,7 +195,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         //       └── subfile.png
         //
         // macOS FSEvents behavior: When a directory is moved into the watched area,
-        // FSEvents generates a single Renamed event for the directory.
+        // FSEvents generates rename flags which our file watcher converts to Created events.
         // Our file watcher then scans the directory contents and emits individual events.
         //
         // Expected result after move:
@@ -312,7 +312,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
             std::lock_guard<std::mutex> lock(fixture.mock_db.assets_mutex_);
             for (const auto& file_path : test_files) {
                 Asset asset;
-                asset.full_path = file_path;
+                asset.full_path = file_path.u8string();
                 asset.name = file_path.filename().u8string();
                 asset.type = get_asset_type(file_path.u8string());
                 fixture.mock_db.assets_[file_path.u8string()] = asset;
@@ -465,7 +465,6 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
                 file_deletion_count++;
                 break;
             case FileEventType::Modified: event_type_str = "Modified"; break;
-            case FileEventType::Renamed: event_type_str = "Renamed"; break;
             default: event_type_str = "Other"; break;
             }
             std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
@@ -668,7 +667,7 @@ TEST_CASE("[MacOS] FSEvents directory move operations", "[file_watcher_macos]") 
             std::lock_guard<std::mutex> lock(fixture.mock_db.assets_mutex_);
             for (const auto& file_path : test_files) {
                 Asset asset;
-                asset.full_path = file_path;
+                asset.full_path = file_path.u8string();
                 asset.name = file_path.filename().u8string();
                 asset.type = get_asset_type(file_path.u8string());
                 fixture.mock_db.assets_[file_path.u8string()] = asset;

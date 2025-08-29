@@ -21,14 +21,13 @@
 struct PendingFileEvent {
   FileEventType original_type;
   fs::path path;
-  fs::path old_path;  // For rename events
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
   PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
 
-  PendingFileEvent(FileEventType type, const fs::path& p, const fs::path& old = fs::path())
-    : original_type(type), path(p), old_path(old), last_activity(std::chrono::steady_clock::now()), is_active(true) {
+  PendingFileEvent(FileEventType type, const fs::path& p)
+    : original_type(type), path(p), last_activity(std::chrono::steady_clock::now()), is_active(true) {
   }
 };
 
@@ -198,7 +197,7 @@ private:
             final_type = FileEventType::Modified;
           }
 
-          FileEvent event(final_type, path, pending.old_path);
+          FileEvent event(final_type, path);
           callback(event);
         }
       }
@@ -208,7 +207,7 @@ private:
     }
   }
 
-  void process_raw_file_event(FileEventType raw_type, const fs::path& full_path, const fs::path& old_path = fs::path()) {
+  void process_raw_file_event(FileEventType raw_type, const fs::path& full_path) {
     // For deleted files, we can't check if they exist or are directories
     bool is_directory = false;
     if (raw_type != FileEventType::Deleted && fs::exists(full_path)) {
@@ -246,10 +245,10 @@ private:
 
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
-    // For Deleted and Renamed, process immediately
-    if (raw_type == FileEventType::Deleted || raw_type == FileEventType::Renamed) {
+    // For Deleted events, process immediately
+    if (raw_type == FileEventType::Deleted) {
       if (callback) {
-        FileEvent event(raw_type, full_path, old_path);
+        FileEvent event(raw_type, full_path);
         callback(event);
       }
       return;
@@ -258,13 +257,12 @@ private:
     auto it = pending_events.find(full_path);
     if (it == pending_events.end()) {
       // First event for this file, store all attributes
-      pending_events[full_path] = PendingFileEvent(raw_type, full_path, old_path);
+      pending_events[full_path] = PendingFileEvent(raw_type, full_path);
     }
     else {
       // Only update last_activity and is_active
       it->second.last_activity = std::chrono::steady_clock::now();
       it->second.is_active = true;
-      // Optionally, update old_path for rename tracking if needed
     }
   }
 
@@ -346,7 +344,9 @@ private:
           for (const auto& file_path : files_to_delete) {
             // Call callback directly - we know these are tracked
             if (callback) {
-              FileEvent event(FileEventType::Deleted, file_path);
+              // Convert filesystem::path to normalized UTF-8 string to match assets map format
+              std::string normalized_path = normalize_path_separators(file_path.u8string());
+              FileEvent event(FileEventType::Deleted, fs::u8path(normalized_path));
               callback(event);
             }
           }
@@ -386,7 +386,9 @@ private:
           for (const auto& file_path : files_to_delete) {
             // Call callback directly - we know these are tracked
             if (callback) {
-              FileEvent event(FileEventType::Deleted, file_path);
+              // Convert filesystem::path to normalized UTF-8 string to match assets map format
+              std::string normalized_path = normalize_path_separators(file_path.u8string());
+              FileEvent event(FileEventType::Deleted, fs::u8path(normalized_path));
               callback(event);
             }
           }

@@ -68,14 +68,14 @@ bool SearchTokenizer::has_more_tokens() const {
 
   // Skip whitespace to check for real content
   size_t pos = current_pos_;
-  while (pos < input_.length() && std::isspace(input_[pos])) {
+  while (pos < input_.length() && std::isspace(static_cast<unsigned char>(input_[pos]))) {
     pos++;
   }
   return pos < input_.length();
 }
 
 void SearchTokenizer::skip_whitespace() {
-  while (current_pos_ < input_.length() && std::isspace(input_[current_pos_])) {
+  while (current_pos_ < input_.length() && std::isspace(static_cast<unsigned char>(input_[current_pos_]))) {
     current_pos_++;
   }
 }
@@ -122,7 +122,7 @@ SearchToken SearchTokenizer::parse_word() {
     char c = input_[current_pos_];
 
     // Stop at whitespace, quotes, or operators
-    if (std::isspace(c) || c == '"' || c == '=' || c == ',') {
+    if (std::isspace(static_cast<unsigned char>(c)) || c == '"' || c == '=' || c == ',') {
       break;
     }
 
@@ -314,7 +314,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   // Check path filters (OR condition - asset must match at least one path)
   if (!query.path_filters.empty()) {
     bool path_matches = false;
-    std::string asset_relative_path = to_lowercase(get_relative_asset_path(asset.full_path.u8string()));
+    std::string asset_relative_path = to_lowercase(get_relative_asset_path(asset.full_path));
 
     for (const auto& filter_path : query.path_filters) {
       std::string filter_path_lower = to_lowercase(filter_path);
@@ -342,7 +342,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   std::string query_lower = to_lowercase(query.text_query);
   std::string name_lower = to_lowercase(asset.name);
   std::string extension_lower = to_lowercase(asset.extension);
-  std::string path_lower = to_lowercase(get_relative_asset_path(asset.full_path.u8string()));
+  std::string path_lower = to_lowercase(get_relative_asset_path(asset.full_path));
 
   // Split search query into terms (space-separated)
   std::vector<std::string> search_terms;
@@ -482,7 +482,7 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
     // Apply path filters (if any)
     if (!query.path_filters.empty()) {
       bool path_matches = false;
-      std::string path_lower = to_lowercase(asset.full_path.u8string());
+      std::string path_lower = to_lowercase(asset.full_path);
 
       for (const std::string& path_filter : query.path_filters) {
         std::string filter_lower = to_lowercase(path_filter);
@@ -534,7 +534,7 @@ std::vector<std::string> SearchIndex::tokenize_asset(const Asset& asset) const {
   }
 
   // Tokenize path segments
-  std::string path_str = asset.full_path.u8string();
+  std::string path_str = asset.full_path;
   size_t pos = 0;
   while ((pos = path_str.find('/', pos)) != std::string::npos) {
     pos++;
@@ -571,7 +571,7 @@ std::vector<std::string> SearchIndex::tokenize_string(const std::string& text) c
   std::string lower_text = to_lowercase(text);
 
   for (char c : lower_text) {
-    if (std::isalnum(c)) {
+    if (std::isalnum(static_cast<unsigned char>(c))) {
       current_token += c;
     }
     else if (!current_token.empty()) {
@@ -604,7 +604,7 @@ bool SearchIndex::is_valid_token(const std::string& token) const {
   // Must contain at least one alphabetic character
   bool has_alpha = false;
   for (char c : token) {
-    if (std::isalpha(c)) {
+    if (std::isalpha(static_cast<unsigned char>(c))) {
       has_alpha = true;
       break;
     }
@@ -789,7 +789,7 @@ bool SearchIndex::build_from_database() {
       LOG_DEBUG("Processed {} assets...", processed_count);
     }
     if (asset.id == 0) {
-      LOG_ERROR("Asset has invalid ID (0): {}", asset.full_path.u8string());
+      LOG_ERROR("Asset has invalid ID (0): {}", asset.full_path);
       continue;
     }
 

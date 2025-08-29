@@ -67,13 +67,13 @@ bool AssetDatabase::create_tables() {
         CREATE INDEX IF NOT EXISTS idx_assets_full_path ON assets(full_path);
         CREATE INDEX IF NOT EXISTS idx_assets_asset_type ON assets(asset_type);
         CREATE INDEX IF NOT EXISTS idx_assets_extension ON assets(extension);
-        
+
         -- Search index tables
         CREATE TABLE IF NOT EXISTS tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             token TEXT UNIQUE NOT NULL
         );
-        
+
         CREATE TABLE IF NOT EXISTS token_assets (
             token_id INTEGER NOT NULL,
             asset_id INTEGER NOT NULL,
@@ -81,7 +81,7 @@ bool AssetDatabase::create_tables() {
             FOREIGN KEY (token_id) REFERENCES tokens(id) ON DELETE CASCADE,
             FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
         );
-        
+
         CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens(token);
         CREATE INDEX IF NOT EXISTS idx_token_assets_token ON token_assets(token_id);
         CREATE INDEX IF NOT EXISTS idx_token_assets_asset ON token_assets(asset_id);
@@ -117,7 +117,8 @@ bool AssetDatabase::insert_asset(Asset& file) {
     success = (rc == SQLITE_DONE);
     if (!success) {
       print_sqlite_error("inserting asset");
-    } else {
+    }
+    else {
       // Get the auto-generated ID
       file.id = static_cast<uint32_t>(sqlite3_last_insert_rowid(db_));
     }
@@ -153,8 +154,8 @@ bool AssetDatabase::update_asset(const Asset& file) {
   ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
   std::string time_str = ss.str();
 
-  // Convert path to UTF-8 string for database storage
-  std::string full_path_utf8 = file.full_path.u8string();
+  // Path is already UTF-8 string with normalized separators
+  const std::string& full_path_utf8 = file.full_path;
 
   bool success =
     (sqlite3_bind_text(stmt, 1, file.name.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
@@ -526,8 +527,8 @@ bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const Asset&
   ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
   std::string time_str = ss.str();
 
-  // Convert path to UTF-8 string for database storage
-  std::string full_path_utf8 = file.full_path.u8string();
+  // Path is already UTF-8 string with normalized separators
+  const std::string& full_path_utf8 = file.full_path;
 
   // Use SQLITE_TRANSIENT instead of SQLITE_STATIC for better string handling
   if (sqlite3_bind_text(stmt, param++, file.name.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
@@ -550,9 +551,9 @@ Asset AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
   file.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
   file.extension = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
 
-  // Convert UTF-8 string from database to filesystem::path
+  // Store UTF-8 string from database directly
   const char* path_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-  file.full_path = std::filesystem::u8path(path_str);
+  file.full_path = path_str;
   file.size = sqlite3_column_int64(stmt, 4);
 
   // Parse time string back to time_point
