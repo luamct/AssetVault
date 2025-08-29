@@ -28,28 +28,31 @@ public:
 TEST_CASE("EventProcessor search index integration", "[event_processor][search_index]") {
     // Create test database
     fs::path test_db = fs::temp_directory_path() / "test_event_processor.db";
-    fs::remove(test_db);
     
-    AssetDatabase database;
-    REQUIRE(database.initialize(test_db.string()));
-    REQUIRE(database.create_tables());
+    // Clean up any existing test database
+    try {
+        fs::remove(test_db);
+    } catch (...) {
+        // Ignore errors if file doesn't exist
+    }
     
-    // Create search index
-    SearchIndex search_index(&database);
-    REQUIRE(search_index.build_from_database());
-    
-    // Create mock components
-    std::map<std::string, Asset> assets;
-    MockTextureManager mock_texture_manager;
-    
-    // Create temporary test files
+    // Create temporary test files directory
     fs::path temp_dir = fs::temp_directory_path() / "event_processor_test";
     fs::create_directories(temp_dir);
     
-    auto cleanup = [&]() {
-        fs::remove_all(temp_dir);
-        fs::remove(test_db);
-    };
+    // Scope for database objects to ensure proper cleanup
+    {
+        AssetDatabase database;
+        REQUIRE(database.initialize(test_db.string()));
+        REQUIRE(database.create_tables());
+        
+        // Create search index
+        SearchIndex search_index(&database);
+        REQUIRE(search_index.build_from_database());
+        
+        // Create mock components
+        std::map<std::string, Asset> assets;
+        MockTextureManager mock_texture_manager;
     
     SECTION("Created events update search index") {
         // Create test files
@@ -279,29 +282,40 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         REQUIRE(sound_results.size() == 1);
         REQUIRE(archive_results.size() == 1);
     }
+    } // Close database scope
     
-    cleanup();
+    // Clean up test files and database
+    fs::remove_all(temp_dir);
+    try {
+        fs::remove(test_db);
+    } catch (...) {
+        // Ignore errors during cleanup
+    }
 }
 
 TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_index]") {
     // Create test database
     fs::path test_db = fs::temp_directory_path() / "test_event_processor_edge.db";
-    fs::remove(test_db);
     
-    AssetDatabase database;
-    REQUIRE(database.initialize(test_db.string()));
-    REQUIRE(database.create_tables());
+    // Clean up any existing test database
+    try {
+        fs::remove(test_db);
+    } catch (...) {
+        // Ignore errors if file doesn't exist
+    }
     
-    SearchIndex search_index(&database);
-    REQUIRE(search_index.build_from_database());
-    
+    // Create temporary test files directory
     fs::path temp_dir = fs::temp_directory_path() / "event_processor_edge_test";
     fs::create_directories(temp_dir);
     
-    auto cleanup = [&]() {
-        fs::remove_all(temp_dir);
-        fs::remove(test_db);
-    };
+    // Scope for database objects to ensure proper cleanup
+    {
+        AssetDatabase database;
+        REQUIRE(database.initialize(test_db.string()));
+        REQUIRE(database.create_tables());
+        
+        SearchIndex search_index(&database);
+        REQUIRE(search_index.build_from_database());
     
     SECTION("Empty database builds empty index") {
         REQUIRE(search_index.get_token_count() == 0);
@@ -382,6 +396,13 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         REQUIRE_FALSE(should_skip_asset(".png"));    // 2D textures
         REQUIRE_FALSE(should_skip_asset(".wav"));    // Audio
     }
+    } // Close database scope
     
-    cleanup();
+    // Clean up test files and database
+    fs::remove_all(temp_dir);
+    try {
+        fs::remove(test_db);
+    } catch (...) {
+        // Ignore errors during cleanup
+    }
 }

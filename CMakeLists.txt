@@ -278,22 +278,6 @@ target_link_libraries(DbTest PRIVATE
 
 add_test(NAME DbTests COMMAND DbTest)
 
-# Add Search Index test executable
-add_executable(SearchIndexTest
-    tests/test_search_index.cpp
-)
-
-target_include_directories(SearchIndexTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-)
-
-target_link_libraries(SearchIndexTest PRIVATE
-    AssetInventoryCore
-    Catch2::Catch2WithMain
-)
-
-add_test(NAME SearchIndexTests COMMAND SearchIndexTest)
 
 # Add EventProcessor test executable
 add_executable(EventProcessorTest

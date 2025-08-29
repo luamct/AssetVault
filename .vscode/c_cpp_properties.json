@@ -33,14 +33,12 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/src",
+                "${workspaceFolder}/external",
                 "${workspaceFolder}/external/imgui",
                 "${workspaceFolder}/external/imgui/backends",
-                "${workspaceFolder}/external/sqlite",
-                "${workspaceFolder}/external/glfw/include",
-                "${workspaceFolder}/external/assimp/include",
                 "${workspaceFolder}/external/glad/include",
                 "${workspaceFolder}/external/nanosvg",
-                "${workspaceFolder}/external"
+                "${workspaceFolder}/build/vcpkg_installed/x64-windows/include"
             ],
             "defines": [
                 "_DEBUG",
