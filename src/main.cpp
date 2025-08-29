@@ -426,8 +426,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
     auto db_it = db_map.find(path);
     if (db_it == db_map.end()) {
       // File not in database - create a Created event
-      bool is_dir = fs::is_directory(path);
-      FileEvent event(FileEventType::Created, path, "", is_dir);
+      FileEvent event(FileEventType::Created, path);
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
@@ -438,8 +437,8 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
   // Find files in database that no longer exist on filesystem
   for (const auto& db_asset : db_assets) {
     if (current_files.find(db_asset.full_path) == current_files.end()) {
-      // File no longer exists - create a Deleted event
-      FileEvent event(FileEventType::Deleted, db_asset.full_path, "", db_asset.is_directory);
+      // File no longer exists - create a Deleted event  
+      FileEvent event(FileEventType::Deleted, db_asset.full_path);
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }

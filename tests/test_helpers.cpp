@@ -15,7 +15,6 @@ Asset create_test_asset(
     asset.full_path = std::filesystem::path(path.empty() ? (name + extension) : path);
     asset.size = 1024; // Default size
     asset.last_modified = std::chrono::system_clock::now();
-    asset.is_directory = false;
     return asset;
 }
 
@@ -26,13 +25,13 @@ void print_file_events(const std::vector<FileEvent>& events, const std::string& 
         std::string event_type_str;
         switch (event.type) {
             case FileEventType::Created: 
-                event_type_str = event.is_directory ? "DirectoryCreated" : "Created";
+                event_type_str = "Created";
                 break;
             case FileEventType::Modified: 
                 event_type_str = "Modified";
                 break;
             case FileEventType::Deleted: 
-                event_type_str = event.is_directory ? "DirectoryDeleted" : "Deleted";
+                event_type_str = "Deleted";
                 break;
             case FileEventType::Renamed: 
                 event_type_str = "Renamed";

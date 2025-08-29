@@ -26,7 +26,6 @@ TEST_CASE("Database functionality", "[database]") {
         asset.full_path = "/path/to/test.txt";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
-        asset.is_directory = false;
         asset.type = AssetType::Document;
         
         // ID should be 0 before insertion
@@ -54,8 +53,7 @@ TEST_CASE("Database functionality", "[database]") {
             asset.full_path = "/path/to/file" + std::to_string(i) + ".txt";
             asset.size = 1024 * i;
             asset.last_modified = std::chrono::system_clock::now();
-            asset.is_directory = false;
-            asset.type = AssetType::Document;
+                asset.type = AssetType::Document;
             assets.push_back(asset);
         }
         
@@ -93,7 +91,6 @@ TEST_CASE("Database functionality", "[database]") {
         asset.full_path = "/path/to/original.txt";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
-        asset.is_directory = false;
         asset.type = AssetType::Document;
         
         // Insert the asset
@@ -123,7 +120,6 @@ TEST_CASE("Database functionality", "[database]") {
         asset1.full_path = "/path/to/first.txt";
         asset1.size = 1024;
         asset1.last_modified = std::chrono::system_clock::now();
-        asset1.is_directory = false;
         asset1.type = AssetType::Document;
         
         REQUIRE(db.insert_asset(asset1));
@@ -136,7 +132,6 @@ TEST_CASE("Database functionality", "[database]") {
         asset2.full_path = "/path/to/second.txt";
         asset2.size = 2048;
         asset2.last_modified = std::chrono::system_clock::now();
-        asset2.is_directory = false;
         asset2.type = AssetType::Document;
         
         REQUIRE(db.insert_asset(asset2));
@@ -155,7 +150,6 @@ TEST_CASE("Database functionality", "[database]") {
         asset3.full_path = "/path/to/third.txt";
         asset3.size = 3072;
         asset3.last_modified = std::chrono::system_clock::now();
-        asset3.is_directory = false;
         asset3.type = AssetType::Document;
         
         REQUIRE(db.insert_asset(asset3));

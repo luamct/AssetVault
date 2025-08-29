@@ -437,7 +437,6 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset.full_path = "/assets/textures/MyTexture_diffuse.png";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
-        asset.is_directory = false;
         asset.type = AssetType::_2D;
 
         // Add asset to index
@@ -474,7 +473,6 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset1.full_path = "/assets/nature/grass_texture.png";
         asset1.size = 1024;
         asset1.last_modified = std::chrono::system_clock::now();
-        asset1.is_directory = false;
         asset1.type = AssetType::_2D;
         index.add_asset(asset1.id, asset1);
 
@@ -485,7 +483,6 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset2.full_path = "/assets/nature/rock_texture.jpg";
         asset2.size = 2048;
         asset2.last_modified = std::chrono::system_clock::now();
-        asset2.is_directory = false;
         asset2.type = AssetType::_2D;
         index.add_asset(asset2.id, asset2);
 
@@ -496,7 +493,6 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset3.full_path = "/assets/models/player_model.fbx";
         asset3.size = 5120;
         asset3.last_modified = std::chrono::system_clock::now();
-        asset3.is_directory = false;
         asset3.type = AssetType::_3D;
         index.add_asset(asset3.id, asset3);
 
@@ -532,7 +528,6 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset.full_path = "/assets/ui/awesome_background.png";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
-        asset.is_directory = false;
         asset.type = AssetType::_2D;
 
         index.add_asset(asset.id, asset);
@@ -563,7 +558,6 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset1.full_path = "/assets/test1.png";
         asset1.size = 1024;
         asset1.last_modified = std::chrono::system_clock::now();
-        asset1.is_directory = false;
         asset1.type = AssetType::_2D;
         index.add_asset(asset1.id, asset1);
 
@@ -574,7 +568,6 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset2.full_path = "/assets/images/test2.jpg";
         asset2.size = 2048;
         asset2.last_modified = std::chrono::system_clock::now();
-        asset2.is_directory = false;
         asset2.type = AssetType::_2D;
         index.add_asset(asset2.id, asset2);
 

@@ -10,25 +10,27 @@ Cross-platform real-time file system monitoring for automatic asset synchronizat
 - `src/file_watcher.h` - Public interface and FileEvent structure
 - `src/file_watcher.cpp` - Platform-agnostic wrapper
 - `src/file_watcher_macos.cpp` - macOS FSEvents implementation
-- `src/file_watcher_windows.cpp` - Windows ReadDirectoryChangesW implementation (future)
+- `src/file_watcher_windows.cpp` - Windows ReadDirectoryChangesW implementation
+- `src/utils.cpp` - Contains optimized `find_assets_under_directory` function
 
 ### FileEvent Structure
 
 ```cpp
 struct FileEvent {
     FileEventType type;        // Created, Modified, Deleted, Renamed
-    fs::path path;            // Primary file/directory path
+    fs::path path;            // File path (directories are filtered out)
     fs::path old_path;        // For rename events (source path)
-    bool is_directory;        // True if path refers to a directory
     std::chrono::system_clock::time_point timestamp;
 };
 ```
 
 **Event Types:**
-- `Created` - File or directory created (use `is_directory` flag to distinguish)
-- `Modified` - File content changed (directories are not modified directly)
-- `Deleted` - File or directory deleted (use `is_directory` flag to distinguish)
-- `Renamed` - File or directory renamed/moved (both `path` and `old_path` populated)
+- `Created` - File created (directories are not tracked)
+- `Modified` - File content changed
+- `Deleted` - File deleted
+- `Renamed` - File renamed/moved (both `path` and `old_path` populated)
+
+**Note:** Directory events are handled internally by the file watcher but are not propagated as FileEvents. When a directory is created, moved, or deleted, the file watcher generates appropriate events for all files within that directory.
 
 ## Platform Implementations
 
@@ -54,12 +56,12 @@ struct FileEvent {
 
 FSEvents provides low-level flags that map to our FileEvent types:
 
-| FSEvents Flag | Our Event Type | is_directory | Description |
-|---------------|----------------|--------------|-------------|
-| `kFSEventStreamEventFlagItemCreated` | `Created` | Based on `kFSEventStreamEventFlagItemIsDir` | File/directory created |
-| `kFSEventStreamEventFlagItemModified` | `Modified` | `false` | File content changed |
-| `kFSEventStreamEventFlagItemRemoved` | `Deleted` | Based on `kFSEventStreamEventFlagItemIsDir` | File/directory deleted |
-| `kFSEventStreamEventFlagItemRenamed` | Special handling | Based on `kFSEventStreamEventFlagItemIsDir` | Move/rename operation |
+| FSEvents Flag | Our Event Type | Description |
+|---------------|----------------|-------------|
+| `kFSEventStreamEventFlagItemCreated` | `Created` | File created (directories trigger file events for contents) |
+| `kFSEventStreamEventFlagItemModified` | `Modified` | File content changed |
+| `kFSEventStreamEventFlagItemRemoved` | `Deleted` | File deleted (directories trigger deletion for all contents) |
+| `kFSEventStreamEventFlagItemRenamed` | Special handling | Move/rename operation |
 
 #### Rename Event Handling
 
@@ -88,18 +90,16 @@ FSEvents rename events represent various operations:
 ```
 FSEvents: Single rename event for parent directory
 Our Response: 
-  1. Generate Created event for directory (is_directory=true)
-  2. Recursively scan directory contents
-  3. Generate Created events for all child files/directories
+  1. Recursively scan directory contents
+  2. Generate Created events for all child files (directories not tracked)
 ```
 
 **Directory Move OUT:**
 ```  
 FSEvents: Single rename event for parent directory
 Our Response:
-  1. Query asset database for all tracked children
+  1. Use optimized find_assets_under_directory() for O(log n) lookup
   2. Generate Deleted events for all tracked child files
-  3. Generate Deleted event for directory (is_directory=true)
 ```
 
 **Directory Rename WITHIN:**
@@ -116,17 +116,40 @@ FSEvents: Individual deletion events for each file + directory
 Our Response: Process each deletion event individually
 ```
 
-### Windows - ReadDirectoryChangesW API (Future Implementation)
+### Windows - ReadDirectoryChangesW API
 
 **File:** `src/file_watcher_windows.cpp`
 
-**Technology:** Windows `ReadDirectoryChangesW` API
+**Technology:** Windows `ReadDirectoryChangesW` API with overlapped I/O
 
-**Expected Characteristics:**
-- Different event semantics compared to FSEvents
-- May not batch events the same way
-- Different rename/move behavior patterns
-- Will require platform-specific event mapping logic
+**Performance:**
+- Asynchronous I/O with event-driven notifications
+- No polling overhead - events delivered via completion port
+- Recursive directory monitoring with single API call
+- Immediate event delivery (no automatic batching like FSEvents)
+
+**Key Characteristics:**
+- Events delivered immediately as they occur
+- **Path separator normalization** required (`\` converted to `/` for consistency)
+- **FILE_ACTION codes** map directly to our event types
+- **Rename events** come in pairs (OLD_NAME followed by NEW_NAME)
+
+#### Windows Event Mapping
+
+| Windows Action | Our Event Type | Description |
+|----------------|----------------|-------------|
+| `FILE_ACTION_ADDED` | `Created` | File created (directories trigger scanning for contents) |
+| `FILE_ACTION_MODIFIED` | `Modified` | File content or attributes changed |
+| `FILE_ACTION_REMOVED` | `Deleted` | File deleted |
+| `FILE_ACTION_RENAMED_OLD_NAME` | `Deleted` | Old name in rename (for directories, triggers batch deletion) |
+| `FILE_ACTION_RENAMED_NEW_NAME` | `Created` | New name in rename (for directories, triggers scanning) |
+
+#### Directory Operation Handling
+
+Similar to macOS, Windows file watcher handles directory operations by:
+- Using `find_assets_under_directory()` for efficient O(log n) lookups when directories are deleted/renamed
+- Scanning directory contents when new directories appear
+- Filtering out directory events themselves (only file events are propagated)
 
 ## Integration with Asset System
 
@@ -146,10 +169,12 @@ Our Response: Process each deletion event individually
 
 ### Performance Optimizations
 
-1. **Event Debouncing**: Rapid file changes are debounced (100ms default)
+1. **Event Debouncing**: Rapid file changes are debounced (100ms default on macOS)
 2. **Batch Processing**: Events processed in configurable batches (default: 100)
 3. **Smart Asset Tracking**: Uses in-memory asset map to avoid filesystem calls
 4. **Immediate Processing**: Delete/rename events bypass debouncing for responsiveness
+5. **O(log n) Directory Lookups**: `find_assets_under_directory()` uses binary search on sorted AssetMap
+6. **Path Normalization**: Consistent forward slash usage enables efficient string comparisons
 
 ## Usage
 
@@ -165,11 +190,7 @@ std::mutex assets_mutex;
 auto callback = [](const FileEvent& event) {
     switch (event.type) {
         case FileEventType::Created:
-            if (event.is_directory) {
-                std::cout << "Directory created: " << event.path << std::endl;
-            } else {
-                std::cout << "File created: " << event.path << std::endl;
-            }
+            std::cout << "File created: " << event.path << std::endl;
             break;
             
         case FileEventType::Modified:
@@ -177,15 +198,11 @@ auto callback = [](const FileEvent& event) {
             break;
             
         case FileEventType::Deleted:
-            if (event.is_directory) {
-                std::cout << "Directory deleted: " << event.path << std::endl;
-            } else {
-                std::cout << "File deleted: " << event.path << std::endl;
-            }
+            std::cout << "File deleted: " << event.path << std::endl;
             break;
             
         case FileEventType::Renamed:
-            std::cout << "Renamed: " << event.old_path << " -> " << event.path << std::endl;
+            std::cout << "File renamed: " << event.old_path << " -> " << event.path << std::endl;
             break;
     }
 };
@@ -195,18 +212,24 @@ watcher.start_watching("/path/to/assets", callback, &assets, &assets_mutex);
 
 ## Testing
 
-Comprehensive test suite in `tests/test_file_watcher_macos.cpp` covers:
+Comprehensive test suites for both platforms:
+- `tests/test_file_watcher_macos.cpp` - macOS-specific tests
+- `tests/test_file_watcher_windows.cpp` - Windows-specific tests
+- `tests/test_utils.cpp` - Tests for `find_assets_under_directory()` optimization
 
+**Coverage includes:**
 - **File Operations**: Create, modify, delete, rename, copy, move
-- **Directory Operations**: Create, delete, rename, move in/out, copy, trash
-- **Race Conditions**: Thread safety, callback lifetime management
-- **Edge Cases**: Path normalization, event coalescing, rapid changes
+- **Directory Operations**: Create, delete, rename, move in/out, copy
+- **Performance**: O(log n) vs O(n) lookup verification
+- **Path Normalization**: Cross-platform path separator handling
+- **Edge Cases**: Atomic saves, metadata changes, rapid file changes
 
 **Key Test Categories:**
-- `macOS FSEvents rename event handling` - File move/rename operations
-- `macOS FSEvents directory copy behavior` - Directory duplication
-- `macOS FSEvents directory move operations` - Directory relocations
-- `macOS FSEvents directory deletion behavior` - Permanent deletion
+- File and directory move/rename operations
+- Directory copy with nested contents
+- Directory deletion with asset cleanup
+- Path separator normalization (Windows `\` to `/`)
+- Binary search performance validation
 
 ## Configuration
 
@@ -220,11 +243,12 @@ The file watcher automatically handles all relevant asset types based on file ex
 
 | Aspect | macOS (FSEvents) | Windows (ReadDirectoryChangesW) |
 |--------|------------------|------------------------------|
-| **Event Batching** | ~100ms automatic batching | Immediate delivery (expected) |
-| **Directory Moves** | Single event + manual scanning | Individual events (expected) |
-| **Rename Detection** | Complex flag-based logic | Separate rename events (expected) |
-| **Path Normalization** | Required (`/private` prefix) | Different requirements (expected) |
-| **Trash Operations** | Treated as rename events | Different mechanism (expected) |
-| **Thread Model** | Background thread + run loop | Overlapped I/O (expected) |
+| **Event Batching** | ~100ms automatic batching | Immediate delivery |
+| **Directory Moves** | Single event + manual scanning | FILE_ACTION codes + scanning |
+| **Rename Detection** | Complex flag-based logic | OLD_NAME/NEW_NAME pairs |
+| **Path Normalization** | `/private` prefix handling | `\` to `/` conversion |
+| **Trash Operations** | Treated as rename events | Standard deletion |
+| **Thread Model** | Background thread + run loop | Overlapped I/O with events |
+| **Directory Lookups** | O(log n) via `find_assets_under_directory()` | O(log n) via `find_assets_under_directory()` |
 
-The unified `FileEvent` API abstracts these platform differences, providing consistent behavior across operating systems while leveraging each platform's native capabilities for optimal performance.
+The unified `FileEvent` API abstracts these platform differences, providing consistent behavior across operating systems while leveraging each platform's native capabilities for optimal performance. Directory events are handled internally and converted to file events, ensuring the application only needs to handle file-level changes.

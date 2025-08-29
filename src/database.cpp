@@ -59,7 +59,6 @@ bool AssetDatabase::create_tables() {
             full_path TEXT UNIQUE NOT NULL,
             size INTEGER NOT NULL,
             last_modified TEXT NOT NULL,
-            is_directory INTEGER NOT NULL,
             asset_type TEXT NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -103,8 +102,8 @@ bool AssetDatabase::drop_tables() {
 bool AssetDatabase::insert_asset(Asset& file) {
   const std::string sql = R"(
         INSERT OR REPLACE INTO assets
-        (name, extension, full_path, size, last_modified, is_directory, asset_type, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (name, extension, full_path, size, last_modified, asset_type, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     )";
 
   sqlite3_stmt* stmt;
@@ -132,7 +131,7 @@ bool AssetDatabase::update_asset(const Asset& file) {
   const std::string sql = R"(
         UPDATE assets SET
         name = ?, extension = ?, size = ?,
-        last_modified = ?, is_directory = ?, asset_type = ?, updated_at = CURRENT_TIMESTAMP
+        last_modified = ?, asset_type = ?, updated_at = CURRENT_TIMESTAMP
         WHERE full_path = ?
     )";
 
@@ -162,9 +161,8 @@ bool AssetDatabase::update_asset(const Asset& file) {
       sqlite3_bind_text(stmt, 2, file.extension.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
       sqlite3_bind_int64(stmt, 3, file.size) == SQLITE_OK &&
       sqlite3_bind_text(stmt, 4, time_str.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_int(stmt, 5, file.is_directory ? 1 : 0) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 6, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 7, full_path_utf8.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
+      sqlite3_bind_text(stmt, 5, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 6, full_path_utf8.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
 
   if (!success) {
     print_sqlite_error("binding parameters for update");
@@ -357,7 +355,7 @@ int AssetDatabase::get_asset_count_by_type(AssetType type) {
 }
 
 uint64_t AssetDatabase::get_total_size() {
-  const std::string sql = "SELECT SUM(size) FROM assets WHERE is_directory = 0";
+  const std::string sql = "SELECT SUM(size) FROM assets";
   uint64_t total_size = 0;
 
   sqlite3_stmt* stmt;
@@ -374,7 +372,7 @@ uint64_t AssetDatabase::get_total_size() {
 }
 
 uint64_t AssetDatabase::get_size_by_type(AssetType type) {
-  const std::string sql = "SELECT SUM(size) FROM assets WHERE asset_type = ? AND is_directory = 0";
+  const std::string sql = "SELECT SUM(size) FROM assets WHERE asset_type = ?";
   uint64_t total_size = 0;
 
   sqlite3_stmt* stmt;
@@ -537,7 +535,6 @@ bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const Asset&
     sqlite3_bind_text(stmt, param++, full_path_utf8.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
     sqlite3_bind_int64(stmt, param++, file.size) != SQLITE_OK ||
     sqlite3_bind_text(stmt, param++, time_str.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-    sqlite3_bind_int(stmt, param++, file.is_directory ? 1 : 0) != SQLITE_OK ||
     sqlite3_bind_text(stmt, param++, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK) {
     print_sqlite_error("binding parameters");
     return false;
@@ -565,9 +562,7 @@ Asset AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
   ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
   file.last_modified = std::chrono::system_clock::from_time_t(std::mktime(&tm));
 
-  file.is_directory = sqlite3_column_int(stmt, 6) != 0;
-
-  std::string type_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+  std::string type_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
 
   // Use centralized conversion function
   file.type = get_asset_type_from_string(type_str);

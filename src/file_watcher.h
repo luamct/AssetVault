@@ -25,11 +25,10 @@ struct FileEvent {
   FileEventType type;
   fs::path path;
   fs::path old_path;  // For rename events
-  bool is_directory;
   std::chrono::system_clock::time_point timestamp;
 
-  FileEvent(FileEventType t, const fs::path& p, const fs::path& old = "", bool dir = false)
-      : type(t), path(p), old_path(old), is_directory(dir), timestamp(std::chrono::system_clock::now()) {}
+  FileEvent(FileEventType t, const fs::path& p, const fs::path& old = "")
+      : type(t), path(p), old_path(old), timestamp(std::chrono::system_clock::now()) {}
 };
 
 // Callback type for file events

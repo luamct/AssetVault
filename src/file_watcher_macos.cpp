@@ -20,14 +20,13 @@ struct PendingFileEvent {
   FileEventType original_type;
   fs::path path;
   fs::path old_path;  // For rename events
-  bool is_directory;
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
-  PendingFileEvent() : original_type(FileEventType::Modified), is_directory(false), is_active(false) {}
+  PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
 
-  PendingFileEvent(FileEventType type, const fs::path& p, const fs::path& old = fs::path(), bool dir = false)
-      : original_type(type), path(p), old_path(old), is_directory(dir), last_activity(std::chrono::steady_clock::now()), is_active(true) {}
+  PendingFileEvent(FileEventType type, const fs::path& p, const fs::path& old = fs::path())
+      : original_type(type), path(p), old_path(old), last_activity(std::chrono::steady_clock::now()), is_active(true) {}
 };
 
 class MacOSFileWatcher : public FileWatcherImpl {
@@ -313,23 +312,23 @@ class MacOSFileWatcher : public FileWatcherImpl {
           watcher->emit_deletion_events_for_directory(file_path);
         } else {
           // For file deletion, just emit the single event
-          watcher->add_pending_event(FileEventType::Deleted, file_path, fs::path(), false);
+          watcher->add_pending_event(FileEventType::Deleted, file_path);
         }
       } else if (flags & kFSEventStreamEventFlagItemCreated) {
         // Only treat as creation if it's NOT also a rename (rename takes precedence)
         if (!(flags & kFSEventStreamEventFlagItemRenamed)) {
           bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
-          watcher->add_pending_event(FileEventType::Created, file_path, fs::path(), is_directory);
+          watcher->add_pending_event(FileEventType::Created, file_path);
         }
       } else if (flags & kFSEventStreamEventFlagItemModified) {
         if (!(flags & kFSEventStreamEventFlagItemIsDir)) {
-          watcher->add_pending_event(FileEventType::Modified, file_path, fs::path(), false);
+          watcher->add_pending_event(FileEventType::Modified, file_path);
         }
       } else {
         // Check if file exists - if not, it's been deleted even without explicit flags
         if (!fs::exists(file_path)) {
           LOG_DEBUG("FSEvents: File '{}' no longer exists (no explicit flags), treating as Deleted", relative_path);
-          watcher->add_pending_event(FileEventType::Deleted, file_path, fs::path(), false);
+          watcher->add_pending_event(FileEventType::Deleted, file_path);
         }
       }
     }
@@ -395,9 +394,9 @@ class MacOSFileWatcher : public FileWatcherImpl {
     CFRelease(path_cfstr);
   }
 
-  void add_pending_event(FileEventType type, const fs::path& path, const fs::path& old_path = fs::path(), bool is_directory = false) {
-    // Filter out directories, ignored asset types and unknown file types
-    if (is_directory || !path.has_extension() || should_skip_asset(path.extension().string())) {
+  void add_pending_event(FileEventType type, const fs::path& path, const fs::path& old_path = fs::path()) {
+    // Filter out directories, ignored asset types and unknown file types  
+    if (!path.has_extension() || should_skip_asset(path.extension().string())) {
       return;
     }
     
@@ -413,7 +412,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
       }
       
       if (callback) {
-        FileEvent event(type, path, old_path, is_directory);
+        FileEvent event(type, path, old_path);
         callback(event);
       }
       return;
@@ -422,7 +421,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
     // Create or update the pending event (only for Created/Modified events)
-    pending_events[path] = PendingFileEvent(type, path, old_path, is_directory);
+    pending_events[path] = PendingFileEvent(type, path, old_path);
   }
 
   void timer_loop() {
@@ -438,7 +437,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
 
         if (event.is_active && time_since_activity >= Config::FILE_WATCHER_DEBOUNCE_MS) {
           // Process the event
-          callback(FileEvent(event.original_type, event.path, event.old_path, event.is_directory));
+          callback(FileEvent(event.original_type, event.path, event.old_path));
           
           it = pending_events.erase(it);
         } else {
@@ -455,8 +454,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
     try {
       // Recursively scan the directory and emit Create events for all contents
       for (const auto& entry : fs::recursive_directory_iterator(dir_path)) {
-        bool is_dir = entry.is_directory();
-        add_pending_event(FileEventType::Created, entry.path(), fs::path(), is_dir);
+        add_pending_event(FileEventType::Created, entry.path());
       }
     } catch (const fs::filesystem_error& e) {
       LOG_WARN("Failed to scan moved-in directory {}: {}", dir_path.string(), e.what());

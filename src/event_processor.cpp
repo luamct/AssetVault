@@ -440,45 +440,12 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
         // Basic file information (normalize path separators for consistent storage)
         file_info.full_path = fs::u8path(normalize_path_separators(full_path.u8string()));
         file_info.name = full_path.filename().u8string();
-        file_info.is_directory = fs::is_directory(full_path);
+        // File-specific information
+        file_info.extension = full_path.extension().string();
+        file_info.type = get_asset_type(file_info.extension);
 
-        if (!file_info.is_directory) {
-            // File-specific information
-            file_info.extension = full_path.extension().string();
-            file_info.type = get_asset_type(file_info.extension);
-
-            try {
-                file_info.size = fs::file_size(full_path);
-                // Store display time as modification time (for user-facing display)
-                try {
-                    auto ftime = fs::last_write_time(full_path);
-                    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                        ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
-                    );
-                    file_info.last_modified = sctp;
-                }
-                catch (const fs::filesystem_error& e) {
-                    // Fallback to provided timestamp for display
-                    file_info.last_modified = timestamp;
-                    LOG_WARN("Using provided timestamp for display for {}: {}", full_path.u8string(), e.what());
-                }
-            }
-            catch (const fs::filesystem_error& e) {
-                LOG_WARN("Could not get file info for {}: {}", file_info.full_path.u8string(), e.what());
-                file_info.size = 0;
-                file_info.last_modified = timestamp;
-            }
-
-
-            // Note: SVG and 3D model thumbnail generation is handled on-demand in get_asset_texture()
-            // to avoid OpenGL context issues when called from background threads
-        }
-        else {
-            // Directory-specific information (should never reach here due to file watcher filtering)
-            file_info.type = AssetType::Directory;
-            file_info.extension = "";
-            file_info.size = 0;
-
+        try {
+            file_info.size = fs::file_size(full_path);
             // Store display time as modification time (for user-facing display)
             try {
                 auto ftime = fs::last_write_time(full_path);
@@ -488,10 +455,19 @@ Asset EventProcessor::process_file(const std::filesystem::path& full_path, const
                 file_info.last_modified = sctp;
             }
             catch (const fs::filesystem_error& e) {
-                LOG_WARN("Could not get modification time for directory {}: {}", file_info.full_path.u8string(), e.what());
-                file_info.last_modified = timestamp; // Fallback to provided timestamp
+                // Fallback to provided timestamp for display
+                file_info.last_modified = timestamp;
+                LOG_WARN("Using provided timestamp for display for {}: {}", full_path.u8string(), e.what());
             }
         }
+        catch (const fs::filesystem_error& e) {
+            LOG_WARN("Could not get file info for {}: {}", file_info.full_path.u8string(), e.what());
+            file_info.size = 0;
+            file_info.last_modified = timestamp;
+        }
+
+        // Note: SVG and 3D model thumbnail generation is handled on-demand in get_asset_texture()
+        // to avoid OpenGL context issues when called from background threads
     }
     catch (const fs::filesystem_error& e) {
         LOG_ERROR("Error creating file info for {}: {}", full_path.u8string(), e.what());

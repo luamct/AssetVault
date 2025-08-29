@@ -85,8 +85,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
                 asset.full_path = event.path;
                 asset.size = fs::file_size(event.path);
                 asset.last_modified = std::chrono::system_clock::now();
-                asset.is_directory = false;
-                asset.type = AssetType::_3D; // For testing
+                        asset.type = AssetType::_3D; // For testing
                 files_to_insert.push_back(asset);
             }
         }
@@ -136,7 +135,6 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         original_asset.full_path = test_file;
         original_asset.size = fs::file_size(test_file);
         original_asset.last_modified = std::chrono::system_clock::now();
-        original_asset.is_directory = false;
         original_asset.type = AssetType::_3D;
         
         std::vector<Asset> initial_assets = {original_asset};
@@ -193,7 +191,6 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         asset_to_delete.full_path = test_file;
         asset_to_delete.size = fs::file_size(test_file);
         asset_to_delete.last_modified = std::chrono::system_clock::now();
-        asset_to_delete.is_directory = false;
         asset_to_delete.type = AssetType::_3D;
         
         std::vector<Asset> initial_assets = {asset_to_delete};
@@ -244,8 +241,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
             asset.full_path = test_file;
             asset.size = fs::file_size(test_file);
             asset.last_modified = std::chrono::system_clock::now();
-            asset.is_directory = false;
-            asset.type = type;
+                asset.type = type;
             
             assets_to_insert.push_back(asset);
         }
@@ -334,7 +330,6 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         asset.full_path = test_file;
         asset.size = fs::file_size(test_file);
         asset.last_modified = std::chrono::system_clock::now();
-        asset.is_directory = false;
         asset.type = AssetType::Document;
         
         std::vector<Asset> assets_to_insert = {asset};
@@ -363,7 +358,6 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         asset.full_path = test_file;
         asset.size = fs::file_size(test_file);
         asset.last_modified = std::chrono::system_clock::now();
-        asset.is_directory = false;
         asset.type = AssetType::Document;
         
         std::vector<Asset> assets_to_insert = {asset};
