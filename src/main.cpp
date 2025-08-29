@@ -143,11 +143,13 @@ void render_clickable_path(const std::string& full_path, SearchState& search_sta
         if (is_active) {
           // If this path is already active, deactivate it (clear all filters)
           search_state.path_filters.clear();
+          search_state.path_filter_active = false;
         }
         else {
           // Clear all existing filters and add this one
           search_state.path_filters.clear();
           search_state.path_filters.push_back(path_to_segment);
+          search_state.path_filter_active = true;
         }
 
         // Trigger search update
@@ -602,7 +604,7 @@ int main() {
 
   // Start file watcher after initial scan
   LOG_INFO("Starting file watcher...");
-  
+
   if (!file_watcher.start_watching(Config::ASSET_ROOT_DIRECTORY, on_file_event, &assets, &g_event_processor->get_assets_mutex())) {
     LOG_ERROR("Failed to start file watcher");
     return -1;
@@ -727,10 +729,17 @@ int main() {
     float button_width_audio = 84.0f;   // "Audio" is longer
     float button_width_shader = 96.0f;  // "Shader" is longer
     float button_width_font = 72.0f;    // "Font" is medium
+    float button_width_path = 72.0f;    // "Path" is medium
 
-    // Calculate centered starting position for all toggle buttons
+    // Calculate total width including path button if visible
     float total_toggle_width = button_width_2d + button_width_3d + button_width_audio +
       button_width_shader + button_width_font + (toggle_spacing * 4);
+
+    // Add path button width if there's an active path filter
+    if (!search_state.path_filters.empty()) {
+      total_toggle_width += button_width_path + toggle_spacing;
+    }
+
     float toggles_start_x = content_search_x + (Config::SEARCH_BOX_WIDTH - total_toggle_width) * 0.5f;
 
     // Draw all toggle buttons using the dedicated function
@@ -760,6 +769,31 @@ int main() {
     any_toggle_changed |= draw_type_toggle_button("Font", search_state.type_filter_font,
       content_start.x + current_x, content_start.y + toggles_y,
       button_width_font, toggle_button_height);
+    current_x += button_width_font + toggle_spacing;
+
+    // Draw Path filter button if there's a path filter set
+    if (!search_state.path_filters.empty()) {
+      // Draw the Path button
+      bool path_clicked = draw_type_toggle_button("Path", search_state.path_filter_active,
+        content_start.x + current_x, content_start.y + toggles_y,
+        button_width_path, toggle_button_height);
+
+      // Add tooltip showing the full path on hover
+      ImVec2 button_min(content_start.x + current_x, content_start.y + toggles_y);
+      ImVec2 button_max(button_min.x + button_width_path, button_min.y + toggle_button_height);
+      ImVec2 mouse_pos = ImGui::GetMousePos();
+      bool is_hovered = (mouse_pos.x >= button_min.x && mouse_pos.x <= button_max.x &&
+        mouse_pos.y >= button_min.y && mouse_pos.y <= button_max.y);
+
+      if (is_hovered && !search_state.path_filters.empty()) {
+        ImGui::SetTooltip("%s", search_state.path_filters[0].c_str());
+      }
+
+      // Handle path filter toggle
+      if (path_clicked) {
+        any_toggle_changed = true;
+      }
+    }
 
     // If any toggle changed, trigger immediate search
     if (any_toggle_changed) {
@@ -1079,7 +1113,7 @@ int main() {
         // Load the audio file if it's different from the currently loaded one
         const std::string asset_path = selected_asset.full_path.u8string();
         const std::string current_file = audio_manager.get_current_file();
-        
+
         if (asset_path != current_file) {
           LOG_DEBUG("Main: Audio file changed from '{}' to '{}'", current_file, asset_path);
           bool loaded = audio_manager.load_audio(asset_path);
@@ -1090,7 +1124,8 @@ int main() {
             if (search_state.auto_play_audio) {
               audio_manager.play();
             }
-          } else {
+          }
+          else {
             LOG_DEBUG("Main: Failed to load audio, current_file is now '{}'", audio_manager.get_current_file());
           }
         }

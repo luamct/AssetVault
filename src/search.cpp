@@ -395,7 +395,12 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
   if (search_state.type_filter_font) ui_type_filters.push_back(AssetType::Font);
 
   // Parse the search query once before the loop, passing UI filters
-  SearchQuery query = parse_search_query(search_state.buffer, ui_type_filters, search_state.path_filters);
+  // Only include path filters if the path filter toggle is active
+  std::vector<std::string> active_path_filters;
+  if (search_state.path_filter_active && !search_state.path_filters.empty()) {
+    active_path_filters = search_state.path_filters;
+  }
+  SearchQuery query = parse_search_query(search_state.buffer, ui_type_filters, active_path_filters);
 
   // Lock assets during filtering to prevent race conditions
   std::lock_guard<std::mutex> lock(assets_mutex);

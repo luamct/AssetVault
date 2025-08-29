@@ -121,6 +121,9 @@ struct SearchState {
   bool type_filter_shader = false;
   bool type_filter_font = false;
 
+  // Path filter toggle state
+  bool path_filter_active = false;
+  
   // Path filters (set by clicking on path segments)
   std::vector<std::string> path_filters;
 };
