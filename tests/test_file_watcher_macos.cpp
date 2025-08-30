@@ -26,41 +26,21 @@ fs::path get_test_files_dir() {
     return source_file_path.parent_path() / "files";
 }
 
-// Mock asset database for testing
-class MockAssetDatabase {
-public:
-    AssetMap assets_;
-    std::mutex assets_mutex_;
-
-    void add_asset(const fs::path& path) {
-        std::lock_guard<std::mutex> lock(assets_mutex_);
-        Asset asset;
-        asset.full_path = path.u8string();
-        asset.name = path.filename().string();
-        assets_[path.u8string()] = asset;
-    }
-
-    void remove_asset(const fs::path& path) {
-        std::lock_guard<std::mutex> lock(assets_mutex_);
-        assets_.erase(path.u8string());
-    }
-
-    bool has_asset(const fs::path& path) const {
-        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(assets_mutex_));
-        return assets_.find(path.u8string()) != assets_.end();
-    }
-
-    void clear() {
-        std::lock_guard<std::mutex> lock(assets_mutex_);
-        assets_.clear();
-    }
-};
+// Simple helper function for test asset management
+void add_test_asset(AssetMap& assets, const fs::path& path) {
+    Asset asset;
+    asset.full_path = path.u8string();
+    asset.name = path.filename().string();
+    asset.type = get_asset_type(path.u8string());
+    assets[path.u8string()] = asset;
+}
 
 // Test fixture for file watcher tests
 class FileWatcherTestFixture {
 public:
     fs::path test_dir;
-    MockAssetDatabase mock_db;
+    AssetMap assets;
+    std::mutex assets_mutex;  // Not actually needed for thread safety in tests, but file watcher requires it
     std::shared_ptr<std::vector<FileEvent>> shared_events;  // Thread-safe events storage
     std::unique_ptr<FileWatcher> watcher;
 
@@ -95,7 +75,7 @@ public:
             events_ptr->push_back(event);
             };
 
-        watcher->start_watching(test_dir.string(), event_callback, &mock_db.assets_, &mock_db.assets_mutex_);
+        watcher->start_watching(test_dir.string(), event_callback, &assets, &assets_mutex);
 
         // Store the shared pointer so we can access events later
         shared_events = events_ptr;
@@ -255,7 +235,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         auto source_file = get_test_files_dir() / "single_file.png";
         auto internal_file = fixture.test_dir / "tracked.png";
         fs::copy_file(source_file, internal_file);
-        fixture.mock_db.add_asset(internal_file);
+        add_test_asset(fixture.assets, internal_file);
 
         // Start watching
         fixture.start_watching();
@@ -307,16 +287,9 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
             test_move_dir / "subdir" / "nested.obj"
         };
 
-        // Add files to mock asset database
-        {
-            std::lock_guard<std::mutex> lock(fixture.mock_db.assets_mutex_);
-            for (const auto& file_path : test_files) {
-                Asset asset;
-                asset.full_path = file_path.u8string();
-                asset.name = file_path.filename().u8string();
-                asset.type = get_asset_type(file_path.u8string());
-                fixture.mock_db.assets_[file_path.u8string()] = asset;
-            }
+        // Add files to asset database
+        for (const auto& file_path : test_files) {
+            add_test_asset(fixture.assets, file_path);
         }
 
         // Start watching
@@ -364,7 +337,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         auto source_file = get_test_files_dir() / "single_file.png";
         auto old_file = fixture.test_dir / "old_name.png";
         fs::copy_file(source_file, old_file);
-        fixture.mock_db.add_asset(old_file);
+        add_test_asset(fixture.assets, old_file);
 
         // Start watching
         fixture.start_watching();
@@ -434,7 +407,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
             old_dir / "file3.png"
         };
         for (const auto& file : test_files) {
-            fixture.mock_db.add_asset(file);
+            add_test_asset(fixture.assets, file);
         }
 
         // Start watching
@@ -598,7 +571,7 @@ TEST_CASE("[MacOS] FSEvents directory move operations", "[file_watcher_macos]") 
         auto file = fixture.test_dir / "to_delete.png";
         fs::copy_file(source_file, file);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));  // Let filesystem settle
-        fixture.mock_db.add_asset(file);
+        add_test_asset(fixture.assets, file);
 
         // Start watching
         fixture.start_watching();
@@ -662,16 +635,9 @@ TEST_CASE("[MacOS] FSEvents directory move operations", "[file_watcher_macos]") 
             test_delete_dir / "subdir2" / "deep.wav"
         };
 
-        // Add all files to mock asset database (simulating they're tracked)
-        {
-            std::lock_guard<std::mutex> lock(fixture.mock_db.assets_mutex_);
-            for (const auto& file_path : test_files) {
-                Asset asset;
-                asset.full_path = file_path.u8string();
-                asset.name = file_path.filename().u8string();
-                asset.type = get_asset_type(file_path.u8string());
-                fixture.mock_db.assets_[file_path.u8string()] = asset;
-            }
+        // Add all files to asset database (simulating they're tracked)
+        for (const auto& file_path : test_files) {
+            add_test_asset(fixture.assets, file_path);
         }
 
         // Start watching
@@ -724,7 +690,7 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         // Track in database (simulating it was previously indexed)
-        fixture.mock_db.add_asset(file);
+        add_test_asset(fixture.assets, file);
 
         // Start watching
         fixture.start_watching();
@@ -776,7 +742,7 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         // Track in database (simulating it was previously indexed)
-        fixture.mock_db.add_asset(file);
+        add_test_asset(fixture.assets, file);
 
         // Start watching
         fixture.start_watching();
