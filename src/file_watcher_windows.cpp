@@ -220,7 +220,7 @@ private:
         raw_type == FileEventType::Created ? "Created" :
         raw_type == FileEventType::Deleted ? "Deleted" :
         raw_type == FileEventType::Modified ? "Modified" : "Other",
-        full_path.u8string());
+        full_path.generic_u8string());
 
       // For directory creation (including moves), scan contents and generate file events
       if (raw_type == FileEventType::Created) {
@@ -232,13 +232,13 @@ private:
     // Skip files without extensions and ignored asset types
     if (!full_path.has_extension() || should_skip_asset(full_path.extension().string())) {
       LOG_INFO("Windows filtered out: {} (ext={}, skip={})",
-        full_path.u8string(),
+        full_path.generic_u8string(),
         full_path.has_extension() ? "yes" : "no",
         full_path.has_extension() ? should_skip_asset(full_path.extension().string()) : false);
       return;
     }
 
-    LOG_INFO("Windows processing: {} as {}", full_path.u8string(),
+    LOG_INFO("Windows processing: {} as {}", full_path.generic_u8string(),
       raw_type == FileEventType::Created ? "Created" :
       raw_type == FileEventType::Deleted ? "Deleted" :
       raw_type == FileEventType::Modified ? "Modified" : "Other");
@@ -327,7 +327,7 @@ private:
       case FILE_ACTION_RENAMED_NEW_NAME: action_name = "FILE_ACTION_RENAMED_NEW_NAME"; break;
       default: action_name = "UNKNOWN_ACTION(" + std::to_string(p_notify->Action) + ")"; break;
       }
-      LOG_INFO("Windows raw event: {} -> {}", action_name, full_path.u8string());
+      LOG_INFO("Windows raw event: {} -> {}", action_name, full_path.generic_u8string());
 
       // Handle rename events separately for better architecture
       if (p_notify->Action == FILE_ACTION_RENAMED_OLD_NAME) {
@@ -341,7 +341,7 @@ private:
         }
 
         if (!files_to_delete.empty()) {
-          LOG_INFO("Windows directory rename OLD_NAME (deletion): {} (deleting {} tracked files)", full_path.u8string(), files_to_delete.size());
+          LOG_INFO("Windows directory rename OLD_NAME (deletion): {} (deleting {} tracked files)", full_path.generic_u8string(), files_to_delete.size());
 
           // Delete all tracked files under this directory
           for (const auto& file_path : files_to_delete) {
@@ -362,7 +362,7 @@ private:
       else if (p_notify->Action == FILE_ACTION_RENAMED_NEW_NAME) {
         // Treat as creation - for directories, scan contents
         if (fs::exists(full_path) && fs::is_directory(full_path)) {
-          LOG_INFO("Windows directory rename NEW_NAME (creation): {}", full_path.u8string());
+          LOG_INFO("Windows directory rename NEW_NAME (creation): {}", full_path.generic_u8string());
 
           // Scan new directory contents for creation events
           scan_directory_contents(full_path, FileEventType::Created);
@@ -383,7 +383,7 @@ private:
         }
 
         if (!files_to_delete.empty()) {
-          LOG_INFO("Windows directory deletion: {} (deleting {} tracked files)", full_path.u8string(), files_to_delete.size());
+          LOG_INFO("Windows directory deletion: {} (deleting {} tracked files)", full_path.generic_u8string(), files_to_delete.size());
 
           // Delete all tracked files under this directory
           for (const auto& file_path : files_to_delete) {

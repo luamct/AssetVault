@@ -248,7 +248,7 @@ private:
             bool has_tracked_assets = false;
             if (watcher->assets_ && watcher->assets_mutex_) {
               std::lock_guard<std::mutex> lock(*watcher->assets_mutex_);
-              std::string dir_path_str = file_path.u8string();
+              std::string dir_path_str = file_path.generic_u8string();
 
               // Use binary search to find the first potential match
               auto it = watcher->assets_->lower_bound(dir_path_str);
@@ -292,7 +292,7 @@ private:
             bool is_tracked;
             {
               std::lock_guard<std::mutex> lock(*watcher->assets_mutex_);
-              is_tracked = watcher->assets_->find(file_path.u8string()) != watcher->assets_->end();
+              is_tracked = watcher->assets_->find(file_path.generic_u8string()) != watcher->assets_->end();
             }
 
             if (file_exists && !is_tracked) {
