@@ -18,18 +18,19 @@
 // Structure to track pending file events
 struct PendingFileEvent {
   FileEventType original_type;
-  fs::path path;
+  std::string path;  // UTF-8 encoded path with normalized separators
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
   PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
 
-  PendingFileEvent(FileEventType type, const fs::path& p)
-      : original_type(type), path(p), last_activity(std::chrono::steady_clock::now()), is_active(true) {}
+  PendingFileEvent(FileEventType type, const std::string& p)
+    : original_type(type), path(p), last_activity(std::chrono::steady_clock::now()), is_active(true) {
+  }
 };
 
 class MacOSFileWatcher : public FileWatcherImpl {
- private:
+private:
   FSEventStreamRef stream;
   std::thread watch_thread;
   std::atomic<bool> should_stop;
@@ -38,17 +39,17 @@ class MacOSFileWatcher : public FileWatcherImpl {
   AssetMap* assets_;
   std::mutex* assets_mutex_;
   std::string watched_path;
-  
+
   // Timer-based event tracking
-  std::unordered_map<fs::path, PendingFileEvent> pending_events;
+  std::unordered_map<std::string, PendingFileEvent> pending_events;
   std::mutex pending_events_mutex;
   std::thread timer_thread;
   std::atomic<bool> timer_should_stop;
-  
-  
+
+
   // Store this instance for the callback
   static MacOSFileWatcher* current_instance;
-  
+
   // Helper method to format FSEvents flags into readable string
   static std::string format_fsevents_flags(FSEventStreamEventFlags flags) {
     std::string flag_names;
@@ -75,39 +76,39 @@ class MacOSFileWatcher : public FileWatcherImpl {
     if (flags & kFSEventStreamEventFlagRootChanged) flag_names += "RootChanged ";
     if (flags & kFSEventStreamEventFlagMount) flag_names += "Mount ";
     if (flags & kFSEventStreamEventFlagUnmount) flag_names += "Unmount ";
-    
+
     // Remove trailing space
     if (!flag_names.empty() && flag_names.back() == ' ') {
       flag_names.pop_back();
     }
-    
+
     return flag_names;
   }
-  
+
   // Helper method to detect atomic save operations
   static bool is_atomic_save(FSEventStreamEventFlags flags) {
     // Check for the exact combination: Renamed + IsFile + XattrMod + Cloned
-    const FSEventStreamEventFlags ATOMIC_SAVE_FLAGS = 
+    const FSEventStreamEventFlags ATOMIC_SAVE_FLAGS =
       kFSEventStreamEventFlagItemRenamed |
       kFSEventStreamEventFlagItemIsFile |
       kFSEventStreamEventFlagItemXattrMod |
       kFSEventStreamEventFlagItemCloned;
-    
+
     // Must have all these flags set
     return (flags & ATOMIC_SAVE_FLAGS) == ATOMIC_SAVE_FLAGS;
   }
 
- public:
+public:
   MacOSFileWatcher()
-      : stream(nullptr),
-        should_stop(false),
-        is_watching_flag(false),
-        timer_should_stop(false) {
+    : stream(nullptr),
+    should_stop(false),
+    is_watching_flag(false),
+    timer_should_stop(false) {
     current_instance = this;
   }
 
-  ~MacOSFileWatcher() { 
-    stop_watching(); 
+  ~MacOSFileWatcher() {
+    stop_watching();
     current_instance = nullptr;
   }
 
@@ -168,22 +169,22 @@ class MacOSFileWatcher : public FileWatcherImpl {
 
   bool is_watching() const override { return is_watching_flag.load(); }
 
- private:
+private:
   static void fsevents_callback(
-      ConstFSEventStreamRef streamRef,
-      void* clientCallBackInfo,
-      size_t numEvents,
-      void* eventPaths,
-      const FSEventStreamEventFlags eventFlags[],
-      const FSEventStreamEventId eventIds[]) {
-    
+    ConstFSEventStreamRef streamRef,
+    void* clientCallBackInfo,
+    size_t numEvents,
+    void* eventPaths,
+    const FSEventStreamEventFlags eventFlags[],
+    const FSEventStreamEventId eventIds[]) {
+
     auto* watcher = static_cast<MacOSFileWatcher*>(clientCallBackInfo);
-    
+
     // Early exit if we're being shut down
     if (!watcher || watcher->should_stop.load()) {
       return;
     }
-    
+
     char** paths = static_cast<char**>(eventPaths);
 
     for (size_t i = 0; i < numEvents; ++i) {
@@ -198,7 +199,8 @@ class MacOSFileWatcher : public FileWatcherImpl {
           LOG_INFO("Skipped event {}", file_path.string());
           continue;
         }
-      } catch (const fs::filesystem_error&) {
+      }
+      catch (const fs::filesystem_error&) {
         // If normalization fails, fall back to string comparison
         if (file_path == watcher->watched_path) {
           continue;
@@ -207,7 +209,7 @@ class MacOSFileWatcher : public FileWatcherImpl {
 
       // Determine event type based on flags
       FSEventStreamEventFlags flags = eventFlags[i];
-      
+
       // Get relative path for logging
       std::string relative_path = file_path.string();
       if (relative_path.find(watcher->watched_path) == 0) {
@@ -216,118 +218,130 @@ class MacOSFileWatcher : public FileWatcherImpl {
           relative_path = relative_path.substr(1);
         }
       }
-      
+
       // Debug: Log only positive flags for this event
       std::string flag_names = format_fsevents_flags(flags);
       LOG_DEBUG("FSEvents: '{}' [0x{:X}] {}", relative_path, flags, flag_names);
-      
-      
+
+      // Convert path to normalized UTF-8 string for consistent handling
+      std::string path = file_path.generic_u8string();
+
       // Check Renamed flag first as it can be combined with other flags
       if (flags & kFSEventStreamEventFlagItemRenamed) {
         // Check if this is an atomic save operation (file modified via temp file swap)
         if (is_atomic_save(flags)) {
           // This is an atomic save - treat as a modification
-          watcher->add_pending_event(FileEventType::Modified, file_path);
-        } else if (watcher->assets_ && watcher->assets_mutex_) {
+          watcher->add_pending_event(FileEventType::Modified, path);
+        }
+        else if (watcher->assets_ && watcher->assets_mutex_) {
           // Not an atomic save - handle as a real rename/move
           // Only trigger events for actual moves, not metadata-only renames:
           // - Created: file exists AND is NOT tracked (moved in)
           // - Deleted: file doesn't exist AND IS tracked (moved out)
           // - Otherwise: ignore (metadata change or already handled)
-          
+
           bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
           bool file_exists = fs::exists(file_path);
-          
+
           if (is_directory) {
             // For directories, check if there are any tracked assets under this path
             bool has_tracked_assets = false;
             if (watcher->assets_ && watcher->assets_mutex_) {
               std::lock_guard<std::mutex> lock(*watcher->assets_mutex_);
               std::string dir_path_str = file_path.u8string();
-              
+
               // Use binary search to find the first potential match
               auto it = watcher->assets_->lower_bound(dir_path_str);
-              
+
               // Check if any assets start with this directory path
               while (it != watcher->assets_->end()) {
                 const std::string& asset_path = it->first;
-                
+
                 // Check if this asset is under the directory
                 if (asset_path.find(dir_path_str) != 0) {
                   break;  // No more assets under this directory
                 }
-                
+
                 // Ensure it's actually a child path, not just a prefix match
-                if (asset_path.length() > dir_path_str.length() && 
-                    (dir_path_str.back() == '/' || asset_path[dir_path_str.length()] == '/')) {
+                if (asset_path.length() > dir_path_str.length() &&
+                  (dir_path_str.back() == '/' || asset_path[dir_path_str.length()] == '/')) {
                   has_tracked_assets = true;
                   break;
                 }
-                
+
                 ++it;
               }
             }
-            
+
             if (file_exists && !has_tracked_assets) {
               // Directory exists and has no tracked assets - it was moved TO this path
               watcher->handle_directory_moved_in(file_path);
-            } else if (!file_exists && has_tracked_assets) {
+            }
+            else if (!file_exists && has_tracked_assets) {
               // Directory doesn't exist but has tracked assets - it was moved FROM this path
               watcher->emit_deletion_events_for_directory(file_path);
-            } else {
-              // Directory exists with tracked assets (in-place change) OR doesn't exist with no tracked assets (temp dir)
-              LOG_DEBUG("FSEvents: Ignoring directory rename event for '{}' (exists:{}, has_tracked:{})", 
-                       relative_path, file_exists, has_tracked_assets);
             }
-          } else {
+            else {
+              // Directory exists with tracked assets (in-place change) OR doesn't exist with no tracked assets (temp dir)
+              LOG_DEBUG("FSEvents: Ignoring directory rename event for '{}' (exists:{}, has_tracked:{})",
+                relative_path, file_exists, has_tracked_assets);
+            }
+          }
+          else {
             // For files, check if the specific file is tracked
             bool is_tracked;
             {
               std::lock_guard<std::mutex> lock(*watcher->assets_mutex_);
               is_tracked = watcher->assets_->find(file_path.u8string()) != watcher->assets_->end();
             }
-            
+
             if (file_exists && !is_tracked) {
               // File exists and is not tracked - it was moved TO this path
-              watcher->add_pending_event(FileEventType::Created, file_path);
-            } else if (!file_exists && is_tracked) {
+              watcher->add_pending_event(FileEventType::Created, path);
+            }
+            else if (!file_exists && is_tracked) {
               // File doesn't exist but is tracked - it was moved FROM this path
-              watcher->add_pending_event(FileEventType::Deleted, file_path);
-            } else {
+              watcher->add_pending_event(FileEventType::Deleted, path);
+            }
+            else {
               // File exists and is tracked (metadata change) OR doesn't exist and isn't tracked (temp file)
-              LOG_DEBUG("FSEvents: Ignoring file rename event for '{}' (exists:{}, tracked:{})", 
-                       relative_path, file_exists, is_tracked);
+              LOG_DEBUG("FSEvents: Ignoring file rename event for '{}' (exists:{}, tracked:{})",
+                relative_path, file_exists, is_tracked);
             }
           }
         }
-      } else if (flags & kFSEventStreamEventFlagItemRemoved) {
+      }
+      else if (flags & kFSEventStreamEventFlagItemRemoved) {
         // Handle removal events - this should come before Created check
         // because FSEvents can set both Created+Removed for deletion
         bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
-        
+
         if (is_directory) {
           // For directory deletion, emit events for all tracked assets under it
           // This handles the case where FSEvents doesn't report individual file deletions
           watcher->emit_deletion_events_for_directory(file_path);
-        } else {
-          // For file deletion, just emit the single event
-          watcher->add_pending_event(FileEventType::Deleted, file_path);
         }
-      } else if (flags & kFSEventStreamEventFlagItemCreated) {
+        else {
+          // For file deletion, just emit the single event
+          watcher->add_pending_event(FileEventType::Deleted, path);
+        }
+      }
+      else if (flags & kFSEventStreamEventFlagItemCreated) {
         // Only treat as creation if it's NOT also a rename (rename takes precedence)
         if (!(flags & kFSEventStreamEventFlagItemRenamed)) {
-          bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
-          watcher->add_pending_event(FileEventType::Created, file_path);
+          watcher->add_pending_event(FileEventType::Created, path);
         }
-      } else if (flags & kFSEventStreamEventFlagItemModified) {
+      }
+      else if (flags & kFSEventStreamEventFlagItemModified) {
         if (!(flags & kFSEventStreamEventFlagItemIsDir)) {
-          watcher->add_pending_event(FileEventType::Modified, file_path);
+          watcher->add_pending_event(FileEventType::Modified, path);
         }
-      } else {
+      }
+      else {
         // Check if file exists - if not, it's been deleted even without explicit flags
         if (!fs::exists(file_path)) {
           LOG_DEBUG("FSEvents: File '{}' no longer exists (no explicit flags), treating as Deleted", relative_path);
-          watcher->add_pending_event(FileEventType::Deleted, file_path);
+          watcher->add_pending_event(FileEventType::Deleted, path);
         }
       }
     }
@@ -336,18 +350,18 @@ class MacOSFileWatcher : public FileWatcherImpl {
   void watch_loop() {
     // Create CFString for the path
     CFStringRef path_cfstr = CFStringCreateWithCString(nullptr, watched_path.c_str(), kCFStringEncodingUTF8);
-    CFArrayRef paths_to_watch = CFArrayCreate(nullptr, (const void**)&path_cfstr, 1, &kCFTypeArrayCallBacks);
+    CFArrayRef paths_to_watch = CFArrayCreate(nullptr, (const void**) &path_cfstr, 1, &kCFTypeArrayCallBacks);
 
     // Create the event stream
-    FSEventStreamContext context = {0, this, nullptr, nullptr, nullptr};
+    FSEventStreamContext context = { 0, this, nullptr, nullptr, nullptr };
     stream = FSEventStreamCreate(
-        nullptr,
-        &MacOSFileWatcher::fsevents_callback,
-        &context,
-        paths_to_watch,
-        kFSEventStreamEventIdSinceNow,
-        0.01,  // Latency in seconds - reduced to 10ms for timing analysis
-        kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
+      nullptr,
+      &MacOSFileWatcher::fsevents_callback,
+      &context,
+      paths_to_watch,
+      kFSEventStreamEventIdSinceNow,
+      0.01,  // Latency in seconds - reduced to 10ms for timing analysis
+      kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
     );
 
     if (!stream) {
@@ -360,11 +374,11 @@ class MacOSFileWatcher : public FileWatcherImpl {
 
     // Create run loop for this thread
     CFRunLoopRef run_loop = CFRunLoopGetCurrent();
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     FSEventStreamScheduleWithRunLoop(stream, run_loop, kCFRunLoopDefaultMode);
-    #pragma clang diagnostic pop
-    
+#pragma clang diagnostic pop
+
     if (!FSEventStreamStart(stream)) {
       LOG_ERROR("Failed to start FSEventStream");
       FSEventStreamRelease(stream);
@@ -382,41 +396,42 @@ class MacOSFileWatcher : public FileWatcherImpl {
 
     // Cleanup
     FSEventStreamStop(stream);
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     FSEventStreamUnscheduleFromRunLoop(stream, run_loop, kCFRunLoopDefaultMode);
-    #pragma clang diagnostic pop
+#pragma clang diagnostic pop
     FSEventStreamRelease(stream);
     stream = nullptr;
-    
+
     CFRelease(paths_to_watch);
     CFRelease(path_cfstr);
   }
 
-  void add_pending_event(FileEventType type, const fs::path& path) {
-    // Filter out directories, ignored asset types and unknown file types  
-    if (!path.has_extension() || should_skip_asset(path.extension().string())) {
+  void add_pending_event(FileEventType type, const std::string& path) {
+    // Filter out directories, ignored asset types and unknown file types
+    fs::path path_obj = fs::u8path(path);
+    if (!path_obj.has_extension() || should_skip_asset(path_obj.extension().string())) {
       return;
     }
-    
+
     // For Deleted events, process immediately (don't debounce)
     if (type == FileEventType::Deleted) {
       // Get relative path for logging
-      std::string relative_path = path.string();
+      std::string relative_path = path;
       if (relative_path.find(watched_path) == 0) {
         relative_path = relative_path.substr(watched_path.length());
         if (!relative_path.empty() && relative_path[0] == '/') {
           relative_path = relative_path.substr(1);
         }
       }
-      
+
       if (callback) {
         FileEvent event(type, path);
         callback(event);
       }
       return;
     }
-    
+
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
     // Create or update the pending event (only for Created/Modified events)
@@ -437,56 +452,60 @@ class MacOSFileWatcher : public FileWatcherImpl {
         if (event.is_active && time_since_activity >= Config::FILE_WATCHER_DEBOUNCE_MS) {
           // Process the event
           callback(FileEvent(event.original_type, event.path));
-          
+
           it = pending_events.erase(it);
-        } else {
+        }
+        else {
           ++it;
         }
       }
     }
   }
-  
+
   void handle_directory_moved_in(const fs::path& dir_path) {
     LOG_DEBUG("Scanning directory for moved-in contents: {}", dir_path.string());
-    
-    
+
+
     try {
       // Recursively scan the directory and emit Create events for all contents
       for (const auto& entry : fs::recursive_directory_iterator(dir_path)) {
-        add_pending_event(FileEventType::Created, entry.path());
+        std::string path = entry.path().generic_u8string();
+        add_pending_event(FileEventType::Created, path);
       }
-    } catch (const fs::filesystem_error& e) {
+    }
+    catch (const fs::filesystem_error& e) {
       LOG_WARN("Failed to scan moved-in directory {}: {}", dir_path.string(), e.what());
     }
   }
-  
+
   void emit_deletion_events_for_directory(const fs::path& dir_path) {
     LOG_DEBUG("Emitting deletion events for directory: {}", dir_path.string());
-    
+
     if (!assets_ || !assets_mutex_) {
       LOG_WARN("No assets provided for directory deletion handling");
       return;
     }
-    
+
     // Use optimized O(log n) lookup to find tracked files under this path
     std::vector<fs::path> files_to_delete;
-    
+
     {
       std::lock_guard<std::mutex> lock(*assets_mutex_);
       files_to_delete = find_assets_under_directory(*assets_, dir_path);
     }
-    
+
     // Emit deletion events for all found assets
     for (const auto& file_path : files_to_delete) {
       if (callback) {
-        FileEvent event(FileEventType::Deleted, file_path);
+        std::string path = file_path.generic_u8string();
+        FileEvent event(FileEventType::Deleted, path);
         callback(event);
       }
     }
-    
+
     LOG_DEBUG("Emitted {} deletion events for directory and assets under it", files_to_delete.size());
   }
-  
+
 };
 
 // Static member definition

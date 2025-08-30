@@ -400,7 +400,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
         if (entry.is_directory() || should_skip_asset(entry.path().extension().string())) {
           continue;
         }
-        current_files.insert(normalize_path_separators(entry.path().u8string()));
+        current_files.insert(entry.path().generic_u8string());
       }
       catch (const fs::filesystem_error& e) {
         LOG_WARN("Could not access {}: {}", entry.path().u8string(), e.what());
@@ -426,7 +426,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
     auto db_it = db_map.find(path);
     if (db_it == db_map.end()) {
       // File not in database - create a Created event
-      FileEvent event(FileEventType::Created, fs::u8path(path));
+      FileEvent event(FileEventType::Created, path);
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
@@ -438,7 +438,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
   for (const auto& db_asset : db_assets) {
     if (current_files.find(db_asset.full_path) == current_files.end()) {
       // File no longer exists - create a Deleted event
-      FileEvent event(FileEventType::Deleted, fs::u8path(db_asset.full_path));
+      FileEvent event(FileEventType::Deleted, db_asset.full_path);
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }

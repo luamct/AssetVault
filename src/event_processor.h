@@ -108,5 +108,5 @@ private:
     std::string root_path_;
 
     // Process individual file/directory into Asset
-    Asset process_file(const std::filesystem::path& full_path, const std::chrono::system_clock::time_point& timestamp);
+    Asset process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);
 };

@@ -16,7 +16,7 @@
 namespace fs = std::filesystem;
 
 EventProcessor::EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
-    std::atomic<bool>& search_update_needed, TextureManager& texture_manager, 
+    std::atomic<bool>& search_update_needed, TextureManager& texture_manager,
     SearchIndex& search_index, size_t batch_size)
     : database_(database), assets_(assets), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), search_index_(search_index), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
@@ -186,7 +186,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
             total_events_processed_++;  // Increment per file processed
         }
         catch (const std::exception& e) {
-            LOG_ERROR("Error processing created event for {}: {}", event.path.u8string(), e.what());
+            LOG_ERROR("Error processing created event for {}: {}", event.path, e.what());
             total_events_processed_++;  // Count failed attempts too
         }
     }
@@ -213,32 +213,32 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
     for (const auto& event : events) {
         try {
             // Skip if file doesn't exist
-            if (!fs::exists(event.path)) {
+            if (!fs::exists(fs::u8path(event.path))) {
                 total_events_processed_++;  // Count skipped
                 continue;
             }
 
-            Asset file_info = process_file(event.path, event.timestamp);
-            
+            Asset asset = process_file(event.path, event.timestamp);
+
             // Preserve the existing asset ID if it exists
             {
                 std::lock_guard<std::mutex> lock(assets_mutex_);
-                auto it = assets_.find(event.path.u8string());
+                auto it = assets_.find(event.path);
                 if (it != assets_.end()) {
-                    file_info.id = it->second.id;
+                    asset.id = it->second.id;
                 }
             }
-            
-            files_to_update.push_back(file_info);
+
+            files_to_update.push_back(asset);
             total_events_processed_++;  // Increment per file processed
 
             // Queue texture invalidation for modified texture assets
-            if (file_info.type == AssetType::_2D) {
-                texture_manager_.queue_texture_invalidation(event.path.u8string());
+            if (asset.type == AssetType::_2D) {
+                texture_manager_.queue_texture_invalidation(event.path);
             }
         }
         catch (const std::exception& e) {
-            LOG_ERROR("Error processing modified event for {}: {}", event.path.u8string(), e.what());
+            LOG_ERROR("Error processing modified event for {}: {}", event.path, e.what());
             total_events_processed_++;  // Count failed attempts too
         }
     }
@@ -260,17 +260,17 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
 void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events) {
     std::vector<std::string> paths_to_delete;
     paths_to_delete.reserve(events.size());
-    
+
     // Collect all paths - file watchers handle the complexity of generating
     // appropriate events for each platform's behavior
     for (const auto& event : events) {
-        std::string path_utf8 = event.path.u8string();
+        std::string path_utf8 = event.path;
         paths_to_delete.push_back(path_utf8);
-        
+
         total_events_processed_++;  // Increment per event processed
-        
+
         // Queue texture invalidation for deleted assets
-        texture_manager_.queue_texture_invalidation(event.path.u8string());
+        texture_manager_.queue_texture_invalidation(event.path);
     }
 
     // Batch delete all paths from database
@@ -302,7 +302,6 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     }
 }
 
-
 // Individual asset manipulation methods (still used by batch processing)
 
 void EventProcessor::add_asset(const Asset& asset) {
@@ -320,54 +319,50 @@ void EventProcessor::remove_asset(const std::string& path) {
     assets_.erase(path);
 }
 
-
-
-
-Asset EventProcessor::process_file(const std::filesystem::path& full_path, const std::chrono::system_clock::time_point& timestamp) {
-    Asset file_info;
+Asset EventProcessor::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
+    Asset asset;
 
     try {
         fs::path root(root_path_);
 
-        // Basic file information (normalize path separators for consistent storage)
-        file_info.full_path = normalize_path_separators(full_path.u8string());
-        file_info.name = full_path.filename().u8string();
+        // Basic file information (path is already normalized)
+        asset.full_path = full_path;
+        fs::path path_obj = fs::u8path(full_path);
+        asset.name = path_obj.filename().u8string();
         // File-specific information
-        file_info.extension = full_path.extension().string();
-        file_info.type = get_asset_type(file_info.extension);
+        asset.extension = path_obj.extension().string();
+        asset.type = get_asset_type(asset.extension);
 
         try {
-            file_info.size = fs::file_size(full_path);
+            asset.size = fs::file_size(path_obj);
             // Store display time as modification time (for user-facing display)
             try {
-                auto ftime = fs::last_write_time(full_path);
+                auto ftime = fs::last_write_time(path_obj);
                 auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
                     ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
                 );
-                file_info.last_modified = sctp;
+                asset.last_modified = sctp;
             }
             catch (const fs::filesystem_error& e) {
                 // Fallback to provided timestamp for display
-                file_info.last_modified = timestamp;
-                LOG_WARN("Using provided timestamp for display for {}: {}", full_path.u8string(), e.what());
+                asset.last_modified = timestamp;
+                LOG_WARN("Using provided timestamp for display for {}: {}", full_path, e.what());
             }
         }
         catch (const fs::filesystem_error& e) {
-            LOG_WARN("Could not get file info for {}: {}", file_info.full_path, e.what());
-            file_info.size = 0;
-            file_info.last_modified = timestamp;
+            LOG_WARN("Could not get file info for {}: {}", asset.full_path, e.what());
+            asset.size = 0;
+            asset.last_modified = timestamp;
         }
-
-        // Note: SVG and 3D model thumbnail generation is handled on-demand in get_asset_texture()
-        // to avoid OpenGL context issues when called from background threads
     }
     catch (const fs::filesystem_error& e) {
-        LOG_ERROR("Error creating file info for {}: {}", full_path.u8string(), e.what());
+        LOG_ERROR("Error creating file info for {}: {}", full_path, e.what());
         // Return minimal file info on error
-        file_info.full_path = normalize_path_separators(full_path.u8string());
-        file_info.name = full_path.filename().u8string();
-        file_info.last_modified = timestamp;
+        asset.full_path = full_path;
+        fs::path path_obj = fs::u8path(full_path);
+        asset.name = path_obj.filename().u8string();
+        asset.last_modified = timestamp;
     }
 
-    return file_info;
+    return asset;
 }

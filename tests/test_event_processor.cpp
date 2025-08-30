@@ -69,8 +69,8 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         
         // Create FileEvents for the test files
         std::vector<FileEvent> events;
-        events.emplace_back(FileEventType::Created, test_file1);
-        events.emplace_back(FileEventType::Created, test_file2);
+        events.emplace_back(FileEventType::Created, test_file1.u8string());
+        events.emplace_back(FileEventType::Created, test_file2.u8string());
         
         // Verify search index is initially empty
         REQUIRE(search_index.get_token_count() == 0);
@@ -78,12 +78,12 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         // Manually process the files (simulating EventProcessor behavior)
         std::vector<Asset> files_to_insert;
         for (const auto& event : events) {
-            if (fs::exists(event.path)) {
+            if (fs::exists(fs::u8path(event.path))) {
                 Asset asset;
-                asset.name = event.path.filename().string();
-                asset.extension = event.path.extension().string().substr(1); // Remove leading dot
-                asset.full_path = event.path.u8string();
-                asset.size = fs::file_size(event.path);
+                asset.name = fs::u8path(event.path).filename().string();
+                asset.extension = fs::u8path(event.path).extension().string().substr(1); // Remove leading dot
+                asset.full_path = event.path;
+                asset.size = fs::file_size(fs::u8path(event.path));
                 asset.last_modified = std::chrono::system_clock::now();
                         asset.type = AssetType::_3D; // For testing
                 files_to_insert.push_back(asset);

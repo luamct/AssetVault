@@ -20,13 +20,13 @@
 // Structure to track pending file events
 struct PendingFileEvent {
   FileEventType original_type;
-  fs::path path;
+  std::string path;  // UTF-8 encoded path with normalized separators
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
   PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
 
-  PendingFileEvent(FileEventType type, const fs::path& p)
+  PendingFileEvent(FileEventType type, const std::string& p)
     : original_type(type), path(p), last_activity(std::chrono::steady_clock::now()), is_active(true) {
   }
 };
@@ -48,7 +48,7 @@ private:
   DWORD bytes_returned;
 
   // Timer-based event tracking
-  std::unordered_map<fs::path, PendingFileEvent> pending_events;
+  std::unordered_map<std::string, PendingFileEvent> pending_events;
   std::mutex pending_events_mutex;
   std::thread timer_thread;
   std::atomic<bool> timer_should_stop;
@@ -157,7 +157,7 @@ private:
   void timer_loop() {
     while (!timer_should_stop.load()) {
       auto now = std::chrono::steady_clock::now();
-      std::vector<std::pair<fs::path, PendingFileEvent>> events_to_process;
+      std::vector<std::pair<std::string, PendingFileEvent>> events_to_process;
 
       {
         std::lock_guard<std::mutex> lock(pending_events_mutex);
@@ -245,19 +245,22 @@ private:
 
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
+    // Convert path to normalized UTF-8 string for consistent handling
+    std::string path = full_path.generic_u8string();
+
     // For Deleted events, process immediately
     if (raw_type == FileEventType::Deleted) {
       if (callback) {
-        FileEvent event(raw_type, full_path);
+        FileEvent event(raw_type, path);
         callback(event);
       }
       return;
     }
 
-    auto it = pending_events.find(full_path);
+    auto it = pending_events.find(path);
     if (it == pending_events.end()) {
       // First event for this file, store all attributes
-      pending_events[full_path] = PendingFileEvent(raw_type, full_path);
+      pending_events[path] = PendingFileEvent(raw_type, path);
     }
     else {
       // Only update last_activity and is_active
@@ -345,8 +348,8 @@ private:
             // Call callback directly - we know these are tracked
             if (callback) {
               // Convert filesystem::path to normalized UTF-8 string to match assets map format
-              std::string normalized_path = normalize_path_separators(file_path.u8string());
-              FileEvent event(FileEventType::Deleted, fs::u8path(normalized_path));
+              std::string path = file_path.generic_u8string();
+              FileEvent event(FileEventType::Deleted, path);
               callback(event);
             }
           }
@@ -387,8 +390,8 @@ private:
             // Call callback directly - we know these are tracked
             if (callback) {
               // Convert filesystem::path to normalized UTF-8 string to match assets map format
-              std::string normalized_path = normalize_path_separators(file_path.u8string());
-              FileEvent event(FileEventType::Deleted, fs::u8path(normalized_path));
+              std::string path = file_path.generic_u8string();
+              FileEvent event(FileEventType::Deleted, path);
               callback(event);
             }
           }

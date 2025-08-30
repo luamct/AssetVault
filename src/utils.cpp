@@ -49,7 +49,7 @@ std::string get_relative_asset_path(const std::string& full_path) {
     fs::path relative_path = fs::relative(full_fs_path, assets_root);
     
     // Normalize to forward slashes
-    return normalize_path_separators(relative_path.u8string());
+    return relative_path.generic_u8string();
   }
   catch (const fs::filesystem_error&) {
     // Fallback: just normalize separators in the original path
@@ -118,7 +118,7 @@ std::vector<std::filesystem::path> find_assets_under_directory(const std::map<st
   }
   
   // Convert directory path to string and normalize to forward slashes for consistent matching
-  std::string dir_path_str = normalize_path_separators(dir_path.u8string());
+  std::string dir_path_str = dir_path.generic_u8string();
   if (!dir_path_str.empty() && dir_path_str.back() != '/') {
     dir_path_str += '/';
   }

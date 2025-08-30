@@ -23,10 +23,10 @@ enum class FileEventType { Created, Modified, Deleted };
 // File event structure
 struct FileEvent {
   FileEventType type;
-  fs::path path;
+  std::string path;  // UTF-8 encoded path with normalized separators
   std::chrono::system_clock::time_point timestamp;
 
-  FileEvent(FileEventType t, const fs::path& p)
+  FileEvent(FileEventType t, const std::string& p)
       : type(t), path(p), timestamp(std::chrono::system_clock::now()) {}
 };
 

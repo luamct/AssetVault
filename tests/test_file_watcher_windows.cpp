@@ -37,19 +37,19 @@ public:
         std::lock_guard<std::mutex> lock(assets_mutex_);
         Asset asset;
         // Normalize path separators like the real application does
-        asset.full_path = normalize_path_separators(path.u8string());
+        asset.full_path = path.generic_u8string();
         asset.name = path.filename().string();
-        assets_[normalize_path_separators(path.u8string())] = asset;
+        assets_[path.generic_u8string()] = asset;
     }
 
     void remove_asset(const fs::path& path) {
         std::lock_guard<std::mutex> lock(assets_mutex_);
-        assets_.erase(normalize_path_separators(path.u8string()));
+        assets_.erase(path.generic_u8string());
     }
 
     bool has_asset(const fs::path& path) const {
         std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(assets_mutex_));
-        return assets_.find(normalize_path_separators(path.u8string())) != assets_.end();
+        return assets_.find(path.generic_u8string()) != assets_.end();
     }
 
     void clear() {
@@ -136,7 +136,7 @@ public:
         std::vector<FileEvent> matching_events;
 
         for (const auto& event : get_events()) {
-            if (event.path == file_path) {
+            if (event.path == file_path.generic_u8string()) {
                 matching_events.push_back(event);
             }
         }
@@ -231,10 +231,10 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         for (const auto& event : fixture.get_events()) {
             if (event.type == FileEventType::Created) {
                 file_creation_count++;
-                std::cout << "  Created: " << event.path.string() << std::endl;
+                std::cout << "  Created: " << event.path << std::endl;
             }
             else {
-                std::cout << "  Other: " << event.path.string() << std::endl;
+                std::cout << "  Other: " << event.path << std::endl;
             }
         }
 
@@ -333,7 +333,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
 
         const auto& events = fixture.get_events();
 
-        std::set<fs::path> deleted_paths;
+        std::set<std::string> deleted_paths;
         for (const auto& event : events) {
             if (event.type == FileEventType::Deleted) {
                 deleted_paths.insert(event.path);
@@ -344,7 +344,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
 
         // Verify all tracked files got deletion events (paths should match exactly now)
         for (const auto& file : test_files) {
-            REQUIRE(deleted_paths.count(file) > 0);
+            REQUIRE(deleted_paths.count(file.generic_u8string()) > 0);
         }
 
         // Should have at least one event per tracked file
@@ -386,10 +386,10 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         bool found_create = false;
 
         for (const auto& event : events) {
-            if (event.type == FileEventType::Deleted && event.path == old_file) {
+            if (event.type == FileEventType::Deleted && event.path == old_file.generic_u8string()) {
                 found_delete = true;
             }
-            if (event.type == FileEventType::Created && event.path == new_file) {
+            if (event.type == FileEventType::Created && event.path == new_file.generic_u8string()) {
                 found_create = true;
             }
         }
@@ -463,7 +463,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
             case FileEventType::Modified: event_type_str = "Modified"; break;
             default: event_type_str = "Other"; break;
             }
-            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+            std::cout << "  " << event_type_str << ": " << event.path << std::endl;
         }
 
         // Assert: Should have both deletion and creation events
@@ -560,10 +560,10 @@ TEST_CASE("[Windows] Files and directories copied into watched directory", "[fil
         for (const auto& event : fixture.get_events()) {
             if (event.type == FileEventType::Created) {
                 file_creation_count++;
-                std::cout << "  Created: " << event.path.string() << std::endl;
+                std::cout << "  Created: " << event.path << std::endl;
             }
             else {
-                std::cout << "  Other: " << event.path.string() << std::endl;
+                std::cout << "  Other: " << event.path << std::endl;
             }
         }
 
@@ -656,7 +656,7 @@ TEST_CASE("[Windows] Directory and file deletion operations", "[file_watcher_win
         // Define files that should be tracked (including non-ASCII characters)
         std::vector<fs::path> test_files = {
             test_delete_dir / "file1.png",
-            test_delete_dir / "file2.obj", 
+            test_delete_dir / "file2.obj",
             test_delete_dir / "файл×.png",  // Non-ASCII: Cyrillic + multiplication sign
             test_delete_dir / "subdir1" / "nested1.obj",
             test_delete_dir / "subdir1" / "nested2.fbx",
@@ -681,7 +681,7 @@ TEST_CASE("[Windows] Directory and file deletion operations", "[file_watcher_win
         // Verify events - emit_deletion_events_for_directory should generate events for all tracked files
         const auto& events = fixture.get_events();
 
-        std::set<fs::path> deleted_paths;
+        std::set<std::string> deleted_paths;
         for (const auto& event : events) {
             if (event.type == FileEventType::Deleted) {
                 deleted_paths.insert(event.path);
@@ -692,7 +692,7 @@ TEST_CASE("[Windows] Directory and file deletion operations", "[file_watcher_win
 
         // Verify all tracked files got deletion events (paths should match exactly now)
         for (const auto& file : test_files) {
-            REQUIRE(deleted_paths.count(file) > 0);
+            REQUIRE(deleted_paths.count(file.generic_u8string()) > 0);
         }
 
         // Should have at least one event per tracked file
@@ -794,7 +794,7 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         bool found_modified = false;
 
         for (const auto& event : events) {
-            if (event.path == file && event.type == FileEventType::Modified) {
+            if (event.path == file.generic_u8string() && event.type == FileEventType::Modified) {
                 found_modified = true;
             }
         }

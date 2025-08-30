@@ -38,7 +38,7 @@ void print_file_events(const std::vector<FileEvent>& events, const std::string& 
                 break;
         }
         
-        std::cout << "  " << event_type_str << ": " << event.path.string();
+        std::cout << "  " << event_type_str << ": " << event.path;
         
         std::cout << std::endl;
     }

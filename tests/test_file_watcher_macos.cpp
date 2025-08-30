@@ -229,10 +229,10 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         for (const auto& event : fixture.get_events()) {
             if (event.type == FileEventType::Created) {
                 file_creation_count++;
-                std::cout << "  Created: " << event.path.string() << std::endl;
+                std::cout << "  Created: " << event.path << std::endl;
             }
             else {
-                std::cout << "  Other: " << event.path.string() << std::endl;
+                std::cout << "  Other: " << event.path << std::endl;
             }
         }
 
@@ -467,7 +467,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
             case FileEventType::Modified: event_type_str = "Modified"; break;
             default: event_type_str = "Other"; break;
             }
-            std::cout << "  " << event_type_str << ": " << event.path.string() << std::endl;
+            std::cout << "  " << event_type_str << ": " << event.path << std::endl;
         }
 
         // Assert: Should get both deletion events (for old path) and creation events (for new path)
@@ -565,10 +565,10 @@ TEST_CASE("[MacOS] Files and directories copied into watched directory", "[file_
         for (const auto& event : fixture.get_events()) {
             if (event.type == FileEventType::Created) {
                 file_creation_count++;
-                std::cout << "  Created: " << event.path.string() << std::endl;
+                std::cout << "  Created: " << event.path << std::endl;
             }
             else {
-                std::cout << "  Other: " << event.path.string() << std::endl;
+                std::cout << "  Other: " << event.path << std::endl;
             }
         }
 
