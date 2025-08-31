@@ -118,6 +118,7 @@ add_executable(AssetInventory
     src/audio_manager.cpp
     src/stb_vorbis_impl.cpp
     src/search.cpp
+    src/ui.cpp
     ${FILE_WATCHER_SOURCES}
 )
 
