@@ -82,7 +82,7 @@ namespace Config {
     // =============================================================================
 
     // Set to true to force database clearing and reindexing on startup
-    constexpr bool DEBUG_FORCE_DB_CLEAR = true;
+    constexpr bool DEBUG_FORCE_DB_CLEAR = false;
 
     // Font settings
     constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";

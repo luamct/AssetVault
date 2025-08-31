@@ -661,6 +661,25 @@ int main() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+    // Handle keyboard input
+    ImGuiIO& io = ImGui::GetIO();
+    
+    // Spacebar pause/unpause for audio assets
+    if (ImGui::IsKeyPressed(ImGuiKey_Space) && !io.WantTextInput) {
+      // Check if an audio asset is currently selected and loaded
+      if (search_state.selected_asset_index >= 0 && 
+          search_state.selected_asset_index < static_cast<int>(search_state.filtered_assets.size())) {
+        const Asset& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
+        if (selected_asset.type == AssetType::Audio && audio_manager.has_audio_loaded()) {
+          if (audio_manager.is_playing()) {
+            audio_manager.pause();
+          } else {
+            audio_manager.play();
+          }
+        }
+      }
+    }
+
     // Check if search needs to be updated due to asset changes
     if (search_state.update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
