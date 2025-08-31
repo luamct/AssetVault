@@ -60,10 +60,29 @@ struct Model {
   bool loaded = false;
 };
 
+// Camera state for 3D preview interaction
+struct Camera3D {
+  float rotation_x = 30.0f;  // Initial rotation around X axis (up/down)
+  float rotation_y = 45.0f;  // Initial rotation around Y axis (left/right)
+  float zoom = 1.0f;          // Zoom factor (1.0 = default)
+  
+  // Mouse interaction state
+  bool is_dragging = false;
+  float last_mouse_x = 0.0f;
+  float last_mouse_y = 0.0f;
+  
+  // Reset to default view
+  void reset() {
+    rotation_x = 30.0f;
+    rotation_y = 45.0f;
+    zoom = 1.0f;
+  }
+};
+
 // 3D Preview functions (now handled by TextureManager)
-void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager);
+void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager, const Camera3D& camera);
 bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager);
-void render_model(const Model& model, TextureManager& texture_manager);
+void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera);
 void cleanup_model(Model& model);
 void set_current_model(Model& current_model, const Model& model);
 const Model& get_current_model(const Model& current_model);

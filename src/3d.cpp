@@ -390,7 +390,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
     LOG_ERROR("ASSIMP: {}", importer.GetErrorString());
     return false;
   }
-  
+
   // Handle incomplete scenes (common with FBX files containing animations)
   if (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
     LOG_WARN("Scene marked as incomplete (possibly due to animations), but proceeding with mesh data");
@@ -399,7 +399,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   // Process the scene hierarchy starting from root node
   glm::mat4 identity = glm::mat4(1.0f);
   process_node(scene->mRootNode, scene, model, identity);
-  
+
   // Check if the model has any visible geometry
   if (model.vertices.empty() || model.indices.empty()) {
     LOG_WARN("Model has no visible geometry (possibly animation-only FBX)");
@@ -424,12 +424,12 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 
   // Clear any existing OpenGL errors before we start
   while (glGetError() != GL_NO_ERROR) {}
-  
+
   // Create OpenGL buffers
   glGenVertexArrays(1, &model.vao);
   glGenBuffers(1, &model.vbo);
   glGenBuffers(1, &model.ebo);
-  
+
   if (model.vao == 0 || model.vbo == 0 || model.ebo == 0) {
     LOG_ERROR("Failed to generate OpenGL buffers!");
     return false;
@@ -438,9 +438,9 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   glBindVertexArray(model.vao);
 
   glBindBuffer(GL_ARRAY_BUFFER, model.vbo);
-  
+
   glBufferData(GL_ARRAY_BUFFER, model.vertices.size() * sizeof(float), model.vertices.data(), GL_STATIC_DRAW);
-  
+
   // Check for OpenGL errors
   GLenum error = glGetError();
   if (error != GL_NO_ERROR) {
@@ -450,9 +450,9 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   }
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.ebo);
-  
+
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.indices.size() * sizeof(unsigned int), model.indices.data(), GL_STATIC_DRAW);
-  
+
   error = glGetError();
   if (error != GL_NO_ERROR) {
     LOG_ERROR("OpenGL error after index buffer creation: {}", error);
@@ -481,7 +481,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   return true;
 }
 
-void render_model(const Model& model, TextureManager& texture_manager) {
+void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera) {
   if (!model.loaded)
     return;
 
@@ -498,19 +498,22 @@ void render_model(const Model& model, TextureManager& texture_manager) {
   // Just center the model at the origin
   model_matrix = glm::translate(model_matrix, glm::vec3(-center.x, -center.y, -center.z));
 
-  // Calculate camera distance based on model size
+  // Calculate camera distance based on model size and zoom
   // We want the model to fit nicely in the view, so move camera back based on size
-  float camera_distance = max_size * 1.5f; // 1.5x the model size for good framing
-  // if (camera_distance < 150.0f)
-  //   camera_distance = 150.0f; // Minimum distance
+  float base_distance = max_size * 2.2f; // 2.0x the model size for good framing
+  float camera_distance = base_distance / camera.zoom; // Apply zoom factor
 
-  // Position camera at an angle for a nicer preview - looking down from above and to the side
-  float camera_x = camera_distance * 0.7f; // 45 degrees horizontally
-  float camera_y = camera_distance * 0.5f; // 30 degrees above horizontal
-  float camera_z = camera_distance * 0.7f; // 45 degrees horizontally
+  // Convert rotation angles to radians
+  float rot_x_rad = glm::radians(camera.rotation_x);
+  float rot_y_rad = glm::radians(camera.rotation_y);
+
+  // Calculate camera position using spherical coordinates
+  float camera_x = camera_distance * cos(rot_x_rad) * sin(rot_y_rad);
+  float camera_y = camera_distance * sin(rot_x_rad);
+  float camera_z = camera_distance * cos(rot_x_rad) * cos(rot_y_rad);
 
   glm::mat4 view_matrix = glm::lookAt(
-    glm::vec3(camera_x, camera_y, camera_z), // Camera position - angled view from above
+    glm::vec3(camera_x, camera_y, camera_z), // Camera position - controlled by mouse
     glm::vec3(0.0f, 0.0f, 0.0f),             // Look at origin where model is centered
     glm::vec3(0.0f, -1.0f, 0.0f)             // Up vector (flipped to fix upside-down models)
   );
@@ -620,7 +623,7 @@ const Model& get_current_model(const Model& current_model) {
   return current_model;
 }
 
-void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager) {
+void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager, const Camera3D& camera) {
   if (!texture_manager.is_preview_initialized()) {
     return;
   }
@@ -650,9 +653,11 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
 
   // Render the model if loaded, otherwise render a simple colored triangle
   if (model.loaded) {
-    render_model(model, texture_manager);
+    render_model(model, texture_manager, camera);
   }
   else {
+    // LOG_ERROR("Model not loaded for preview: {}", model.path);
+
     // Fallback: render a simple colored triangle
     glUseProgram(texture_manager.get_preview_shader());
 

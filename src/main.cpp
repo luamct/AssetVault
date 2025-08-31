@@ -494,6 +494,7 @@ int main() {
   AudioManager audio_manager;
   SearchState search_state;
   Model current_model;  // 3D model preview state
+  Camera3D camera;      // 3D camera state for preview controls
   SearchIndex search_index(&database);  // Search index for fast lookups
 
   // Initialize database
@@ -635,7 +636,7 @@ int main() {
       int fb_height = static_cast<int>(avail_height);
 
       // Render the 3D preview
-      render_3d_preview(fb_width, fb_height, current_model, texture_manager);
+      render_3d_preview(fb_width, fb_height, current_model, texture_manager, camera);
     }
 
     // Process texture invalidation queue (thread-safe, once per frame)
@@ -666,21 +667,28 @@ int main() {
       filter_assets(search_state, assets, g_event_processor->get_assets_mutex(), search_index);
     }
 
-    // Create main window
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+    // Create main window that fits perfectly to viewport
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->Pos);
+    ImGui::SetNextWindowSize(viewport->Size);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::Begin(
       "Asset Inventory", nullptr,
       ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse);
+      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus |
+      ImGuiWindowFlags_NoNavFocus);
+    ImGui::PopStyleVar(3);
 
-    // Calculate panel sizes
-    float window_width = ImGui::GetWindowSize().x;
-    float window_height = ImGui::GetWindowSize().y;
-    float left_width = window_width * 0.75f;
-    float right_width = window_width * 0.25f - Config::PREVIEW_RIGHT_MARGIN;
-    float top_height = window_height * 0.20f;
-    float bottom_height = window_height * 0.80f - 20.0f; // Account for some padding
+    // Calculate panel sizes using actual window content area
+    float window_width = ImGui::GetContentRegionAvail().x;
+    float window_height = ImGui::GetContentRegionAvail().y;
+    float WINDOW_MARGIN = 6.0f;
+    float left_width = window_width * 0.75f - WINDOW_MARGIN;
+    float right_width = window_width * 0.25f - WINDOW_MARGIN;
+    float top_height = window_height * 0.20f - WINDOW_MARGIN;
+    float bottom_height = window_height * 0.80f - WINDOW_MARGIN;
 
     // ============ TOP LEFT: Search Box ============
     ImGui::BeginChild("SearchRegion", ImVec2(left_width, top_height), true);
@@ -1028,6 +1036,7 @@ int main() {
           Model model;
           if (load_model(selected_asset.full_path, model, texture_manager)) {
             set_current_model(current_model, model);
+            camera.reset(); // Reset camera to default view for new model
             LOG_DEBUG("Model loaded successfully in main");
           }
           else {
@@ -1056,6 +1065,67 @@ int main() {
 
         // Display the 3D viewport
         ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_preview_texture(), viewport_size);
+
+        // Handle mouse interactions for 3D camera control
+        ImVec2 image_min = ImGui::GetItemRectMin();
+        ImVec2 image_max = ImGui::GetItemRectMax();
+        bool is_image_hovered = ImGui::IsItemHovered();
+
+        if (is_image_hovered) {
+          ImGuiIO& io = ImGui::GetIO();
+
+          // Handle mouse wheel for zoom
+          if (io.MouseWheel != 0.0f) {
+            if (io.MouseWheel > 0.0f) {
+              camera.zoom *= Config::PREVIEW_3D_ZOOM_FACTOR; // Zoom in
+            }
+            else {
+              camera.zoom /= Config::PREVIEW_3D_ZOOM_FACTOR; // Zoom out
+            }
+            // Clamp zoom to reasonable bounds
+            camera.zoom = std::max(0.1f, std::min(camera.zoom, 10.0f));
+          }
+
+          // Handle double-click for reset (check this first)
+          if (ImGui::IsMouseDoubleClicked(0)) {
+            camera.reset();
+            camera.is_dragging = false; // Cancel any dragging
+          }
+          // Handle single click to start dragging (only if not double-click)
+          else if (ImGui::IsMouseClicked(0)) {
+            camera.is_dragging = true;
+            camera.last_mouse_x = io.MousePos.x;
+            camera.last_mouse_y = io.MousePos.y;
+          }
+        }
+
+        // Handle dragging (can continue even if mouse leaves image area)
+        if (camera.is_dragging) {
+          ImGuiIO& io = ImGui::GetIO();
+
+          // Check if mouse button is still held down
+          if (io.MouseDown[0]) {
+            float delta_x = io.MousePos.x - camera.last_mouse_x;
+            float delta_y = io.MousePos.y - camera.last_mouse_y;
+
+            // Only update if there's actual movement
+            if (delta_x != 0.0f || delta_y != 0.0f) {
+              // Update rotation based on mouse movement using config sensitivity
+              camera.rotation_y += delta_x * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Horizontal rotation (left/right)
+              camera.rotation_x += delta_y * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Vertical rotation (up/down)
+
+              // Clamp vertical rotation to avoid flipping
+              camera.rotation_x = std::max(-89.0f, std::min(camera.rotation_x, 89.0f));
+
+              camera.last_mouse_x = io.MousePos.x;
+              camera.last_mouse_y = io.MousePos.y;
+            }
+          }
+          else {
+            // Mouse button released, stop dragging
+            camera.is_dragging = false;
+          }
+        }
 
         // Restore cursor for info below
         ImGui::SetCursorScreenPos(container_pos);

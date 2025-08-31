@@ -465,8 +465,9 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
   glClearColor(0.0f, 0.0f, 0.0f, 0.0f); // Transparent background for thumbnails
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  // Render the model using existing render_model function
-  render_model(model, texture_manager);
+  // Render the model using existing render_model function with default camera
+  Camera3D default_camera; // Uses default rotation and zoom
+  render_model(model, texture_manager, default_camera);
 
   // Read pixels from framebuffer (no flipping needed - already correct orientation)
   std::vector<unsigned char> pixels(thumbnail_size * thumbnail_size * 4);

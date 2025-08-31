@@ -25,6 +25,10 @@ namespace Config {
 
     // 3D model thumbnail generation
     constexpr int MODEL_THUMBNAIL_SIZE = 180;    // Size for generated 3D model thumbnails
+    
+    // 3D preview controls
+    constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;  // Degrees per pixel (was 0.5, now 1/3 of that)
+    constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;            // Zoom multiplier per scroll wheel notch
 
     // Preview panel layout
     constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;     // Margin from window right edge
