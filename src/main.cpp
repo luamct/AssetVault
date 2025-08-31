@@ -39,12 +39,6 @@
 // Global callback state (needed for callback functions)
 EventProcessor* g_event_processor = nullptr;
 
-
-
-
-
-
-
 // File event callback function (runs on background thread)
 // Queues events for unified processing
 void on_file_event(const FileEvent& event) {
@@ -189,8 +183,22 @@ int main() {
 
   // Debug: Force clear database if flag is set
   if (Config::DEBUG_FORCE_DB_CLEAR) {
-    LOG_INFO("DEBUG: Forcing database clear for testing...");
+    LOG_WARN("Forcing database clear for testing...");
     database.clear_all_assets();
+  }
+
+  // Debug: Force clear thumbnails if flag is set
+  if (Config::DEBUG_FORCE_THUMBNAIL_CLEAR) {
+    LOG_WARN("DEBUG_FORCE_THUMBNAIL_CLEAR is enabled - deleting all thumbnails for debugging...");
+    try {
+      if (std::filesystem::exists("thumbnails")) {
+        std::filesystem::remove_all("thumbnails");
+        LOG_INFO("All thumbnails deleted successfully");
+      }
+    }
+    catch (const std::filesystem::filesystem_error& e) {
+      LOG_ERROR("Failed to delete thumbnails: {}", e.what());
+    }
   }
 
   // Initialize search index from database
@@ -296,7 +304,7 @@ int main() {
 
   // Main loop
   double last_time = glfwGetTime();
-  LOG_INFO("DEBUG: Entering main rendering loop");
+  LOG_INFO("Entering main rendering loop");
   while (!glfwWindowShouldClose(window)) {
     double current_time = glfwGetTime();
     io.DeltaTime = (float) (current_time - last_time);
@@ -309,19 +317,6 @@ int main() {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
 
-    // Render 3D preview to framebuffer BEFORE starting ImGui frame
-    {
-      // Calculate the size for the right panel (same as 2D previews)
-      float right_panel_width = (ImGui::GetIO().DisplaySize.x * 0.25f) - Config::PREVIEW_RIGHT_MARGIN;
-      float avail_width = right_panel_width - Config::PREVIEW_INTERNAL_PADDING;
-      float avail_height = avail_width; // Square aspect ratio
-
-      int fb_width = static_cast<int>(avail_width);
-      int fb_height = static_cast<int>(avail_height);
-
-      // Render the 3D preview
-      render_3d_preview(fb_width, fb_height, current_model, texture_manager, camera);
-    }
 
     // Process texture invalidation queue (thread-safe, once per frame)
     texture_manager.process_invalidation_queue();
@@ -698,7 +693,6 @@ int main() {
       }
     }
 
-
     ImGui::EndChild();
 
     // ============ BOTTOM RIGHT: Preview Panel ============
@@ -754,6 +748,11 @@ int main() {
 
         // 3D Preview Viewport for models
         ImVec2 viewport_size(avail_width, avail_height);
+
+        // Render the 3D preview to framebuffer texture
+        int fb_width = static_cast<int>(avail_width);
+        int fb_height = static_cast<int>(avail_height);
+        render_3d_preview(fb_width, fb_height, current_model, texture_manager, camera);
 
         // Center the viewport in the panel (same logic as 2D previews)
         ImVec2 container_pos = ImGui::GetCursorScreenPos();

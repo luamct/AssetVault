@@ -28,6 +28,7 @@ namespace Theme {
 
   // === BACKGROUND COLORS ===
   constexpr ImVec4 BACKGROUND_LIGHT_BLUE_1 = ImVec4(0.95f, 0.97f, 1.00f, 1.00f); // Main background
+  constexpr ImVec4 BACKGROUND_LIGHT_GRAY = ImVec4(0.85f, 0.85f, 0.85f, 1.00f);   // Light gray for 3D preview
   constexpr ImVec4 BACKGROUND_LIGHT_BLUE_2 = ImVec4(0.90f, 0.95f, 1.00f, 1.00f); // Slightly darker background
   constexpr ImVec4 BACKGROUND_WHITE = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);        // Pure white background
 

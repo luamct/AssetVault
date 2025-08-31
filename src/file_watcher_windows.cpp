@@ -216,7 +216,7 @@ private:
 
     // Handle directory events specially - scan contents for individual file events
     if (is_directory) {
-      LOG_INFO("Windows directory event: {} -> {}",
+      LOG_TRACE("Windows directory event: {} -> {}",
         raw_type == FileEventType::Created ? "Created" :
         raw_type == FileEventType::Deleted ? "Deleted" :
         raw_type == FileEventType::Modified ? "Modified" : "Other",
@@ -231,14 +231,14 @@ private:
 
     // Skip files without extensions and ignored asset types
     if (!full_path.has_extension() || should_skip_asset(full_path.extension().string())) {
-      LOG_INFO("Windows filtered out: {} (ext={}, skip={})",
+      LOG_TRACE("Windows filtered out: {} (ext={}, skip={})",
         full_path.generic_u8string(),
         full_path.has_extension() ? "yes" : "no",
         full_path.has_extension() ? should_skip_asset(full_path.extension().string()) : false);
       return;
     }
 
-    LOG_INFO("Windows processing: {} as {}", full_path.generic_u8string(),
+    LOG_TRACE("Windows processing: {} as {}", full_path.generic_u8string(),
       raw_type == FileEventType::Created ? "Created" :
       raw_type == FileEventType::Deleted ? "Deleted" :
       raw_type == FileEventType::Modified ? "Modified" : "Other");
@@ -327,7 +327,7 @@ private:
       case FILE_ACTION_RENAMED_NEW_NAME: action_name = "FILE_ACTION_RENAMED_NEW_NAME"; break;
       default: action_name = "UNKNOWN_ACTION(" + std::to_string(p_notify->Action) + ")"; break;
       }
-      LOG_INFO("Windows raw event: {} -> {}", action_name, full_path.generic_u8string());
+      LOG_TRACE("Windows raw event: {} -> {}", action_name, full_path.generic_u8string());
 
       // Handle rename events separately for better architecture
       if (p_notify->Action == FILE_ACTION_RENAMED_OLD_NAME) {

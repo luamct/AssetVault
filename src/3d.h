@@ -21,11 +21,15 @@ struct Material {
   glm::vec3 diffuse_color = glm::vec3(0.8f, 0.8f, 0.8f);
   glm::vec3 ambient_color = glm::vec3(0.2f, 0.2f, 0.2f);
   glm::vec3 specular_color = glm::vec3(0.0f, 0.0f, 0.0f);
+  glm::vec3 emissive_color = glm::vec3(0.0f, 0.0f, 0.0f);  // Glow/emission color
   float shininess = 0.0f;
+  float emissive_intensity = 1.0f;  // Multiplier for emissive color
 
   // Flags
   bool has_texture = false;
   bool has_diffuse_color = false;
+  bool has_missing_texture_files = false; // True if material references texture files that don't exist
+  bool has_emissive = false; // True if material has emissive properties
 };
 
 // Mesh data structure
@@ -88,4 +92,4 @@ void set_current_model(Model& current_model, const Model& model);
 const Model& get_current_model(const Model& current_model);
 
 // Material functions (now using TextureManager)
-void load_model_materials(const aiScene* scene, const std::string& model_path, std::vector<Material>& materials, TextureManager& texture_manager);
+void load_model_materials(const aiScene* scene, const std::string& model_path, Model& model, TextureManager& texture_manager);

@@ -196,7 +196,7 @@ private:
         auto normalized_file_path = fs::weakly_canonical(file_path);
         auto normalized_watched_path = fs::weakly_canonical(watcher->watched_path);
         if (normalized_file_path == normalized_watched_path) {
-          LOG_INFO("Skipped event {}", file_path.string());
+          LOG_DEBUG("Skipped event {}", file_path.string());
           continue;
         }
       }

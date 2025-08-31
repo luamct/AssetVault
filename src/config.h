@@ -25,7 +25,8 @@ namespace Config {
 
     // 3D model thumbnail generation
     constexpr int MODEL_THUMBNAIL_SIZE = 180;    // Size for generated 3D model thumbnails
-    
+    constexpr int MAX_TEXTURE_RETRY_ATTEMPTS = 50; // Max retries for texture loading before giving up
+
     // 3D preview controls
     constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;  // Degrees per pixel (was 0.5, now 1/3 of that)
     constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;            // Zoom multiplier per scroll wheel notch
@@ -83,6 +84,9 @@ namespace Config {
 
     // Set to true to force database clearing and reindexing on startup
     constexpr bool DEBUG_FORCE_DB_CLEAR = false;
+
+    // Set to true to delete all thumbnails on startup (useful for debugging thumbnail generation)
+    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = true;
 
     // Font settings
     constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";

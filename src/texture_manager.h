@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <glm/glm.hpp>
 
 #include "asset.h" // For AssetType and Asset
 
@@ -43,6 +44,7 @@ public:
   // 3D model texture management
   unsigned int load_texture_for_model(const std::string& filepath);
   unsigned int create_solid_color_texture(float r, float g, float b);
+  unsigned int create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive, float emissive_intensity);
 
 
   // 3D model thumbnail generation
@@ -86,8 +88,8 @@ private:
   std::queue<std::string> invalidation_queue_;
   mutable std::mutex invalidation_mutex_;
 
-  // Cache of failed model loads to prevent infinite retry loops
-  std::unordered_set<std::string> failed_models_cache_;
+  // Track retry counts for model texture loading (max 50 retries)
+  std::unordered_map<std::string, int> model_texture_retry_counts_;
   
   // Cache of failed texture loads to prevent infinite retry loops  
   std::unordered_set<std::string> failed_textures_cache_;

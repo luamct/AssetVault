@@ -2,6 +2,7 @@
 #include "logger.h"
 #include <iostream>
 #include <filesystem>
+#include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -79,6 +80,7 @@ uniform vec3 lightColor;
 uniform sampler2D diffuseTexture;
 uniform bool useTexture;
 uniform vec3 materialColor;
+uniform vec3 emissiveColor;
 
 out vec4 FragColor;
 
@@ -115,7 +117,7 @@ void main()
     float rimFactor = 1.0 - max(dot(viewDir, norm), 0.0);
     vec3 rimLight = rimStrength * pow(rimFactor, 3.0) * lightColor;
 
-    vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor;
+    vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor + emissiveColor;
     FragColor = vec4(result, 1.0);
 }
 )";
@@ -132,6 +134,7 @@ uniform vec3 lightColor;
 uniform sampler2D diffuseTexture;
 uniform bool useTexture;
 uniform vec3 materialColor;
+uniform vec3 emissiveColor;
 
 out vec4 FragColor;
 
@@ -168,7 +171,7 @@ void main()
     float rimFactor = 1.0 - max(dot(viewDir, norm), 0.0);
     vec3 rimLight = rimStrength * pow(rimFactor, 3.0) * lightColor;
 
-    vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor;
+    vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor + emissiveColor;
     FragColor = vec4(result, 1.0);
 }
 )";
@@ -182,16 +185,18 @@ std::string getBasePath(const std::string& path) {
 
 
 // Load all materials from model
-void load_model_materials(const aiScene* scene, const std::string& model_path, std::vector<Material>& materials, TextureManager& texture_manager) {
-  materials.clear();
+void load_model_materials(const aiScene* scene, const std::string& model_path, Model& model, TextureManager& texture_manager) {
+  LOG_TRACE("[MATERIAL] Loading materials for model: {}", model_path);
+  model.materials.clear();
 
   if (!scene || scene->mNumMaterials == 0) {
-    LOG_WARN("No materials found in model");
+    LOG_WARN("[MATERIAL] No materials found in model");
     return;
   }
 
   // Get base path like the Assimp sample does
   std::string basepath = getBasePath(model_path);
+  LOG_TRACE("[MATERIAL] Base path for textures: {}", basepath);
 
   // Process ALL materials (not just the first one with a texture)
   for (unsigned int m = 0; m < scene->mNumMaterials; m++) {
@@ -206,10 +211,48 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
     else {
       material.name = "Material_" + std::to_string(m);
     }
+    
+    LOG_TRACE("[MATERIAL] Processing material {}: '{}'", m, material.name);
+    
+    // Debug: Check all texture types this material has
+    LOG_TRACE("[MATERIAL] === Texture inventory for material '{}' ===", material.name);
+    LOG_TRACE("[MATERIAL]   Diffuse textures: {}", ai_material->GetTextureCount(aiTextureType_DIFFUSE));
+    LOG_TRACE("[MATERIAL]   Normal textures: {}", ai_material->GetTextureCount(aiTextureType_NORMALS));
+    LOG_TRACE("[MATERIAL]   Specular textures: {}", ai_material->GetTextureCount(aiTextureType_SPECULAR));
+    LOG_TRACE("[MATERIAL]   Emissive textures: {}", ai_material->GetTextureCount(aiTextureType_EMISSIVE));
+    LOG_TRACE("[MATERIAL]   Metallic textures: {}", ai_material->GetTextureCount(aiTextureType_METALNESS));
+    LOG_TRACE("[MATERIAL]   Roughness textures: {}", ai_material->GetTextureCount(aiTextureType_DIFFUSE_ROUGHNESS));
+    LOG_TRACE("[MATERIAL]   Ambient textures: {}", ai_material->GetTextureCount(aiTextureType_AMBIENT));
+    LOG_TRACE("[MATERIAL]   Height/Bump textures: {}", ai_material->GetTextureCount(aiTextureType_HEIGHT));
+    LOG_TRACE("[MATERIAL]   Reflection textures: {}", ai_material->GetTextureCount(aiTextureType_REFLECTION));
+    
+    // Debug: Check material properties
+    aiColor3D emissive_color;
+    float emissive_intensity = 0.0f;
+    float metallic_factor = 0.0f;
+    float roughness_factor = 0.5f;
+    
+    if (ai_material->Get(AI_MATKEY_COLOR_EMISSIVE, emissive_color) == AI_SUCCESS) {
+        LOG_TRACE("[MATERIAL]   Emissive color: ({:.3f}, {:.3f}, {:.3f})", 
+                  emissive_color.r, emissive_color.g, emissive_color.b);
+    }
+    if (ai_material->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissive_intensity) == AI_SUCCESS) {
+        LOG_TRACE("[MATERIAL]   Emissive intensity: {:.3f}", emissive_intensity);
+    }
+    if (ai_material->Get(AI_MATKEY_METALLIC_FACTOR, metallic_factor) == AI_SUCCESS) {
+        LOG_TRACE("[MATERIAL]   Metallic factor: {:.3f}", metallic_factor);
+    }
+    if (ai_material->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness_factor) == AI_SUCCESS) {
+        LOG_TRACE("[MATERIAL]   Roughness factor: {:.3f}", roughness_factor);
+    }
 
     // Check for diffuse textures first
     unsigned int diffuse_count = ai_material->GetTextureCount(aiTextureType_DIFFUSE);
+    LOG_TRACE("[MATERIAL] Material '{}' has {} diffuse textures", material.name, diffuse_count);
 
+    // Track if this material references texture files that don't exist (indicates missing files)
+    bool has_missing_texture_files = false;
+    
     // Try to load texture
     for (unsigned int texIndex = 0; texIndex < diffuse_count; texIndex++) {
       aiString texture_path;
@@ -217,29 +260,46 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
 
       if (texFound == AI_SUCCESS) {
         std::string filename = texture_path.C_Str();
+        LOG_TRACE("[MATERIAL] Trying to load texture: '{}'", filename);
 
         // Try to load the texture
         std::string fileloc = basepath + filename;
+        LOG_TRACE("[MATERIAL] Trying path: {}", fileloc);
+        
         if (std::filesystem::exists(fileloc)) {
+          LOG_TRACE("[MATERIAL] File exists, attempting to load texture: {}", fileloc);
           material.texture_id = texture_manager.load_texture_for_model(fileloc);
           if (material.texture_id != 0) {
+            LOG_TRACE("[MATERIAL] Successfully loaded texture with ID: {}", material.texture_id);
             material.has_texture = true;
             break; // Use first successful texture
+          } else {
+            LOG_WARN("[MATERIAL] Failed to load texture: {}", fileloc);
           }
         }
         else {
+          LOG_TRACE("[MATERIAL] File does not exist: {}", fileloc);
           // Try alternative path
           std::filesystem::path alt_path = std::filesystem::path(model_path).parent_path() / filename;
+          LOG_TRACE("[MATERIAL] Trying alternative path: {}", alt_path.string());
+          
           if (std::filesystem::exists(alt_path)) {
+            LOG_TRACE("[MATERIAL] Alternative file exists, attempting to load: {}", alt_path.string());
             material.texture_id = texture_manager.load_texture_for_model(alt_path.string());
             if (material.texture_id != 0) {
               material.has_texture = true;
               break;
             }
+          } else {
+            LOG_TRACE("[MATERIAL] Texture file referenced but not found: {}", filename);
+            has_missing_texture_files = true;
           }
         }
       }
     }
+    
+    // Store whether this material has missing texture files (for retry logic)
+    material.has_missing_texture_files = has_missing_texture_files;
 
     // Load material color properties
     aiColor3D diffuse_color(0.8f, 0.8f, 0.8f);
@@ -249,23 +309,68 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, s
     material.has_diffuse_color = (ai_material->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse_color) == AI_SUCCESS);
     ai_material->Get(AI_MATKEY_COLOR_AMBIENT, ambient_color);
     ai_material->Get(AI_MATKEY_COLOR_SPECULAR, specular_color);
+    ai_material->Get(AI_MATKEY_COLOR_EMISSIVE, emissive_color);
 
     material.diffuse_color = glm::vec3(diffuse_color.r, diffuse_color.g, diffuse_color.b);
     material.ambient_color = glm::vec3(ambient_color.r, ambient_color.g, ambient_color.b);
     material.specular_color = glm::vec3(specular_color.r, specular_color.g, specular_color.b);
+    material.emissive_color = glm::vec3(emissive_color.r, emissive_color.g, emissive_color.b);
+    
+    // Check if material has significant emissive properties
+    material.has_emissive = (material.emissive_color.r > 0.01f || 
+                             material.emissive_color.g > 0.01f || 
+                             material.emissive_color.b > 0.01f);
+    
+    // Debug: Log all color properties
+    LOG_TRACE("[MATERIAL]   Diffuse color: ({:.3f}, {:.3f}, {:.3f})", 
+              diffuse_color.r, diffuse_color.g, diffuse_color.b);
+    LOG_TRACE("[MATERIAL]   Ambient color: ({:.3f}, {:.3f}, {:.3f})", 
+              ambient_color.r, ambient_color.g, ambient_color.b);
+    LOG_TRACE("[MATERIAL]   Specular color: ({:.3f}, {:.3f}, {:.3f})", 
+              specular_color.r, specular_color.g, specular_color.b);
+              
+    // Check for additional properties that could cause glow effects
+    float shininess = 0.0f;
+    float opacity = 1.0f;
+    float reflectivity = 0.0f;
+    float refraction_index = 1.0f;
+    
+    if (ai_material->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
+        material.shininess = shininess;
+        LOG_TRACE("[MATERIAL]   Shininess: {:.3f}", shininess);
+    }
+    if (ai_material->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissive_intensity) == AI_SUCCESS) {
+        material.emissive_intensity = emissive_intensity;
+        LOG_TRACE("[MATERIAL]   Emissive intensity: {:.3f}", emissive_intensity);
+    }
+    if (ai_material->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
+        LOG_TRACE("[MATERIAL]   Opacity: {:.3f}", opacity);
+    }
+    if (ai_material->Get(AI_MATKEY_REFLECTIVITY, reflectivity) == AI_SUCCESS) {
+        LOG_TRACE("[MATERIAL]   Reflectivity: {:.3f}", reflectivity);
+    }
+    if (ai_material->Get(AI_MATKEY_REFRACTI, refraction_index) == AI_SUCCESS) {
+        LOG_TRACE("[MATERIAL]   Refraction index: {:.3f}", refraction_index);
+    }
 
     // Check if material color is black (0,0,0) and set a default if so
     if (material.diffuse_color.x == 0.0f && material.diffuse_color.y == 0.0f && material.diffuse_color.z == 0.0f) {
       material.diffuse_color = glm::vec3(0.8f, 0.8f, 0.8f);
     }
 
-    // If no texture, create solid color texture
+    // Create material texture if no texture was loaded (blends diffuse + emissive)
     if (!material.has_texture) {
-      material.texture_id =
-        texture_manager.create_solid_color_texture(material.diffuse_color.x, material.diffuse_color.y, material.diffuse_color.z);
+      LOG_TRACE("[MATERIAL] No texture loaded for material '{}', creating material texture with diffuse=({:.3f}, {:.3f}, {:.3f}) + emissive=({:.3f}, {:.3f}, {:.3f})",
+                material.name, 
+                material.diffuse_color.x, material.diffuse_color.y, material.diffuse_color.z,
+                material.emissive_color.x, material.emissive_color.y, material.emissive_color.z);
+      material.texture_id = texture_manager.create_material_texture(
+        material.diffuse_color, material.emissive_color, material.emissive_intensity);
     }
 
-    materials.push_back(material);
+    LOG_TRACE("[MATERIAL] Final material '{}': has_texture={}, texture_id={}", 
+              material.name, material.has_texture, material.texture_id);
+    model.materials.push_back(material);
   }
 }
 
@@ -473,7 +578,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   glBindVertexArray(0);
 
   // Load all materials from the model
-  load_model_materials(scene, filepath, model.materials, texture_manager);
+  load_model_materials(scene, filepath, model, texture_manager);
 
   model.path = filepath;  // Store the path
   model.loaded = true;
@@ -551,11 +656,16 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
         glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
         glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &material.diffuse_color[0]);
       }
+      // Always pass emissive color (will be zero if material has no emissive)
+      glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "emissiveColor"), 1, &material.emissive_color[0]);
     }
     else {
       glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
       glm::vec3 default_color(0.7f, 0.7f, 0.7f);
       glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &default_color[0]);
+      // No emissive for default material
+      glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
+      glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "emissiveColor"), 1, &no_emissive[0]);
     }
 
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(model.indices.size()), GL_UNSIGNED_INT, 0);
@@ -577,6 +687,8 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
           glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
           glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &material.diffuse_color[0]);
         }
+        // Always pass emissive color for this material
+        glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "emissiveColor"), 1, &material.emissive_color[0]);
 
         // Draw this specific mesh (indices are already properly offset)
         glDrawElements(
@@ -646,8 +758,8 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
   glBindFramebuffer(GL_FRAMEBUFFER, texture_manager.get_preview_framebuffer());
   glViewport(0, 0, width, height);
   glClearColor(
-    Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
-    Theme::BACKGROUND_LIGHT_BLUE_1.w
+    Theme::BACKGROUND_LIGHT_GRAY.x, Theme::BACKGROUND_LIGHT_GRAY.y, Theme::BACKGROUND_LIGHT_GRAY.z,
+    Theme::BACKGROUND_LIGHT_GRAY.w
   );
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -656,55 +768,7 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
     render_model(model, texture_manager, camera);
   }
   else {
-    // LOG_ERROR("Model not loaded for preview: {}", model.path);
-
-    // Fallback: render a simple colored triangle
-    glUseProgram(texture_manager.get_preview_shader());
-
-    // Set up matrices for triangle
-    glm::mat4 model_matrix = glm::mat4(1.0f);
-    glm::mat4 view_matrix =
-      glm::lookAt(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
-    glm::mat4 projection_matrix = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 1000.0f);
-
-    glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_preview_shader(), "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-    glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_preview_shader(), "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
-    glUniformMatrix4fv(
-      glGetUniformLocation(texture_manager.get_preview_shader(), "projection"), 1, GL_FALSE, glm::value_ptr(projection_matrix)
-    );
-
-    // Set lighting uniforms for fallback triangle
-    glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "lightPos"), 2.0f, 2.0f, 3.0f);
-    glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "viewPos"), 0.0f, 0.0f, 3.0f);
-    glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "lightColor"), 1.0f, 1.0f, 1.0f);
-    glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
-
-    // Create a simple triangle
-    float vertices[] = {
-      -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, // bottom left
-      0.5f,  -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, // bottom right
-      0.0f,  0.5f,  0.0f, 0.0f, 0.0f, 1.0f, 0.5f, 1.0f  // top
-    };
-
-    unsigned int vao, vbo;
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) 0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) (3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) (6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-
-    glDeleteVertexArrays(1, &vao);
-    glDeleteBuffers(1, &vbo);
+    LOG_ERROR("Model not loaded for preview: {}", model.path);
   }
 
   // Unbind framebuffer

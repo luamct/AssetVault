@@ -24,7 +24,7 @@
 #include "nanosvgrast.h"
 
 #include "asset.h" // For SVG_THUMBNAIL_SIZE
-#include "config.h" // For MODEL_THUMBNAIL_SIZE
+#include "config.h" // For MODEL_THUMBNAIL_SIZE, MAX_TEXTURE_RETRY_ATTEMPTS
 #include "3d.h" // For Model, load_model, render_model, cleanup_model
 
 TextureManager::TextureManager()
@@ -260,9 +260,14 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
     else {
       // Thumbnail doesn't exist - try to generate it on-demand
       // This only works if we're in the main thread with OpenGL context
-      // Check if this model previously failed to load
-      if (failed_models_cache_.find(asset_path) != failed_models_cache_.end()) {
-        // Model failed before, skip thumbnail generation
+      // Check retry count for this model
+      int retry_count = model_texture_retry_counts_[asset_path];
+      LOG_TRACE("[RETRY] Model {} has retry count: {}/{}", asset_path, retry_count, Config::MAX_TEXTURE_RETRY_ATTEMPTS);
+
+      if (retry_count >= Config::MAX_TEXTURE_RETRY_ATTEMPTS) {
+        LOG_WARN("[RETRY] Max retries ({}) exceeded for model: {}, using default icon",
+          Config::MAX_TEXTURE_RETRY_ATTEMPTS, asset_path);
+        // Max retries exceeded, use default icon
         auto it = type_icons_.find(asset.type);
         TextureCacheEntry entry;
         entry.texture_id = (it != type_icons_.end()) ? it->second : default_texture_;
@@ -272,8 +277,13 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
       }
 
       if (is_preview_initialized() && std::filesystem::exists(std::filesystem::u8path(asset.full_path))) {
+        LOG_TRACE("[RETRY] Attempting thumbnail generation for {} (attempt {}/{})",
+          asset_path, retry_count + 1, Config::MAX_TEXTURE_RETRY_ATTEMPTS);
+
         if (generate_3d_model_thumbnail(asset_path, relative_path.u8string(), *this)) {
-          // Thumbnail was successfully generated, try to load it
+          LOG_TRACE("[RETRY] Thumbnail generation successful for: {}", asset_path);
+          // Thumbnail was successfully generated, reset retry count and load it
+          model_texture_retry_counts_.erase(asset_path); // Reset on success
           if (std::filesystem::exists(thumbnail_path)) {
             unsigned int texture_id = load_texture(thumbnail_path.u8string().c_str());
             if (texture_id != 0) {
@@ -288,8 +298,10 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
           }
         }
         else {
-          // Thumbnail generation failed, add to failed cache to prevent retry
-          failed_models_cache_.insert(asset_path);
+          // Thumbnail generation failed, increment retry count
+          model_texture_retry_counts_[asset_path]++;
+          LOG_TRACE("[RETRY] Thumbnail generation failed for {}, retry count now: {}/{}",
+            asset_path, model_texture_retry_counts_[asset_path], Config::MAX_TEXTURE_RETRY_ATTEMPTS);
         }
       }
     }
@@ -382,9 +394,12 @@ void TextureManager::cleanup_texture_cache(const std::string& path) {
     }
     texture_cache_.erase(cache_it);
   }
-  
+
   // Also remove from failed cache to allow retry
   failed_textures_cache_.erase(path);
+
+  // Reset model texture retry count to allow retry
+  model_texture_retry_counts_.erase(path);
 }
 
 bool TextureManager::get_texture_dimensions(const std::string& file_path, int& width, int& height) {
@@ -400,33 +415,65 @@ bool TextureManager::get_texture_dimensions(const std::string& file_path, int& w
 
 // TODO: Make this method not static and remove texture_manager from argument (just use this if needed)
 bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager) {
+  LOG_TRACE("[THUMBNAIL] Starting 3D model thumbnail generation for: {}", model_path);
+
   // Check if preview system is initialized
   if (!texture_manager.is_preview_initialized()) {
-    LOG_ERROR("Cannot generate 3D model thumbnail: preview system not initialized");
+    LOG_ERROR("[THUMBNAIL] Cannot generate 3D model thumbnail: preview system not initialized");
     return false;
   }
 
   // Create thumbnail directory path
   std::filesystem::path thumbnail_path = "thumbnails" / std::filesystem::path(relative_path).replace_extension(".png");
+  LOG_TRACE("[THUMBNAIL] Thumbnail will be saved to: {}", thumbnail_path.string());
 
   // Create directory structure if it doesn't exist
   std::filesystem::path thumbnail_dir = thumbnail_path.parent_path();
   if (!std::filesystem::exists(thumbnail_dir)) {
     try {
       std::filesystem::create_directories(thumbnail_dir);
+      LOG_TRACE("[THUMBNAIL] Created thumbnail directory: {}", thumbnail_dir.string());
     }
     catch (const std::filesystem::filesystem_error& e) {
-      LOG_ERROR("Failed to create thumbnail directory {}: {}", thumbnail_dir.string(), e.what());
+      LOG_ERROR("[THUMBNAIL] Failed to create thumbnail directory {}: {}", thumbnail_dir.string(), e.what());
       return false;
     }
   }
 
   // Load the 3D model
+  LOG_TRACE("[THUMBNAIL] Loading 3D model: {}", model_path);
   Model model;
   if (!load_model(model_path, model, texture_manager)) {
-    LOG_ERROR("Failed to load 3D model for thumbnail generation: {}", model_path);
+    LOG_ERROR("[THUMBNAIL] Failed to load 3D model for thumbnail generation: {}", model_path);
     return false;
   }
+
+  LOG_TRACE("[THUMBNAIL] Model loaded successfully. Materials count: {}", model.materials.size());
+
+  // Debug: Log material details
+  for (size_t i = 0; i < model.materials.size(); ++i) {
+    const auto& material = model.materials[i];
+    LOG_TRACE("[THUMBNAIL] Material {}: has_texture={}, has_missing_files={}, diffuse_color=({:.2f}, {:.2f}, {:.2f})",
+      i, material.has_texture, material.has_missing_texture_files,
+      material.diffuse_color.x, material.diffuse_color.y, material.diffuse_color.z);
+  }
+
+  // Check if any material has missing texture files (indicates files haven't been copied yet)
+  bool has_missing_texture_files = false;
+  for (const auto& material : model.materials) {
+    if (material.has_missing_texture_files) {
+      has_missing_texture_files = true;
+      break;
+    }
+  }
+
+  if (has_missing_texture_files) {
+    LOG_WARN("[THUMBNAIL] Model has missing texture files, will retry later: {}", model_path);
+    cleanup_model(model);
+    return false; // Let get_asset_texture handle retry logic
+  }
+
+  LOG_TRACE("[THUMBNAIL] Model loaded successfully, proceeding with thumbnail generation");
 
   // Create temporary framebuffer for thumbnail rendering
   unsigned int temp_framebuffer, temp_texture, temp_depth_texture;
@@ -465,9 +512,21 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
   glClearColor(0.0f, 0.0f, 0.0f, 0.0f); // Transparent background for thumbnails
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+  // Check for OpenGL errors before rendering
+  GLenum gl_error = glGetError();
+  if (gl_error != GL_NO_ERROR) {
+    LOG_WARN("OpenGL error before thumbnail render: {}", gl_error);
+  }
+
   // Render the model using existing render_model function with default camera
   Camera3D default_camera; // Uses default rotation and zoom
   render_model(model, texture_manager, default_camera);
+
+  // Check for OpenGL errors after rendering
+  gl_error = glGetError();
+  if (gl_error != GL_NO_ERROR) {
+    LOG_WARN("OpenGL error after thumbnail render: {}", gl_error);
+  }
 
   // Read pixels from framebuffer (no flipping needed - already correct orientation)
   std::vector<unsigned char> pixels(thumbnail_size * thumbnail_size * 4);
@@ -481,14 +540,16 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
     thumbnail_size * 4
   );
 
+  // Restore original framebuffer BEFORE cleanup
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
   // Cleanup OpenGL resources
   glDeleteFramebuffers(1, &temp_framebuffer);
   glDeleteTextures(1, &temp_texture);
   glDeleteTextures(1, &temp_depth_texture);
-  cleanup_model(model);
 
-  // Restore original framebuffer
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  // Clean up model (this also deletes textures - might be the issue)
+  cleanup_model(model);
 
   if (!result) {
     LOG_ERROR("Failed to write 3D model thumbnail: {}", thumbnail_path.string());
@@ -554,6 +615,41 @@ unsigned int TextureManager::create_solid_color_texture(float r, float g, float 
   return texture_id;
 }
 
+unsigned int TextureManager::create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive, float emissive_intensity) {
+  // Now that the shader properly handles emissive colors,
+  // we just use the diffuse color for the texture
+  // The emissive color will be passed separately to the shader
+  glm::vec3 final_color = diffuse;
+
+  LOG_TRACE("[TEXTURE] Creating material texture: diffuse=({:.3f}, {:.3f}, {:.3f}), emissive=({:.3f}, {:.3f}, {:.3f}), intensity={:.3f}, final=({:.3f}, {:.3f}, {:.3f})",
+    diffuse.r, diffuse.g, diffuse.b,
+    emissive.r, emissive.g, emissive.b,
+    emissive_intensity,
+    final_color.r, final_color.g, final_color.b);
+
+  // Create a 1x1 texture with the blended color
+  unsigned char color_data[3] = {
+    static_cast<unsigned char>(final_color.r * 255.0f),
+    static_cast<unsigned char>(final_color.g * 255.0f),
+    static_cast<unsigned char>(final_color.b * 255.0f)
+  };
+
+  unsigned int texture_id;
+  glGenTextures(1, &texture_id);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+
+  // Set texture parameters
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+  // Upload the 1x1 color data
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, color_data);
+
+  return texture_id;
+}
+
 bool TextureManager::initialize_preview_system() {
   if (preview_initialized_) {
     return true;
@@ -596,6 +692,7 @@ bool TextureManager::initialize_preview_system() {
     uniform sampler2D diffuseTexture;
     uniform bool useTexture;
     uniform vec3 materialColor;
+    uniform vec3 emissiveColor;
 
     out vec4 FragColor;
 
@@ -632,7 +729,7 @@ bool TextureManager::initialize_preview_system() {
         float rimFactor = 1.0 - max(dot(viewDir, norm), 0.0);
         vec3 rimLight = rimStrength * pow(rimFactor, 3.0) * lightColor;
 
-        vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor;
+        vec3 result = (ambient + diffuse + fillLight + specular + rimLight) * objectColor + emissiveColor;
         FragColor = vec4(result, 1.0);
     }
   )";
@@ -758,7 +855,10 @@ void TextureManager::clear_texture_cache() {
     }
   }
   texture_cache_.clear();
-  
+
   // Clear failed texture cache to allow retry after cache clear
   failed_textures_cache_.clear();
+
+  // Clear model texture retry counts to allow retry after cache clear
+  model_texture_retry_counts_.clear();
 }
