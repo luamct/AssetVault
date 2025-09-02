@@ -3,11 +3,19 @@
 #include "utils.h"
 #include "config.h"
 #include "imgui.h"
+#include "texture_manager.h"
+#include "event_processor.h"
+#include "audio_manager.h"
+#include "asset.h"
+#include "3d.h"
+#include "search.h"
+#include "logger.h"
 #include <vector>
 #include <sstream>
 #include <algorithm>
 #include <cstring>
-#include <algorithm>
+#include <chrono>
+#include <iomanip>
 
 void render_clickable_path(const std::string& full_path, SearchState& search_state) {
   // Get relative path from assets folder
@@ -131,6 +139,39 @@ void render_clickable_path(const std::string& full_path, SearchState& search_sta
       ImGui::TextColored(Theme::TEXT_DARK, "%s", segments[i].c_str());
     }
   }
+}
+
+// Renders common asset information in standard order: Path, Extension, Type, Size, Modified
+void render_common_asset_info(const Asset& asset, SearchState& search_state) {
+  // Path
+  ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
+  ImGui::SameLine();
+  render_clickable_path(asset.full_path, search_state);
+
+  // Extension
+  ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
+  ImGui::SameLine();
+  ImGui::Text("%s", asset.extension.c_str());
+
+  // Type
+  ImGui::TextColored(Theme::TEXT_LABEL, "Type: ");
+  ImGui::SameLine();
+  ImGui::Text("%s", get_asset_type_string(asset.type).c_str());
+
+  // Size
+  ImGui::TextColored(Theme::TEXT_LABEL, "Size: ");
+  ImGui::SameLine();
+  ImGui::Text("%s", format_file_size(asset.size).c_str());
+
+  // Modified
+  auto time_t = std::chrono::system_clock::to_time_t(asset.last_modified);
+  std::tm tm_buf;
+  safe_localtime(&tm_buf, &time_t);
+  std::stringstream ss;
+  ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
+  ImGui::TextColored(Theme::TEXT_LABEL, "Modified: ");
+  ImGui::SameLine();
+  ImGui::Text("%s", ss.str().c_str());
 }
 
 // Custom slider component for audio seek bar
@@ -289,21 +330,9 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
   ImVec4 border_color = toggle_state ? Theme::TOGGLE_ON_BORDER : Theme::TOGGLE_OFF_BORDER;
   ImVec4 text_color = toggle_state ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
 
-  // Draw button background
-  ImGui::GetWindowDrawList()->AddRectFilled(
-    button_min, button_max,
-    Theme::ToImU32(bg_color),
-    8.0f  // Rounded corners
-  );
-
-  // Draw button border
-  ImGui::GetWindowDrawList()->AddRect(
-    button_min, button_max,
-    Theme::ToImU32(border_color),
-    8.0f,  // Rounded corners
-    0,     // No corner flags
-    2.0f   // Border thickness
-  );
+  // Draw button background with border
+  ImGui::GetWindowDrawList()->AddRectFilled(button_min, button_max, Theme::ToImU32(bg_color), 8.0f);
+  ImGui::GetWindowDrawList()->AddRect(button_min, button_max, Theme::ToImU32(border_color), 8.0f, 0, 2.0f);
 
   // Draw text centered in button
   ImVec2 text_size = ImGui::CalcTextSize(label);
@@ -326,4 +355,711 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
   }
 
   return clicked;
+}
+
+void render_search_panel(
+  SearchState& search_state,
+  std::map<std::string, Asset>& assets,
+  std::mutex& assets_mutex, SearchIndex& search_index,
+  float panel_width, float panel_height) {
+  ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), true);
+
+  // Get the actual usable content area (accounts for child window borders/padding)
+  ImVec2 content_region = ImGui::GetContentRegionAvail();
+
+  // Calculate centered position within content region - move search box up
+  float content_search_x = (content_region.x - Config::SEARCH_BOX_WIDTH) * 0.5f;
+  float content_search_y = (content_region.y - Config::SEARCH_BOX_HEIGHT) * 0.3f;
+
+  // Get screen position for drawing (content area start + our offset)
+  ImVec2 content_start = ImGui::GetCursorScreenPos();
+
+  // Position and draw the fancy search text input
+  ImGui::SetCursorPos(ImVec2(content_search_x, content_search_y));
+  bool enter_pressed = fancy_text_input("##Search", search_state.buffer, sizeof(search_state.buffer),
+    Config::SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f,
+    ImGuiInputTextFlags_EnterReturnsTrue);
+
+  // Handle search input
+  std::string current_input(search_state.buffer);
+
+  if (enter_pressed) {
+    // Immediate search on Enter key
+    filter_assets(search_state, assets, assets_mutex, search_index);
+    search_state.last_buffer = current_input;
+    search_state.input_tracking = current_input;
+    search_state.pending_search = false;
+  }
+  else if (current_input != search_state.input_tracking) {
+    // Debounced search: only mark as pending if input actually changed
+    search_state.input_tracking = current_input;
+    search_state.last_keypress_time = std::chrono::steady_clock::now();
+    search_state.pending_search = true;
+  }
+
+  // ============ TYPE FILTER TOGGLE BUTTONS ============
+
+  // Position toggle buttons below the search box
+  float toggles_y = content_search_y + Config::SEARCH_BOX_HEIGHT + 30.0f; // 30px gap below search box
+  float toggle_button_height = 35.0f;
+  float toggle_spacing = 20.0f;
+
+  // Individual button widths - tweak these as needed
+  float button_width_2d = 48.0f;      // "2D" is short
+  float button_width_3d = 48.0f;      // "3D" is short
+  float button_width_audio = 84.0f;   // "Audio" is longer
+  float button_width_shader = 96.0f;  // "Shader" is longer
+  float button_width_font = 72.0f;    // "Font" is medium
+  float button_width_path = 72.0f;    // "Path" is medium
+
+  // Calculate total width including path button if visible
+  float total_toggle_width = button_width_2d + button_width_3d + button_width_audio +
+    button_width_shader + button_width_font + (toggle_spacing * 4);
+
+  // Add path button width if there's an active path filter
+  if (!search_state.path_filters.empty()) {
+    total_toggle_width += button_width_path + toggle_spacing;
+  }
+
+  float toggles_start_x = content_search_x + (Config::SEARCH_BOX_WIDTH - total_toggle_width) * 0.5f;
+
+  // Draw all toggle buttons using the dedicated function
+  bool any_toggle_changed = false;
+  float current_x = toggles_start_x;
+
+  any_toggle_changed |= draw_type_toggle_button("2D", search_state.type_filter_2d,
+    content_start.x + current_x, content_start.y + toggles_y,
+    button_width_2d, toggle_button_height);
+  current_x += button_width_2d + toggle_spacing;
+
+  any_toggle_changed |= draw_type_toggle_button("3D", search_state.type_filter_3d,
+    content_start.x + current_x, content_start.y + toggles_y,
+    button_width_3d, toggle_button_height);
+  current_x += button_width_3d + toggle_spacing;
+
+  any_toggle_changed |= draw_type_toggle_button("Audio", search_state.type_filter_audio,
+    content_start.x + current_x, content_start.y + toggles_y,
+    button_width_audio, toggle_button_height);
+  current_x += button_width_audio + toggle_spacing;
+
+  any_toggle_changed |= draw_type_toggle_button("Shader", search_state.type_filter_shader,
+    content_start.x + current_x, content_start.y + toggles_y,
+    button_width_shader, toggle_button_height);
+  current_x += button_width_shader + toggle_spacing;
+
+  any_toggle_changed |= draw_type_toggle_button("Font", search_state.type_filter_font,
+    content_start.x + current_x, content_start.y + toggles_y,
+    button_width_font, toggle_button_height);
+  current_x += button_width_font + toggle_spacing;
+
+  // Draw Path filter button if there's a path filter set
+  if (!search_state.path_filters.empty()) {
+    // Draw the Path button
+    bool path_clicked = draw_type_toggle_button("Path", search_state.path_filter_active,
+      content_start.x + current_x, content_start.y + toggles_y,
+      button_width_path, toggle_button_height);
+
+    // Add tooltip showing the full path on hover
+    ImVec2 button_min(content_start.x + current_x, content_start.y + toggles_y);
+    ImVec2 button_max(button_min.x + button_width_path, button_min.y + toggle_button_height);
+    ImVec2 mouse_pos = ImGui::GetMousePos();
+    bool is_hovered = (mouse_pos.x >= button_min.x && mouse_pos.x <= button_max.x &&
+      mouse_pos.y >= button_min.y && mouse_pos.y <= button_max.y);
+
+    if (is_hovered && !search_state.path_filters.empty()) {
+      ImGui::SetTooltip("%s", search_state.path_filters[0].c_str());
+    }
+
+    // Handle path filter toggle
+    if (path_clicked) {
+      any_toggle_changed = true;
+    }
+  }
+
+  // If any toggle changed, trigger immediate search
+  if (any_toggle_changed) {
+    filter_assets(search_state, assets, assets_mutex, search_index);
+    search_state.pending_search = false;
+  }
+
+  ImGui::EndChild();
+}
+
+void render_progress_panel(EventProcessor* processor, float panel_width, float panel_height) {
+  ImGui::BeginChild("ProgressRegion", ImVec2(panel_width, panel_height), true);
+
+  // Unified progress bar for all asset processing
+  bool show_progress = (processor && processor->has_pending_work());
+
+  if (show_progress) {
+    ImGui::TextColored(Theme::TEXT_HEADER, "Processing Assets");
+
+    // Progress bar data from event processor
+    float progress = processor->get_progress();
+    size_t processed = processor->get_total_processed();
+    size_t total = processor->get_total_queued();
+
+    // Draw progress bar without text overlay
+    ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "");
+
+    // Overlay centered text on the progress bar
+    char progress_text[64];
+    snprintf(progress_text, sizeof(progress_text), "%zu/%zu", processed, total);
+
+    ImVec2 text_size = ImGui::CalcTextSize(progress_text);
+    ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
+    ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
+
+    // Center text on progress bar
+    ImVec2 text_pos = ImVec2(
+      progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
+      progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(Theme::TEXT_DARK), progress_text);
+  }
+
+  ImGui::EndChild();
+}
+
+void render_asset_grid(SearchState& search_state, TextureManager& texture_manager,
+  std::map<std::string, Asset>& assets, float panel_width, float panel_height) {
+  ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), true);
+
+  // Show total results count if we have results
+  if (!search_state.filtered_assets.empty()) {
+    ImGui::Text("Showing %d of %zu results", search_state.loaded_end_index, search_state.filtered_assets.size());
+    ImGui::Separator();
+  }
+
+  // Calculate grid layout upfront since all items have the same size
+  float available_width = panel_width - 20.0f;                     // Account for padding
+  float item_height = Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN + Config::TEXT_HEIGHT; // Full item height including text
+  // Add GRID_SPACING to available width since we don't need spacing after the
+  // last item
+  int columns = static_cast<int>((available_width + Config::GRID_SPACING) / (Config::THUMBNAIL_SIZE + Config::GRID_SPACING));
+  if (columns < 1)
+    columns = 1;
+
+  // Calculate visible range
+  float current_scroll_y = ImGui::GetScrollY();
+  float viewport_height = ImGui::GetWindowHeight();
+
+  // Calculate visible range for lazy loading
+  float row_height = item_height + Config::GRID_SPACING;
+  int first_visible_row = static_cast<int>(current_scroll_y / row_height);
+  int last_visible_row = static_cast<int>((current_scroll_y + viewport_height) / row_height);
+
+  // Add margin for smooth scrolling (1 row above/below)
+  first_visible_row = std::max(0, first_visible_row - 1);
+  last_visible_row = last_visible_row + 1;
+
+  int first_visible_item = first_visible_row * columns;
+  int last_visible_item = std::min(search_state.loaded_end_index,
+    (last_visible_row + 1) * columns);
+
+  // Check if we need to load more items (when approaching the end of loaded items)
+  int load_threshold_row = (search_state.loaded_end_index - SearchState::LOAD_BATCH_SIZE / 2) / columns;
+  if (last_visible_row >= load_threshold_row && search_state.loaded_end_index < static_cast<int>(search_state.filtered_assets.size())) {
+    // Load more items
+    search_state.loaded_end_index = std::min(
+      search_state.loaded_end_index + SearchState::LOAD_BATCH_SIZE,
+      static_cast<int>(search_state.filtered_assets.size())
+    );
+  }
+
+
+  // Reserve space for all loaded items to enable proper scrolling
+  int total_loaded_rows = (search_state.loaded_end_index + columns - 1) / columns;
+  float total_content_height = total_loaded_rows * row_height;
+
+  // Save current cursor position
+  ImVec2 grid_start_pos = ImGui::GetCursorPos();
+
+  // Reserve space for the entire loaded content
+  ImGui::Dummy(ImVec2(0, total_content_height));
+
+  // Display filtered assets in a proper grid - only process visible items within loaded range
+  for (int i = first_visible_item; i < last_visible_item && i < search_state.loaded_end_index; i++) {
+    // Calculate grid position
+    int row = static_cast<int>(i) / columns;
+    int col = static_cast<int>(i) % columns;
+
+    // Calculate absolute position for this grid item relative to grid start
+    float x_pos = grid_start_pos.x + col * (Config::THUMBNAIL_SIZE + Config::GRID_SPACING);
+    float y_pos = grid_start_pos.y + row * (item_height + Config::GRID_SPACING);
+
+    // Set cursor to the calculated position
+    ImGui::SetCursorPos(ImVec2(x_pos, y_pos));
+
+    ImGui::BeginGroup();
+
+    // Load texture (all items in loop are visible now)
+    TextureCacheEntry texture_entry = texture_manager.get_asset_texture(search_state.filtered_assets[i]);
+
+    // Calculate display size based on asset type
+    ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
+
+    // Check if this asset has actual thumbnail dimensions (textures or 3D model thumbnails)
+    bool has_thumbnail_dimensions = false;
+    if (search_state.filtered_assets[i].type == AssetType::_2D || search_state.filtered_assets[i].type == AssetType::_3D) {
+      // TextureCacheEntry already contains the dimensions, no need for separate call
+      has_thumbnail_dimensions = (texture_entry.width > 0 && texture_entry.height > 0);
+    }
+
+    if (has_thumbnail_dimensions) {
+      display_size = calculate_thumbnail_size(
+        texture_entry.width, texture_entry.height,
+        Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE,
+        Config::MAX_THUMBNAIL_UPSCALE_FACTOR
+      ); // upscaling for grid
+    }
+    else {
+      // For type icons, use a fixed fraction of the thumbnail size
+      display_size = ImVec2(Config::THUMBNAIL_SIZE * Config::ICON_SCALE, Config::THUMBNAIL_SIZE * Config::ICON_SCALE);
+    }
+
+    // Create a fixed-size container for consistent layout
+    ImVec2 container_size(Config::THUMBNAIL_SIZE,
+      Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN + Config::TEXT_HEIGHT); // Thumbnail + text area
+    ImVec2 container_pos = ImGui::GetCursorScreenPos();
+
+    // Draw background for the container (same as app background)
+    ImGui::GetWindowDrawList()->AddRectFilled(
+      container_pos, ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
+      Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
+
+    // Center the image/icon in the thumbnail area
+    float image_x_offset = (Config::THUMBNAIL_SIZE - display_size.x) * 0.5f;
+    float image_y_offset = (Config::THUMBNAIL_SIZE - display_size.y) * 0.5f;
+    ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+
+    ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
+
+    // Display thumbnail image
+    ImGui::SetCursorScreenPos(image_pos);
+    if (ImGui::ImageButton(
+      ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.texture_id, display_size)) {
+      search_state.selected_asset_index = static_cast<int>(i);
+      LOG_DEBUG("Selected: {}", search_state.filtered_assets[i].name);
+    }
+
+    ImGui::PopStyleColor(3);
+
+    // Position text at the bottom of the container
+    ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN));
+
+    // Asset name below thumbnail
+    std::string truncated_name = truncate_filename(search_state.filtered_assets[i].name);
+    ImGui::SetCursorPosX(
+      ImGui::GetCursorPosX() + (Config::THUMBNAIL_SIZE - ImGui::CalcTextSize(truncated_name.c_str()).x) * 0.5f);
+    ImGui::TextWrapped("%s", truncated_name.c_str());
+
+    ImGui::EndGroup();
+  }
+
+  // Show message if no assets found
+  if (search_state.filtered_assets.empty()) {
+    if (assets.empty()) {
+      ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets found. Add files to the 'assets' directory.");
+    }
+    else {
+      ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets match your search.");
+    }
+  }
+
+  ImGui::EndChild();
+}
+
+void render_preview_panel(SearchState& search_state, TextureManager& texture_manager,
+  AudioManager& audio_manager, Model& current_model,
+  Camera3D& camera, float panel_width, float panel_height) {
+  ImGui::BeginChild("AssetPreview", ImVec2(panel_width, panel_height), true);
+
+  // Use fixed panel dimensions for stable calculations
+  float avail_width = panel_width - Config::PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
+  float avail_height = avail_width;                           // Square aspect ratio for preview area
+
+  // Track previously selected asset for cleanup
+  static int prev_selected_index = -1;
+  static AssetType prev_selected_type = AssetType::Unknown;
+
+  // Handle asset selection changes
+  if (search_state.selected_asset_index != prev_selected_index) {
+    // If we were playing audio and switched to a different asset, stop and unload
+    if (prev_selected_type == AssetType::Audio && audio_manager.has_audio_loaded()) {
+      audio_manager.unload_audio();
+    }
+    prev_selected_index = search_state.selected_asset_index;
+    if (search_state.selected_asset_index >= 0) {
+      prev_selected_type = search_state.filtered_assets[search_state.selected_asset_index].type;
+    }
+    else {
+      prev_selected_type = AssetType::Unknown;
+    }
+  }
+
+  if (search_state.selected_asset_index >= 0) {
+    const Asset& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
+
+    // Check if selected asset is a model
+    if (selected_asset.type == AssetType::_3D && texture_manager.is_preview_initialized()) {
+      // Load the model if it's different from the currently loaded one
+      if (selected_asset.full_path != current_model.path) {
+        LOG_DEBUG("=== Loading Model in Main ===");
+        LOG_DEBUG("Selected asset: {}", selected_asset.full_path);
+        Model model;
+        if (load_model(selected_asset.full_path, model, texture_manager)) {
+          set_current_model(current_model, model);
+          camera.reset(); // Reset camera to default view for new model
+          LOG_DEBUG("Model loaded successfully in main");
+        }
+        else {
+          LOG_DEBUG("Failed to load model in main");
+        }
+        LOG_DEBUG("===========================");
+      }
+
+      // Get the current model for displaying info
+      const Model& current_model_ref = get_current_model(current_model);
+
+      // 3D Preview Viewport for models
+      ImVec2 viewport_size(avail_width, avail_height);
+
+      // Render the 3D preview to framebuffer texture
+      int fb_width = static_cast<int>(avail_width);
+      int fb_height = static_cast<int>(avail_height);
+      render_3d_preview(fb_width, fb_height, current_model, texture_manager, camera);
+
+      // Center the viewport in the panel (same logic as 2D previews)
+      ImVec2 container_pos = ImGui::GetCursorScreenPos();
+      float image_x_offset = (avail_width - viewport_size.x) * 0.5f;
+      float image_y_offset = (avail_height - viewport_size.y) * 0.5f;
+      ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+      ImGui::SetCursorScreenPos(image_pos);
+
+      // Draw border around the viewport
+      ImVec2 border_min = image_pos;
+      ImVec2 border_max(border_min.x + viewport_size.x, border_min.y + viewport_size.y);
+      ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
+
+      // Display the 3D viewport
+      ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_preview_texture(), viewport_size);
+
+      // Handle mouse interactions for 3D camera control
+      ImVec2 image_min = ImGui::GetItemRectMin();
+      ImVec2 image_max = ImGui::GetItemRectMax();
+      bool is_image_hovered = ImGui::IsItemHovered();
+
+      if (is_image_hovered) {
+        ImGuiIO& io = ImGui::GetIO();
+
+        // Handle mouse wheel for zoom
+        if (io.MouseWheel != 0.0f) {
+          if (io.MouseWheel > 0.0f) {
+            camera.zoom *= Config::PREVIEW_3D_ZOOM_FACTOR; // Zoom in
+          }
+          else {
+            camera.zoom /= Config::PREVIEW_3D_ZOOM_FACTOR; // Zoom out
+          }
+          // Clamp zoom to reasonable bounds
+          camera.zoom = std::max(0.1f, std::min(camera.zoom, 10.0f));
+        }
+
+        // Handle double-click for reset (check this first)
+        if (ImGui::IsMouseDoubleClicked(0)) {
+          camera.reset();
+          camera.is_dragging = false; // Cancel any dragging
+        }
+        // Handle single click to start dragging (only if not double-click)
+        else if (ImGui::IsMouseClicked(0)) {
+          camera.is_dragging = true;
+          camera.last_mouse_x = io.MousePos.x;
+          camera.last_mouse_y = io.MousePos.y;
+        }
+      }
+
+      // Handle dragging (can continue even if mouse leaves image area)
+      if (camera.is_dragging) {
+        ImGuiIO& io = ImGui::GetIO();
+
+        // Check if mouse button is still held down
+        if (io.MouseDown[0]) {
+          float delta_x = io.MousePos.x - camera.last_mouse_x;
+          float delta_y = io.MousePos.y - camera.last_mouse_y;
+
+          // Only update if there's actual movement
+          if (delta_x != 0.0f || delta_y != 0.0f) {
+            // Update rotation based on mouse movement using config sensitivity
+            camera.rotation_y += delta_x * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Horizontal rotation (left/right)
+            camera.rotation_x += delta_y * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Vertical rotation (up/down)
+
+            // Clamp vertical rotation to avoid flipping
+            camera.rotation_x = std::max(-89.0f, std::min(camera.rotation_x, 89.0f));
+
+            camera.last_mouse_x = io.MousePos.x;
+            camera.last_mouse_y = io.MousePos.y;
+          }
+        }
+        else {
+          // Mouse button released, stop dragging
+          camera.is_dragging = false;
+        }
+      }
+
+      // Restore cursor for info below
+      ImGui::SetCursorScreenPos(container_pos);
+      ImGui::Dummy(ImVec2(0, avail_height + 10));
+
+      ImGui::Spacing();
+      ImGui::Separator();
+      ImGui::Spacing();
+
+      // Common asset information
+      render_common_asset_info(selected_asset, search_state);
+
+      // 3D-specific information
+      if (current_model_ref.loaded) {
+        int vertex_count =
+          static_cast<int>(current_model_ref.vertices.size() / 8);             // 8 floats per vertex (3 pos + 3 normal + 2 tex)
+        int face_count = static_cast<int>(current_model_ref.indices.size() / 3); // 3 indices per triangle
+
+        ImGui::TextColored(Theme::TEXT_LABEL, "Vertices: ");
+        ImGui::SameLine();
+        ImGui::Text("%d", vertex_count);
+
+        ImGui::TextColored(Theme::TEXT_LABEL, "Faces: ");
+        ImGui::SameLine();
+        ImGui::Text("%d", face_count);
+      }
+    }
+    else if (selected_asset.type == AssetType::Audio && audio_manager.is_initialized()) {
+      // Audio handling for sound assets
+
+      // Load the audio file if it's different from the currently loaded one
+      const std::string asset_path = selected_asset.full_path;
+      const std::string current_file = audio_manager.get_current_file();
+
+      if (asset_path != current_file) {
+        LOG_DEBUG("Main: Audio file changed from '{}' to '{}'", current_file, asset_path);
+        bool loaded = audio_manager.load_audio(asset_path);
+        if (loaded) {
+          // Set initial volume to match our slider default
+          audio_manager.set_volume(0.5f);
+          // Auto-play if enabled
+          if (search_state.auto_play_audio) {
+            audio_manager.play();
+          }
+        }
+        else {
+          LOG_DEBUG("Main: Failed to load audio, current_file is now '{}'", audio_manager.get_current_file());
+        }
+      }
+
+      // Display audio icon in preview area
+      TextureCacheEntry audio_entry = texture_manager.get_asset_texture(selected_asset);
+      if (audio_entry.texture_id != 0) {
+        float icon_dim = Config::ICON_SCALE * std::min(avail_width, avail_height);
+        ImVec2 icon_size(icon_dim, icon_dim);
+
+        // Center the icon
+        ImVec2 container_pos = ImGui::GetCursorScreenPos();
+        float image_x_offset = (avail_width - icon_size.x) * 0.5f;
+        float image_y_offset = (avail_height - icon_size.y) * 0.5f;
+        ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+        ImGui::SetCursorScreenPos(image_pos);
+
+        ImGui::Image((ImTextureID) (intptr_t) audio_entry.texture_id, icon_size);
+
+        // Restore cursor for controls below
+        ImGui::SetCursorScreenPos(container_pos);
+        ImGui::Dummy(ImVec2(0, avail_height + 10));
+      }
+
+      ImGui::Spacing();
+      ImGui::Separator();
+      ImGui::Spacing();
+
+      // Audio controls - single row layout
+      if (audio_manager.has_audio_loaded()) {
+        float duration = audio_manager.get_duration();
+        float position = audio_manager.get_position();
+        bool is_playing = audio_manager.is_playing();
+
+        // Format time helper lambda
+        auto format_time = [](float seconds) -> std::string {
+          int mins = static_cast<int>(seconds) / 60;
+          int secs = static_cast<int>(seconds) % 60;
+          char buffer[16];
+          snprintf(buffer, sizeof(buffer), "%02d:%02d", mins, secs);
+          return std::string(buffer);
+          };
+
+        // Create a single row with all controls
+        ImGui::BeginGroup();
+
+        // 1. Square Play/Pause button with transparent background
+        const float button_size = 32.0f;
+
+        // Store the baseline Y position BEFORE drawing the button for proper alignment
+        float baseline_y = ImGui::GetCursorPosY();
+
+        unsigned int icon_texture = is_playing ? texture_manager.get_pause_icon() : texture_manager.get_play_icon();
+
+        // Make button background transparent
+        ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.8f, 0.8f, 0.1f)); // Very light hover
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.7f, 0.7f, 0.2f));  // Light press
+
+        if (ImGui::ImageButton("##PlayPause", (ImTextureID) (intptr_t) icon_texture, ImVec2(button_size, button_size))) {
+          if (is_playing) {
+            audio_manager.pause();
+          }
+          else {
+            audio_manager.play();
+          }
+        }
+
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine(0, 8); // 8px spacing
+
+        // 2. Current timestamp
+        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - 6.0);
+        ImGui::Text("%s", format_time(position).c_str());
+
+        ImGui::SameLine(0, 16);
+
+        // 3. Custom seek bar - thin line with circle handle
+        static bool seeking = false;
+        static float seek_position = 0.0f;
+
+        if (!seeking) {
+          seek_position = position;
+        }
+
+        const float seek_bar_width = 120.0f;
+        const float seek_bar_height = 4.0f; // Thin line height
+
+        // Use our custom seek bar - vertically centered
+        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - seek_bar_height); // Center based on handle radius
+        bool seek_changed = audio_seek_bar("##CustomSeek", &seek_position, 0.0f, duration, seek_bar_width, seek_bar_height);
+
+        if (seek_changed) {
+          seeking = true;
+          audio_manager.set_position(seek_position);
+        }
+
+        // Reset seeking flag when not actively dragging
+        if (seeking && !ImGui::IsItemActive()) {
+          seeking = false;
+        }
+
+        ImGui::SameLine(0, 12);
+
+        // 4. Total duration
+        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - 6.0f);
+        ImGui::Text("%s", format_time(duration).c_str());
+
+        ImGui::SameLine(0, 12);
+
+        // 5. Speaker icon - vertically centered
+        const float icon_size = 24.0f;
+        ImGui::SetCursorPosY(baseline_y + (button_size - 0.5 * icon_size) * 0.5f);
+        ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_speaker_icon(), ImVec2(icon_size, icon_size));
+
+        ImGui::SameLine(0, 6);
+
+        // 6. Volume slider - custom horizontal seek bar style
+        static float audio_volume = 0.5f; // Start at 50%
+        const float volume_width = 60.0f;  // Small horizontal slider
+        const float volume_height = 3.0f;   // Thinner than seek bar
+
+        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f);
+
+        if (audio_seek_bar("##VolumeBar", &audio_volume, 0.0f, 1.0f, volume_width, volume_height)) {
+          audio_manager.set_volume(audio_volume);
+        }
+
+        // Show percentage on hover
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("Volume: %d%%", (int) (audio_volume * 100));
+        }
+
+        ImGui::EndGroup();
+
+        // Auto-play checkbox below the player
+        ImGui::Spacing();
+        ImGui::Checkbox("Auto-play", &search_state.auto_play_audio);
+      }
+
+      ImGui::Spacing();
+      ImGui::Separator();
+      ImGui::Spacing();
+
+      // Common asset information
+      render_common_asset_info(selected_asset, search_state);
+    }
+    else {
+      // 2D Preview for non-model assets
+      TextureCacheEntry preview_entry = texture_manager.get_asset_texture(selected_asset);
+      if (preview_entry.texture_id != 0) {
+        ImVec2 preview_size(avail_width, avail_height);
+
+        if (selected_asset.type == AssetType::_2D) {
+          // TextureCacheEntry already contains dimensions
+          if (preview_entry.width > 0 && preview_entry.height > 0) {
+            preview_size = calculate_thumbnail_size(preview_entry.width, preview_entry.height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
+          }
+        }
+        else {
+          // For type icons, use ICON_SCALE * min(available_width, available_height)
+          float icon_dim = Config::ICON_SCALE * std::min(avail_width, avail_height);
+          preview_size = ImVec2(icon_dim, icon_dim);
+        }
+
+        // Center the preview image in the panel (same logic as grid)
+        ImVec2 container_pos = ImGui::GetCursorScreenPos();
+        float image_x_offset = (avail_width - preview_size.x) * 0.5f;
+        float image_y_offset = (avail_height - preview_size.y) * 0.5f;
+        ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+        ImGui::SetCursorScreenPos(image_pos);
+
+        // Draw border around the image
+        ImVec2 border_min = image_pos;
+        ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
+        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
+
+        ImGui::Image((ImTextureID) (intptr_t) preview_entry.texture_id, preview_size);
+
+        // Restore cursor for info below
+        ImGui::SetCursorScreenPos(container_pos);
+        ImGui::Dummy(ImVec2(0, avail_height + 10));
+      }
+
+      ImGui::Spacing();
+      ImGui::Separator();
+      ImGui::Spacing();
+
+      // Common asset information
+      render_common_asset_info(selected_asset, search_state);
+
+      // 2D-specific information
+      if (selected_asset.type == AssetType::_2D) {
+        int width, height;
+        if (texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
+          ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
+          ImGui::SameLine();
+          ImGui::Text("%dx%d", width, height);
+        }
+      }
+    }
+  }
+  else {
+    ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No asset selected");
+    ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "Click on an asset to preview");
+  }
+
+  ImGui::EndChild();
 }

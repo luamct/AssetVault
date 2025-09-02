@@ -48,7 +48,7 @@ AssetInventory is a C++ desktop application for managing game assets, built with
 ## Build Commands
 
 ### Unified vcpkg Build System
-The project now uses vcpkg for unified cross-platform dependency management. 
+The project now uses vcpkg for unified cross-platform dependency management.
 
 **Windows Note:** Use **Git Bash** for all commands to ensure cross-platform compatibility and avoid PowerShell/Command Prompt differences.
 
@@ -188,7 +188,8 @@ The application uses a unified event-driven architecture where both initial scan
 - **Batch Processing**: All events processed in configurable batches (default 100) for optimal performance
 
 ### Core Components
-- **main.cpp**: Entry point with ImGui-based UI, smart initial scanning, and event coordination
+- **main.cpp**: Entry point with application lifecycle management, smart initial scanning, and main loop coordination (UI rendering moved to ui.cpp)
+- **ui.cpp/h**: Complete UI rendering system with panel-based layout (search, progress, asset grid, preview panels) and common asset information display
 - **event_processor.cpp/h**: Unified event processing with batch database operations and progress tracking
 - **database.cpp/h**: SQLite-based asset storage with batch operations (insert_assets_batch, update_assets_batch, delete_assets_batch)
 - **asset.cpp/h**: Asset type detection, file metadata extraction, and asset structure definitions
@@ -246,7 +247,22 @@ OpenGL-based rendering system with:
 - **Main UI thread**: ImGui rendering, user interaction, and initial scan coordination
 - **EventProcessor background thread**: Unified event processing with batch operations and progress tracking
 - **FileWatcher background thread**: Real-time filesystem monitoring with thread-safe event queue
-- **Thread synchronization**: Mutex protection for shared data, atomic counters for progress, condition variables for event queuing
+- **Thread synchronization**: Global assets mutex protection, atomic counters for progress, condition variables for event queuing
+
+### UI Architecture
+The application uses a clean separation between application lifecycle and UI rendering:
+- **main.cpp**: Focuses on initialization, main loop, and event coordination (reduced from 1200+ to 450 lines)
+- **ui.cpp**: Complete UI rendering system with modular panel functions:
+  - `render_search_panel()`: Search box with type filter toggles and debounced input
+  - `render_progress_panel()`: Real-time progress tracking with EventProcessor integration
+  - `render_asset_grid()`: Lazy-loaded thumbnail grid with efficient scrolling
+  - `render_preview_panel()`: Asset preview with 2D/3D/Audio support and unified info display
+  - `render_common_asset_info()`: Standardized asset information in consistent order (Path, Extension, Type, Size, Modified)
+
+### Thread-Safe Data Management
+- **Assets mutex located in main.cpp**: The `assets_mutex` is declared directly alongside the `assets` map for clear data-guard relationship
+- **EventProcessor takes mutex by reference**: Constructor receives `std::mutex& assets_mutex` parameter, maintaining thread safety without ownership complexity
+- **Consistent locking pattern**: All components use the same mutex reference for assets access
 
 ### Unit Testing System
 Uses Catch2 header-only framework for fast, lightweight unit testing focused on core business logic. The project includes comprehensive test suites that are integrated with CMake's CTest framework.
@@ -326,7 +342,7 @@ ctest --list-presets
 # Build and run search tests
 ./build/SearchTest
 
-# Run file watcher tests  
+# Run file watcher tests
 ./build/FileWatcherTest
 
 # Run tests with specific tags
@@ -560,10 +576,8 @@ For more detailed information, see these component-specific documentation files:
 This project is open source. See LICENSE file for details.
 
 # important-instruction-reminders
-Do what has been asked; nothing more, nothing less.
-NEVER create files unless they're absolutely necessary for achieving your goal.
-ALWAYS prefer editing an existing file to creating a new one.
-NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
-
+- AVOID creating new files unless they're absolutely necessary for achieving your goal.
+- ALWAYS prefer editing an existing file to creating a new one.
+- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 - Favor adding unit tests instead of creating scripts or manually testing things
 - Always use the Debug config during development

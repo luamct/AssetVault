@@ -22,8 +22,8 @@ class SearchIndex;
 class EventProcessor {
 public:
     EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
-        std::atomic<bool>& search_update_needed, TextureManager& texture_manager, 
-        SearchIndex& search_index, size_t batch_size = 100);
+        std::mutex& assets_mutex, std::atomic<bool>& search_update_needed, 
+        TextureManager& texture_manager, SearchIndex& search_index, size_t batch_size = 100);
     ~EventProcessor();
 
     // Start/stop the background processing thread
@@ -57,8 +57,6 @@ public:
         }
     }
 
-    // Access to assets mutex for thread-safe filtering
-    std::mutex& get_assets_mutex() { return assets_mutex_; }
     
     // Check if asset exists at path (thread-safe)
     bool has_asset_at_path(const std::string& path);
@@ -83,6 +81,7 @@ private:
     // References to global state
     AssetDatabase& database_;
     std::map<std::string, Asset>& assets_;
+    std::mutex& assets_mutex_;
     std::atomic<bool>& search_update_needed_;
     TextureManager& texture_manager_;
     SearchIndex& search_index_;
@@ -90,7 +89,6 @@ private:
     // Processing thread and synchronization
     std::thread processing_thread_;
     mutable std::mutex queue_mutex_;
-    mutable std::mutex assets_mutex_;
     std::condition_variable queue_condition_;
     std::queue<FileEvent> event_queue_;
 
