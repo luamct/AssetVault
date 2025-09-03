@@ -5,7 +5,6 @@
 #include <queue>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -17,8 +16,11 @@ struct TextureCacheEntry {
   std::string file_path;
   int width;
   int height;
+  int retry_count;        // Current retry attempts
+  bool loaded;           // Whether texture is successfully loaded
+  bool use_default;      // Whether to use default icon (failed/animation-only)
 
-  TextureCacheEntry() : texture_id(0), width(0), height(0) {}
+  TextureCacheEntry() : texture_id(0), width(0), height(0), retry_count(0), loaded(false), use_default(false) {}
 };
 
 class TextureManager {
@@ -47,8 +49,20 @@ public:
   unsigned int create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive, float emissive_intensity);
 
 
+  // Thumbnail generation result types
+  enum class ThumbnailGenerationResult {
+    SUCCESS,              // Thumbnail generated successfully
+    NO_GEOMETRY,          // Animation-only file (no renderable geometry)
+    MISSING_TEXTURES,     // Model has missing texture files
+    OPENGL_ERROR,         // OpenGL error during rendering
+    FILE_NOT_FOUND,       // Model file doesn't exist
+    ASSIMP_ERROR,         // Assimp failed to load model
+    OTHER_ERROR           // Other unspecified error
+  };
+
   // 3D model thumbnail generation
   static bool generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);
+  static ThumbnailGenerationResult generate_3d_model_thumbnail_with_result(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);
 
   // Texture cache invalidation (thread-safe)
   void queue_texture_invalidation(const std::string& file_path);
@@ -87,12 +101,6 @@ private:
   // Invalidation queue for thread-safe texture cache updates
   std::queue<std::string> invalidation_queue_;
   mutable std::mutex invalidation_mutex_;
-
-  // Track retry counts for model texture loading (max 50 retries)
-  std::unordered_map<std::string, int> model_texture_retry_counts_;
-  
-  // Cache of failed texture loads to prevent infinite retry loops  
-  std::unordered_set<std::string> failed_textures_cache_;
   
   // Audio control icons
   unsigned int play_icon_;

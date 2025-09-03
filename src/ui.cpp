@@ -780,13 +780,14 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
         LOG_DEBUG("=== Loading Model in Main ===");
         LOG_DEBUG("Selected asset: {}", selected_asset.full_path);
         Model model;
-        if (load_model(selected_asset.full_path, model, texture_manager)) {
+        ModelLoadResult result = load_model(selected_asset.full_path, model, texture_manager);
+        if (result == ModelLoadResult::SUCCESS) {
           set_current_model(current_model, model);
           camera.reset(); // Reset camera to default view for new model
           LOG_DEBUG("Model loaded successfully in main");
         }
         else {
-          LOG_DEBUG("Failed to load model in main");
+          LOG_DEBUG("Failed to load model in main: result = {}", static_cast<int>(result));
         }
         LOG_DEBUG("===========================");
       }

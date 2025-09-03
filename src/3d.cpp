@@ -482,9 +482,15 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
   model.meshes.push_back(mesh_info);
 }
 
-bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager) {
+ModelLoadResult load_model(const std::string& filepath, Model& model, TextureManager& texture_manager) {
   // Clean up previous model
   cleanup_model(model);
+
+  // Check if file exists
+  if (!std::filesystem::exists(filepath)) {
+    LOG_ERROR("Model file not found: {}", filepath);
+    return ModelLoadResult::FILE_NOT_FOUND;
+  }
 
   Assimp::Importer importer;
   const aiScene* scene = importer.ReadFile(
@@ -493,7 +499,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 
   if (!scene || !scene->mRootNode) {
     LOG_ERROR("ASSIMP: {}", importer.GetErrorString());
-    return false;
+    return ModelLoadResult::ASSIMP_ERROR;
   }
 
   // Handle incomplete scenes (common with FBX files containing animations)
@@ -507,8 +513,8 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 
   // Check if the model has any visible geometry
   if (model.vertices.empty() || model.indices.empty()) {
-    LOG_WARN("Model has no visible geometry (possibly animation-only FBX)");
-    return false;
+    LOG_INFO("Model has no visible geometry (animation-only FBX): {}", filepath);
+    return ModelLoadResult::NO_GEOMETRY;
   }
 
   // Calculate bounds
@@ -537,7 +543,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 
   if (model.vao == 0 || model.vbo == 0 || model.ebo == 0) {
     LOG_ERROR("Failed to generate OpenGL buffers!");
-    return false;
+    return ModelLoadResult::OPENGL_ERROR;
   }
 
   glBindVertexArray(model.vao);
@@ -551,7 +557,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   if (error != GL_NO_ERROR) {
     LOG_ERROR("OpenGL error after vertex buffer creation: {}", error);
     cleanup_model(model);
-    return false;
+    return ModelLoadResult::OPENGL_ERROR;
   }
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.ebo);
@@ -562,7 +568,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   if (error != GL_NO_ERROR) {
     LOG_ERROR("OpenGL error after index buffer creation: {}", error);
     cleanup_model(model);
-    return false;
+    return ModelLoadResult::OPENGL_ERROR;
   }
 
   // Position attribute
@@ -583,7 +589,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   model.path = filepath;  // Store the path
   model.loaded = true;
 
-  return true;
+  return ModelLoadResult::SUCCESS;
 }
 
 void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera) {

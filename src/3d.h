@@ -83,9 +83,19 @@ struct Camera3D {
   }
 };
 
+// Model loading result types
+enum class ModelLoadResult {
+    SUCCESS,                    // Model loaded successfully
+    FILE_NOT_FOUND,            // File doesn't exist
+    ASSIMP_ERROR,              // Assimp failed to read file
+    NO_GEOMETRY,               // Animation-only file (no renderable meshes)
+    MISSING_TEXTURES,          // Model has missing texture files
+    OPENGL_ERROR               // OpenGL buffer creation failed
+};
+
 // 3D Preview functions (now handled by TextureManager)
 void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager, const Camera3D& camera);
-bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager);
+ModelLoadResult load_model(const std::string& filepath, Model& model, TextureManager& texture_manager);
 void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera);
 void cleanup_model(Model& model);
 void set_current_model(Model& current_model, const Model& model);
