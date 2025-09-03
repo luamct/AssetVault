@@ -17,6 +17,67 @@
 #include <chrono>
 #include <iomanip>
 
+// Cross-platform file explorer opening
+void open_file_in_explorer(const std::string& file_path) {
+  // Extract directory path from full path (using forward slashes only)
+  std::string dir_path = file_path;
+  size_t last_slash = dir_path.find_last_of('/');
+  if (last_slash != std::string::npos) {
+    dir_path = dir_path.substr(0, last_slash);
+  }
+  
+  std::string command;
+  #ifdef _WIN32
+    // Windows: Use explorer with /n flag for new window
+    // Convert forward slashes to backslashes for Windows
+    std::string windows_path = dir_path;
+    std::replace(windows_path.begin(), windows_path.end(), '/', '\\');
+    command = "explorer /n,\"" + windows_path + "\"";
+  #elif __APPLE__
+    // macOS: Use open to reveal the containing directory in Finder
+    command = "open \"" + dir_path + "\"";
+  #else
+    // Linux: Use xdg-open to open containing directory
+    command = "xdg-open \"" + dir_path + "\"";
+  #endif
+  
+  // Execute the command
+  int result = system(command.c_str());
+  
+  // Note: Windows Explorer commonly returns exit code 1 even when successful
+  // Only log actual system failures (result == -1)
+  if (result == -1) {
+    LOG_ERROR("Failed to execute file explorer command: {}", command);
+  }
+}
+
+// Render asset context menu
+void render_asset_context_menu(const Asset& asset, const std::string& menu_id) {
+  // Push white background color BEFORE BeginPopup
+  ImGui::PushStyleColor(ImGuiCol_PopupBg, Theme::BACKGROUND_WHITE);
+  
+  if (ImGui::BeginPopup(menu_id.c_str())) {
+    if (ImGui::MenuItem("Show in Explorer")) {
+      LOG_INFO("Show in Explorer clicked for: {}", asset.full_path);
+      open_file_in_explorer(asset.full_path);
+    }
+    
+    if (ImGui::MenuItem("Copy Path")) {
+      LOG_INFO("Copy Path clicked for: {}", asset.full_path);
+      ImGui::SetClipboardText(asset.full_path.c_str());
+    }
+    
+    if (ImGui::MenuItem("Show Properties")) {
+      LOG_INFO("Show Properties clicked for: {}", asset.full_path);
+      // TODO: Implement properties dialog
+    }
+    
+    ImGui::EndPopup();
+  }
+  
+  ImGui::PopStyleColor(); // Restore original popup background color
+}
+
 void render_clickable_path(const std::string& full_path, SearchState& search_state) {
   // Get relative path from assets folder
   std::string relative_path = get_relative_asset_path(full_path);
@@ -644,6 +705,15 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
       search_state.selected_asset_index = static_cast<int>(i);
       LOG_DEBUG("Selected: {}", search_state.filtered_assets[i].name);
     }
+
+    // Handle right-click context menu
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+      search_state.selected_asset_index = static_cast<int>(i);
+      ImGui::OpenPopup(("AssetContextMenu##" + std::to_string(i)).c_str());
+    }
+
+    // Render context menu using dedicated method
+    render_asset_context_menu(search_state.filtered_assets[i], "AssetContextMenu##" + std::to_string(i));
 
     ImGui::PopStyleColor(3);
 
