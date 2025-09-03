@@ -178,6 +178,9 @@ public:
     std::vector<uint32_t> search_prefix(const std::string& prefix) const;
     std::vector<uint32_t> search_terms(const std::vector<std::string>& terms) const;
     
+    // Asset lookup
+    const Asset* get_asset_by_id(uint32_t asset_id) const;
+    
     // Utilities
     void clear();
     size_t get_token_count() const;
@@ -189,6 +192,7 @@ public:
 private:
     AssetDatabase* database_;
     std::vector<TokenEntry> sorted_tokens_;  // Binary searchable
+    std::unordered_map<uint32_t, Asset> asset_cache_;  // Fast ID-to-asset lookup
     
     // Tokenization
     std::vector<std::string> tokenize_asset(const Asset& asset) const;

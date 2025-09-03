@@ -409,13 +409,7 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
   LOG_TRACE("Using SearchIndex for {} assets with query: '{}', type filters count: {}, path filters count: {}",
     total_assets, search_state.buffer, query.type_filters.size(), query.path_filters.size());
 
-  // Create ID-to-asset lookup map for efficient candidate lookup
-  std::unordered_map<uint32_t, const Asset*> id_to_asset;
-  for (const auto& [key, asset] : assets) {
-    if (asset.id > 0) {
-      id_to_asset[asset.id] = &asset;
-    }
-  }
+  // Use SearchIndex cache for efficient asset lookup (eliminates O(n) rebuild)
 
   // Use search index for text queries, fall back to full scan for filter-only queries
   std::vector<uint32_t> candidate_ids;
@@ -457,13 +451,13 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
 
   // Convert asset IDs to Asset objects and apply remaining filters
   for (uint32_t asset_id : candidate_ids) {
-    // Efficient O(1) lookup using ID-to-asset map
-    auto it = id_to_asset.find(asset_id);
-    if (it == id_to_asset.end()) {
-      continue; // Asset ID not found in current assets (might be stale index)
+    // Efficient O(1) lookup using SearchIndex cache
+    const Asset* asset_ptr = search_index.get_asset_by_id(asset_id);
+    if (!asset_ptr) {
+      continue; // Asset ID not found in SearchIndex cache (might be stale index)
     }
 
-    const Asset& asset = *it->second;
+    const Asset& asset = *asset_ptr;
 
     // Apply type filters (if any)
     if (!query.type_filters.empty()) {
@@ -702,11 +696,19 @@ std::vector<uint32_t> SearchIndex::intersect_results(const std::vector<std::vect
   return current_result;
 }
 
+const Asset* SearchIndex::get_asset_by_id(uint32_t asset_id) const {
+  auto it = asset_cache_.find(asset_id);
+  return (it != asset_cache_.end()) ? &it->second : nullptr;
+}
+
 void SearchIndex::add_asset(uint32_t asset_id, const Asset& asset) {
   auto tokens = tokenize_asset(asset);
   if (tokens.empty()) {
     return; // Nothing to index
   }
+
+  // Add to asset cache
+  asset_cache_[asset_id] = asset;
 
   // Add tokens to the sorted index
   for (const auto& token : tokens) {
@@ -732,6 +734,9 @@ void SearchIndex::add_asset(uint32_t asset_id, const Asset& asset) {
 }
 
 void SearchIndex::remove_asset(uint32_t asset_id) {
+  // Remove from asset cache
+  asset_cache_.erase(asset_id);
+
   // Remove asset ID from all tokens
   for (auto it = sorted_tokens_.begin(); it != sorted_tokens_.end(); ) {
     auto& asset_ids = it->asset_ids;
@@ -793,6 +798,9 @@ bool SearchIndex::build_from_database() {
       continue;
     }
 
+    // Add to asset cache
+    asset_cache_[asset.id] = asset;
+
     auto tokens = tokenize_asset(asset);
     for (const auto& token : tokens) {
       token_map[token].push_back(asset.id);
@@ -843,6 +851,7 @@ bool SearchIndex::save_to_database() const {
 
 void SearchIndex::clear() {
   sorted_tokens_.clear();
+  asset_cache_.clear();
 }
 
 size_t SearchIndex::get_token_count() const {
