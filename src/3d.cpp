@@ -787,9 +787,6 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
   if (model.loaded) {
     render_model(model, texture_manager, camera);
   }
-  else {
-    LOG_ERROR("Model not loaded for preview: {}", model.path);
-  }
 
   // Unbind framebuffer
   glBindFramebuffer(GL_FRAMEBUFFER, 0);

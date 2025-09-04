@@ -819,8 +819,6 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
       ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_preview_texture(), viewport_size);
 
       // Handle mouse interactions for 3D camera control
-      ImVec2 image_min = ImGui::GetItemRectMin();
-      ImVec2 image_max = ImGui::GetItemRectMax();
       bool is_image_hovered = ImGui::IsItemHovered();
 
       if (is_image_hovered) {

@@ -85,8 +85,8 @@ namespace Config {
     // Set to true to force database clearing and reindexing on startup
     constexpr bool DEBUG_FORCE_DB_CLEAR = false;
 
-    // Set to true to delete all thumbnails on startup (useful for debugging thumbnail generation)
-    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = true;
+    // Set to true to delete all thumbnails on startup
+    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = false;
 
     // Font settings
     constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";
