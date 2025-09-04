@@ -50,7 +50,7 @@ public:
 
 
   // Thumbnail generation result types
-  enum class ThumbnailGenerationResult {
+  enum class ThumbnailResult {
     SUCCESS,              // Thumbnail generated successfully
     NO_GEOMETRY,          // Animation-only file (no renderable geometry)
     MISSING_TEXTURES,     // Model has missing texture files
@@ -62,7 +62,7 @@ public:
 
   // 3D model thumbnail generation
   static bool generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);
-  static ThumbnailGenerationResult generate_3d_model_thumbnail_with_result(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);
+  static ThumbnailResult generate_3d_model_thumbnail_with_result(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager);
 
   // Texture cache invalidation (thread-safe)
   void queue_texture_invalidation(const std::string& file_path);

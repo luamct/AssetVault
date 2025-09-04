@@ -31,7 +31,7 @@ fs::path get_test_files_dir() {
 void add_test_asset(AssetMap& assets, const fs::path& path) {
     Asset asset;
     // Normalize path separators like the real application does
-    asset.full_path = path.generic_u8string();
+    asset.path = path.generic_u8string();
     asset.name = path.filename().string();
     asset.type = get_asset_type(path.generic_u8string());
     assets[path.generic_u8string()] = asset;

@@ -283,12 +283,11 @@ void TextureManager::load_type_textures() {
 }
 
 TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
-  const auto& asset_path = asset.full_path;
+  const auto& asset_path = asset.path;
 
   // Check if asset is already in cache
   auto it = texture_cache_.find(asset_path);
   if (it != texture_cache_.end()) {
-    // Return cached entry (could be loaded texture, failed texture, or use_default)
     return it->second;
   }
 
@@ -301,7 +300,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
     // Generate thumbnail path using full relative path structure
     // TODO: Move this logic to Asset::thumbnail_path()
     std::filesystem::path asset_root(Config::ASSET_ROOT_DIRECTORY);
-    std::filesystem::path relative_path = std::filesystem::relative(std::filesystem::u8path(asset.full_path), asset_root);
+    std::filesystem::path relative_path = std::filesystem::relative(std::filesystem::u8path(asset.path), asset_root);
     std::filesystem::path thumbnail_path = "thumbnails" / relative_path.replace_extension(".png");
 
     // Check if thumbnail exists and load it
@@ -320,7 +319,6 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
     }
     else {
       // Thumbnail doesn't exist - try to generate it on-demand
-      // This only works if we're in the main thread with OpenGL context
       LOG_TRACE("[RETRY] Model {} has retry count: {}/{}", asset_path, entry.retry_count, Config::MAX_TEXTURE_RETRY_ATTEMPTS);
 
       if (entry.retry_count >= Config::MAX_TEXTURE_RETRY_ATTEMPTS) {
@@ -329,13 +327,13 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
         // Max retries exceeded, use default icon
         entry.use_default = true;
       }
-      else if (is_preview_initialized() && std::filesystem::exists(std::filesystem::u8path(asset.full_path))) {
+      else if (is_preview_initialized() && std::filesystem::exists(std::filesystem::u8path(asset.path))) {
         LOG_TRACE("[RETRY] Attempting thumbnail generation for {} (attempt {}/{})",
           asset_path, entry.retry_count + 1, Config::MAX_TEXTURE_RETRY_ATTEMPTS);
 
-        ThumbnailGenerationResult thumbnail_result = generate_3d_model_thumbnail_with_result(asset_path, relative_path.u8string(), *this);
+        ThumbnailResult thumbnail_result = generate_3d_model_thumbnail_with_result(asset_path, relative_path.u8string(), *this);
 
-        if (thumbnail_result == ThumbnailGenerationResult::SUCCESS) {
+        if (thumbnail_result == ThumbnailResult::SUCCESS) {
           LOG_TRACE("[RETRY] Thumbnail generation successful for: {}", asset_path);
           // Thumbnail was successfully generated, reset retry count and load it
           entry.retry_count = 0; // Reset on success
@@ -351,7 +349,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
             }
           }
         }
-        else if (thumbnail_result == ThumbnailGenerationResult::NO_GEOMETRY) {
+        else if (thumbnail_result == ThumbnailResult::NO_GEOMETRY) {
           // Animation-only file - don't retry, mark to use default
           LOG_INFO("[RETRY] Model is animation-only (no geometry), using default icon: {}", asset_path);
           entry.use_default = true;
@@ -384,7 +382,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
 
   // Handle 2D texture assets
   // Check if file exists before attempting to load (defensive check for deleted files)
-  if (!std::filesystem::exists(std::filesystem::u8path(asset.full_path))) {
+  if (!std::filesystem::exists(std::filesystem::u8path(asset.path))) {
     entry.use_default = true;
     auto icon_it = type_icons_.find(asset.type);
     entry.texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
@@ -398,11 +396,11 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
 
   // Handle SVG files - render on-demand directly to OpenGL texture
   if (asset.extension == ".svg") {
-    texture_id = load_svg_texture(asset.full_path.c_str(), Config::SVG_THUMBNAIL_SIZE, Config::SVG_THUMBNAIL_SIZE, &width, &height);
+    texture_id = load_svg_texture(asset.path.c_str(), Config::SVG_THUMBNAIL_SIZE, Config::SVG_THUMBNAIL_SIZE, &width, &height);
   }
   else {
     // Load regular texture using stb_image
-    texture_id = load_texture(asset.full_path.c_str(), &width, &height);
+    texture_id = load_texture(asset.path.c_str(), &width, &height);
   }
 
   if (texture_id == 0) {
@@ -476,28 +474,13 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
   // Load the 3D model
   LOG_TRACE("[THUMBNAIL] Loading 3D model: {}", model_path);
   Model model;
-  ModelLoadResult load_result = load_model(model_path, model, texture_manager);
+  bool load_success = load_model(model_path, model, texture_manager);
 
-  if (load_result != ModelLoadResult::SUCCESS) {
-    switch (load_result) {
-    case ModelLoadResult::NO_GEOMETRY:
+  if (!load_success) {
+    if (model.has_no_geometry) {
       LOG_INFO("[THUMBNAIL] Model has no geometry (animation-only FBX), skipping thumbnail: {}", model_path);
-      break;
-    case ModelLoadResult::FILE_NOT_FOUND:
-      LOG_ERROR("[THUMBNAIL] Model file not found: {}", model_path);
-      break;
-    case ModelLoadResult::ASSIMP_ERROR:
-      LOG_ERROR("[THUMBNAIL] Assimp failed to load model: {}", model_path);
-      break;
-    case ModelLoadResult::MISSING_TEXTURES:
-      LOG_WARN("[THUMBNAIL] Model has missing texture files, will retry later: {}", model_path);
-      break;
-    case ModelLoadResult::OPENGL_ERROR:
-      LOG_ERROR("[THUMBNAIL] OpenGL error while loading model: {}", model_path);
-      break;
-    default:
-      LOG_ERROR("[THUMBNAIL] Unknown error loading model: {}", model_path);
-      break;
+    } else {
+      LOG_ERROR("[THUMBNAIL] Failed to load model: {}", model_path);
     }
     return false;
   }
@@ -614,14 +597,8 @@ bool TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
 }
 
 // New version that returns specific result codes for better retry logic
-TextureManager::ThumbnailGenerationResult TextureManager::generate_3d_model_thumbnail_with_result(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager) {
+TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail_with_result(const std::string& model_path, const std::string& relative_path, TextureManager& texture_manager) {
   LOG_TRACE("[THUMBNAIL] Starting 3D model thumbnail generation for: {}", model_path);
-
-  // Check if preview system is initialized
-  if (!texture_manager.is_preview_initialized()) {
-    LOG_ERROR("[THUMBNAIL] Cannot generate 3D model thumbnail: preview system not initialized");
-    return ThumbnailGenerationResult::OTHER_ERROR;
-  }
 
   // Create thumbnail directory path
   std::filesystem::path thumbnail_path = "thumbnails" / std::filesystem::path(relative_path).replace_extension(".png");
@@ -636,57 +613,26 @@ TextureManager::ThumbnailGenerationResult TextureManager::generate_3d_model_thum
     }
     catch (const std::filesystem::filesystem_error& e) {
       LOG_ERROR("[THUMBNAIL] Failed to create thumbnail directory {}: {}", thumbnail_dir.string(), e.what());
-      return ThumbnailGenerationResult::OTHER_ERROR;
+      return ThumbnailResult::OTHER_ERROR;
     }
   }
 
   // Load the 3D model
   LOG_TRACE("[THUMBNAIL] Loading 3D model: {}", model_path);
   Model model;
-  ModelLoadResult load_result = load_model(model_path, model, texture_manager);
+  bool load_success = load_model(model_path, model, texture_manager);
 
-  // Convert ModelLoadResult to ThumbnailGenerationResult
-  switch (load_result) {
-  case ModelLoadResult::SUCCESS:
-    break; // Continue processing
-  case ModelLoadResult::NO_GEOMETRY:
-    LOG_INFO("[THUMBNAIL] Model has no geometry (animation-only FBX), skipping thumbnail: {}", model_path);
-    return ThumbnailGenerationResult::NO_GEOMETRY;
-  case ModelLoadResult::FILE_NOT_FOUND:
-    LOG_ERROR("[THUMBNAIL] Model file not found: {}", model_path);
-    return ThumbnailGenerationResult::FILE_NOT_FOUND;
-  case ModelLoadResult::ASSIMP_ERROR:
-    LOG_ERROR("[THUMBNAIL] Assimp failed to load model: {}", model_path);
-    return ThumbnailGenerationResult::ASSIMP_ERROR;
-  case ModelLoadResult::MISSING_TEXTURES:
-    LOG_WARN("[THUMBNAIL] Model has missing texture files, will retry later: {}", model_path);
-    return ThumbnailGenerationResult::MISSING_TEXTURES;
-  case ModelLoadResult::OPENGL_ERROR:
-    LOG_ERROR("[THUMBNAIL] OpenGL error while loading model: {}", model_path);
-    return ThumbnailGenerationResult::OPENGL_ERROR;
-  default:
-    LOG_ERROR("[THUMBNAIL] Unknown error loading model: {}", model_path);
-    return ThumbnailGenerationResult::OTHER_ERROR;
-  }
-
-  LOG_TRACE("[THUMBNAIL] Model loaded successfully. Materials count: {}", model.materials.size());
-
-  // Check if any material has missing texture files (indicates files haven't been copied yet)
-  bool has_missing_texture_files = false;
-  for (const auto& material : model.materials) {
-    if (material.has_missing_texture_files) {
-      has_missing_texture_files = true;
-      break;
+  if (!load_success) {
+    if (model.has_no_geometry) {
+      LOG_INFO("[THUMBNAIL] Model has no geometry (animation-only FBX), skipping thumbnail: {}", model_path);
+      return ThumbnailResult::NO_GEOMETRY;
+    } else {
+      LOG_ERROR("[THUMBNAIL] Failed to load model: {}", model_path);
+      return ThumbnailResult::OTHER_ERROR;
     }
   }
 
-  if (has_missing_texture_files) {
-    LOG_WARN("[THUMBNAIL] Model has missing texture files, will retry later: {}", model_path);
-    cleanup_model(model);
-    return ThumbnailGenerationResult::MISSING_TEXTURES;
-  }
-
-  LOG_TRACE("[THUMBNAIL] Model loaded successfully, proceeding with thumbnail generation");
+  LOG_TRACE("[THUMBNAIL] Model loaded successfully. Materials count: {}", model.materials.size());
 
   // Create temporary framebuffer for thumbnail rendering
   unsigned int temp_framebuffer, temp_texture, temp_depth_texture;
@@ -717,7 +663,7 @@ TextureManager::ThumbnailGenerationResult TextureManager::generate_3d_model_thum
     glDeleteTextures(1, &temp_texture);
     glDeleteTextures(1, &temp_depth_texture);
     cleanup_model(model);
-    return ThumbnailGenerationResult::OPENGL_ERROR;
+    return ThumbnailResult::OPENGL_ERROR;
   }
 
   // Render model to framebuffer
@@ -766,10 +712,10 @@ TextureManager::ThumbnailGenerationResult TextureManager::generate_3d_model_thum
 
   if (!write_result) {
     LOG_ERROR("Failed to write 3D model thumbnail: {}", thumbnail_path.string());
-    return ThumbnailGenerationResult::OTHER_ERROR;
+    return ThumbnailResult::OTHER_ERROR;
   }
 
-  return ThumbnailGenerationResult::SUCCESS;
+  return ThumbnailResult::SUCCESS;
 }
 
 unsigned int TextureManager::load_texture_for_model(const std::string& filepath) {

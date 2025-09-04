@@ -314,7 +314,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   // Check path filters (OR condition - asset must match at least one path)
   if (!query.path_filters.empty()) {
     bool path_matches = false;
-    std::string asset_relative_path = to_lowercase(get_relative_asset_path(asset.full_path));
+    std::string asset_relative_path = to_lowercase(get_relative_asset_path(asset.path));
 
     for (const auto& filter_path : query.path_filters) {
       std::string filter_path_lower = to_lowercase(filter_path);
@@ -342,7 +342,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   std::string query_lower = to_lowercase(query.text_query);
   std::string name_lower = to_lowercase(asset.name);
   std::string extension_lower = to_lowercase(asset.extension);
-  std::string path_lower = to_lowercase(get_relative_asset_path(asset.full_path));
+  std::string path_lower = to_lowercase(get_relative_asset_path(asset.path));
 
   // Split search query into terms (space-separated)
   std::vector<std::string> search_terms;
@@ -476,7 +476,7 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
     // Apply path filters (if any)
     if (!query.path_filters.empty()) {
       bool path_matches = false;
-      std::string path_lower = to_lowercase(asset.full_path);
+      std::string path_lower = to_lowercase(asset.path);
 
       for (const std::string& path_filter : query.path_filters) {
         std::string filter_lower = to_lowercase(path_filter);
@@ -528,7 +528,7 @@ std::vector<std::string> SearchIndex::tokenize_asset(const Asset& asset) const {
   }
 
   // Tokenize path segments
-  std::string path_str = asset.full_path;
+  std::string path_str = asset.path;
   size_t pos = 0;
   while ((pos = path_str.find('/', pos)) != std::string::npos) {
     pos++;
@@ -794,7 +794,7 @@ bool SearchIndex::build_from_database() {
       LOG_DEBUG("Processed {} assets...", processed_count);
     }
     if (asset.id == 0) {
-      LOG_ERROR("Asset has invalid ID (0): {}", asset.full_path);
+      LOG_ERROR("Asset has invalid ID (0): {}", asset.path);
       continue;
     }
 

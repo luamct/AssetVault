@@ -155,7 +155,7 @@ bool AssetDatabase::update_asset(const Asset& file) {
   std::string time_str = ss.str();
 
   // Path is already UTF-8 string with normalized separators
-  const std::string& full_path_utf8 = file.full_path;
+  const std::string& full_path_utf8 = file.path;
 
   bool success =
     (sqlite3_bind_text(stmt, 1, file.name.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
@@ -528,7 +528,7 @@ bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const Asset&
   std::string time_str = ss.str();
 
   // Path is already UTF-8 string with normalized separators
-  const std::string& full_path_utf8 = file.full_path;
+  const std::string& full_path_utf8 = file.path;
 
   // Use SQLITE_TRANSIENT instead of SQLITE_STATIC for better string handling
   if (sqlite3_bind_text(stmt, param++, file.name.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
@@ -553,7 +553,7 @@ Asset AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
 
   // Store UTF-8 string from database directly
   const char* path_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-  file.full_path = path_str;
+  file.path = path_str;
   file.size = sqlite3_column_int64(stmt, 4);
 
   // Parse time string back to time_point

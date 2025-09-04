@@ -260,6 +260,10 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
 
       if (texFound == AI_SUCCESS) {
         std::string filename = texture_path.C_Str();
+        
+        // Fix path separators: convert Windows backslashes to forward slashes for cross-platform compatibility
+        std::replace(filename.begin(), filename.end(), '\\', '/');
+        
         LOG_TRACE("[MATERIAL] Trying to load texture: '{}'", filename);
 
         // Try to load the texture
@@ -482,14 +486,18 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
   model.meshes.push_back(mesh_info);
 }
 
-ModelLoadResult load_model(const std::string& filepath, Model& model, TextureManager& texture_manager) {
+bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager) {
   // Clean up previous model
   cleanup_model(model);
+  
+  // Initialize model state
+  model.path = filepath;
+  model.has_no_geometry = false;
 
   // Check if file exists
   if (!std::filesystem::exists(filepath)) {
     LOG_ERROR("Model file not found: {}", filepath);
-    return ModelLoadResult::FILE_NOT_FOUND;
+    return false;
   }
 
   Assimp::Importer importer;
@@ -499,7 +507,7 @@ ModelLoadResult load_model(const std::string& filepath, Model& model, TextureMan
 
   if (!scene || !scene->mRootNode) {
     LOG_ERROR("ASSIMP: {}", importer.GetErrorString());
-    return ModelLoadResult::ASSIMP_ERROR;
+    return false;
   }
 
   // Handle incomplete scenes (common with FBX files containing animations)
@@ -514,7 +522,8 @@ ModelLoadResult load_model(const std::string& filepath, Model& model, TextureMan
   // Check if the model has any visible geometry
   if (model.vertices.empty() || model.indices.empty()) {
     LOG_INFO("Model has no visible geometry (animation-only FBX): {}", filepath);
-    return ModelLoadResult::NO_GEOMETRY;
+    model.has_no_geometry = true;
+    return false;
   }
 
   // Calculate bounds
@@ -543,7 +552,7 @@ ModelLoadResult load_model(const std::string& filepath, Model& model, TextureMan
 
   if (model.vao == 0 || model.vbo == 0 || model.ebo == 0) {
     LOG_ERROR("Failed to generate OpenGL buffers!");
-    return ModelLoadResult::OPENGL_ERROR;
+    return false;
   }
 
   glBindVertexArray(model.vao);
@@ -557,7 +566,7 @@ ModelLoadResult load_model(const std::string& filepath, Model& model, TextureMan
   if (error != GL_NO_ERROR) {
     LOG_ERROR("OpenGL error after vertex buffer creation: {}", error);
     cleanup_model(model);
-    return ModelLoadResult::OPENGL_ERROR;
+    return false;
   }
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.ebo);
@@ -568,7 +577,7 @@ ModelLoadResult load_model(const std::string& filepath, Model& model, TextureMan
   if (error != GL_NO_ERROR) {
     LOG_ERROR("OpenGL error after index buffer creation: {}", error);
     cleanup_model(model);
-    return ModelLoadResult::OPENGL_ERROR;
+    return false;
   }
 
   // Position attribute
@@ -586,10 +595,16 @@ ModelLoadResult load_model(const std::string& filepath, Model& model, TextureMan
   // Load all materials from the model
   load_model_materials(scene, filepath, model, texture_manager);
 
-  model.path = filepath;  // Store the path
-  model.loaded = true;
+  // Check if any material has missing texture files
+  for (const auto& material : model.materials) {
+    if (material.has_missing_texture_files) {
+      // Just fail, don't need to track specific error type
+      return false;
+    }
+  }
 
-  return ModelLoadResult::SUCCESS;
+  model.loaded = true;
+  return true;
 }
 
 void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera) {
@@ -769,7 +784,6 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
   );
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  // Render the model if loaded, otherwise render a simple colored triangle
   if (model.loaded) {
     render_model(model, texture_manager, camera);
   }

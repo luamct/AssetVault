@@ -58,17 +58,17 @@ void render_asset_context_menu(const Asset& asset, const std::string& menu_id) {
   
   if (ImGui::BeginPopup(menu_id.c_str())) {
     if (ImGui::MenuItem("Show in Explorer")) {
-      LOG_INFO("Show in Explorer clicked for: {}", asset.full_path);
-      open_file_in_explorer(asset.full_path);
+      LOG_INFO("Show in Explorer clicked for: {}", asset.path);
+      open_file_in_explorer(asset.path);
     }
     
     if (ImGui::MenuItem("Copy Path")) {
-      LOG_INFO("Copy Path clicked for: {}", asset.full_path);
-      ImGui::SetClipboardText(asset.full_path.c_str());
+      LOG_INFO("Copy Path clicked for: {}", asset.path);
+      ImGui::SetClipboardText(asset.path.c_str());
     }
     
     if (ImGui::MenuItem("Show Properties")) {
-      LOG_INFO("Show Properties clicked for: {}", asset.full_path);
+      LOG_INFO("Show Properties clicked for: {}", asset.path);
       // TODO: Implement properties dialog
     }
     
@@ -207,7 +207,7 @@ void render_common_asset_info(const Asset& asset, SearchState& search_state) {
   // Path
   ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
   ImGui::SameLine();
-  render_clickable_path(asset.full_path, search_state);
+  render_clickable_path(asset.path, search_state);
 
   // Extension
   ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
@@ -776,18 +776,18 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
     // Check if selected asset is a model
     if (selected_asset.type == AssetType::_3D && texture_manager.is_preview_initialized()) {
       // Load the model if it's different from the currently loaded one
-      if (selected_asset.full_path != current_model.path) {
+      if (selected_asset.path != current_model.path) {
         LOG_DEBUG("=== Loading Model in Main ===");
-        LOG_DEBUG("Selected asset: {}", selected_asset.full_path);
+        LOG_DEBUG("Selected asset: {}", selected_asset.path);
         Model model;
-        ModelLoadResult result = load_model(selected_asset.full_path, model, texture_manager);
-        if (result == ModelLoadResult::SUCCESS) {
+        bool load_success = load_model(selected_asset.path, model, texture_manager);
+        if (load_success) {
           set_current_model(current_model, model);
           camera.reset(); // Reset camera to default view for new model
           LOG_DEBUG("Model loaded successfully in main");
         }
         else {
-          LOG_DEBUG("Failed to load model in main: result = {}", static_cast<int>(result));
+          LOG_DEBUG("Failed to load model in main");
         }
         LOG_DEBUG("===========================");
       }
@@ -909,7 +909,7 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
       // Audio handling for sound assets
 
       // Load the audio file if it's different from the currently loaded one
-      const std::string asset_path = selected_asset.full_path;
+      const std::string asset_path = selected_asset.path;
       const std::string current_file = audio_manager.get_current_file();
 
       if (asset_path != current_file) {
@@ -1119,7 +1119,7 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
       // 2D-specific information
       if (selected_asset.type == AssetType::_2D) {
         int width, height;
-        if (texture_manager.get_texture_dimensions(selected_asset.full_path, width, height)) {
+        if (texture_manager.get_texture_dimensions(selected_asset.path, width, height)) {
           ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
           ImGui::SameLine();
           ImGui::Text("%dx%d", width, height);

@@ -457,7 +457,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset.id = 1;
         asset.name = "MyTexture_diffuse.png";
         asset.extension = "png";
-        asset.full_path = "/assets/textures/MyTexture_diffuse.png";
+        asset.path = "/assets/textures/MyTexture_diffuse.png";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::_2D;
@@ -493,7 +493,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset1.id = 1;
         asset1.name = "grass_texture.png";
         asset1.extension = "png";
-        asset1.full_path = "/assets/nature/grass_texture.png";
+        asset1.path = "/assets/nature/grass_texture.png";
         asset1.size = 1024;
         asset1.last_modified = std::chrono::system_clock::now();
         asset1.type = AssetType::_2D;
@@ -503,7 +503,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset2.id = 2;
         asset2.name = "rock_texture.jpg";
         asset2.extension = "jpg";
-        asset2.full_path = "/assets/nature/rock_texture.jpg";
+        asset2.path = "/assets/nature/rock_texture.jpg";
         asset2.size = 2048;
         asset2.last_modified = std::chrono::system_clock::now();
         asset2.type = AssetType::_2D;
@@ -513,7 +513,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset3.id = 3;
         asset3.name = "player_model.fbx";
         asset3.extension = "fbx";
-        asset3.full_path = "/assets/models/player_model.fbx";
+        asset3.path = "/assets/models/player_model.fbx";
         asset3.size = 5120;
         asset3.last_modified = std::chrono::system_clock::now();
         asset3.type = AssetType::_3D;
@@ -548,7 +548,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset.id = 1;
         asset.name = "awesome_background.png";
         asset.extension = "png";
-        asset.full_path = "/assets/ui/awesome_background.png";
+        asset.path = "/assets/ui/awesome_background.png";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::_2D;
@@ -578,7 +578,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset1.id = 1;
         asset1.name = "test1.png";
         asset1.extension = "png";
-        asset1.full_path = "/assets/test1.png";
+        asset1.path = "/assets/test1.png";
         asset1.size = 1024;
         asset1.last_modified = std::chrono::system_clock::now();
         asset1.type = AssetType::_2D;
@@ -588,7 +588,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset2.id = 2;
         asset2.name = "test2.jpg";
         asset2.extension = "jpg";
-        asset2.full_path = "/assets/images/test2.jpg";
+        asset2.path = "/assets/images/test2.jpg";
         asset2.size = 2048;
         asset2.last_modified = std::chrono::system_clock::now();
         asset2.type = AssetType::_2D;
@@ -620,7 +620,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     uint32_t id = 1;
     for (auto& asset : assets_vector) {
         asset.id = id++;
-        test_assets[asset.full_path] = asset;
+        test_assets[asset.path] = asset;
     }
 
     std::mutex test_mutex;

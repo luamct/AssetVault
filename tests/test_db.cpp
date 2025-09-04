@@ -23,7 +23,7 @@ TEST_CASE("Database functionality", "[database]") {
         Asset asset;
         asset.name = "test.txt";
         asset.extension = "txt";
-        asset.full_path = "/path/to/test.txt";
+        asset.path = "/path/to/test.txt";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::Document;
@@ -50,7 +50,7 @@ TEST_CASE("Database functionality", "[database]") {
             Asset asset;
             asset.name = "file" + std::to_string(i) + ".txt";
             asset.extension = "txt";
-            asset.full_path = "/path/to/file" + std::to_string(i) + ".txt";
+            asset.path = "/path/to/file" + std::to_string(i) + ".txt";
             asset.size = 1024 * i;
             asset.last_modified = std::chrono::system_clock::now();
                 asset.type = AssetType::Document;
@@ -88,7 +88,7 @@ TEST_CASE("Database functionality", "[database]") {
         Asset asset;
         asset.name = "original.txt";
         asset.extension = "txt";
-        asset.full_path = "/path/to/original.txt";
+        asset.path = "/path/to/original.txt";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::Document;
@@ -117,7 +117,7 @@ TEST_CASE("Database functionality", "[database]") {
         Asset asset1;
         asset1.name = "first.txt";
         asset1.extension = "txt";
-        asset1.full_path = "/path/to/first.txt";
+        asset1.path = "/path/to/first.txt";
         asset1.size = 1024;
         asset1.last_modified = std::chrono::system_clock::now();
         asset1.type = AssetType::Document;
@@ -129,7 +129,7 @@ TEST_CASE("Database functionality", "[database]") {
         Asset asset2;
         asset2.name = "second.txt";
         asset2.extension = "txt";
-        asset2.full_path = "/path/to/second.txt";
+        asset2.path = "/path/to/second.txt";
         asset2.size = 2048;
         asset2.last_modified = std::chrono::system_clock::now();
         asset2.type = AssetType::Document;
@@ -147,7 +147,7 @@ TEST_CASE("Database functionality", "[database]") {
         Asset asset3;
         asset3.name = "third.txt";
         asset3.extension = "txt";
-        asset3.full_path = "/path/to/third.txt";
+        asset3.path = "/path/to/third.txt";
         asset3.size = 3072;
         asset3.last_modified = std::chrono::system_clock::now();
         asset3.type = AssetType::Document;

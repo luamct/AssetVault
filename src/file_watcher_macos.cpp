@@ -221,7 +221,7 @@ private:
 
       // Debug: Log only positive flags for this event
       std::string flag_names = format_fsevents_flags(flags);
-      LOG_DEBUG("FSEvents: '{}' [0x{:X}] {}", relative_path, flags, flag_names);
+      LOG_TRACE("FSEvents: '{}' [0x{:X}] {}", relative_path, flags, flag_names);
 
       // Convert path to normalized UTF-8 string for consistent handling
       std::string path = file_path.generic_u8string();
@@ -283,7 +283,7 @@ private:
             }
             else {
               // Directory exists with tracked assets (in-place change) OR doesn't exist with no tracked assets (temp dir)
-              LOG_DEBUG("FSEvents: Ignoring directory rename event for '{}' (exists:{}, has_tracked:{})",
+              LOG_TRACE("FSEvents: Ignoring directory rename event for '{}' (exists:{}, has_tracked:{})",
                 relative_path, file_exists, has_tracked_assets);
             }
           }
@@ -305,7 +305,7 @@ private:
             }
             else {
               // File exists and is tracked (metadata change) OR doesn't exist and isn't tracked (temp file)
-              LOG_DEBUG("FSEvents: Ignoring file rename event for '{}' (exists:{}, tracked:{})",
+              LOG_TRACE("FSEvents: Ignoring file rename event for '{}' (exists:{}, tracked:{})",
                 relative_path, file_exists, is_tracked);
             }
           }
@@ -340,7 +340,7 @@ private:
       else {
         // Check if file exists - if not, it's been deleted even without explicit flags
         if (!fs::exists(file_path)) {
-          LOG_DEBUG("FSEvents: File '{}' no longer exists (no explicit flags), treating as Deleted", relative_path);
+          LOG_TRACE("FSEvents: File '{}' no longer exists (no explicit flags), treating as Deleted", relative_path);
           watcher->add_pending_event(FileEventType::Deleted, path);
         }
       }

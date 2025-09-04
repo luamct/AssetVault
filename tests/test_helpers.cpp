@@ -12,7 +12,7 @@ Asset create_test_asset(
     asset.name = name;
     asset.extension = extension;
     asset.type = type;
-    asset.full_path = path.empty() ? (name + extension) : path;
+    asset.path = path.empty() ? (name + extension) : path;
     asset.size = 1024; // Default size
     asset.last_modified = std::chrono::system_clock::now();
     return asset;

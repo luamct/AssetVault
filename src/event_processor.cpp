@@ -198,7 +198,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
         // Batch update assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_insert) {
-            assets_[file.full_path] = file;
+            assets_[file.path] = file;
             // Update search index for new asset
             search_index_.add_asset(file.id, file);
         }
@@ -250,7 +250,7 @@ void EventProcessor::process_modified_events(const std::vector<FileEvent>& event
         // Batch update assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_update) {
-            assets_[file.full_path] = file;
+            assets_[file.path] = file;
             // Update search index for modified asset
             search_index_.update_asset(file.id, file);
         }
@@ -306,12 +306,12 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
 
 void EventProcessor::add_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
-    assets_[asset.full_path] = asset;
+    assets_[asset.path] = asset;
 }
 
 void EventProcessor::update_asset(const Asset& asset) {
     std::lock_guard<std::mutex> lock(assets_mutex_);
-    assets_[asset.full_path] = asset;
+    assets_[asset.path] = asset;
 }
 
 void EventProcessor::remove_asset(const std::string& path) {
@@ -326,7 +326,7 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
         fs::path root(root_path_);
 
         // Basic file information (path is already normalized)
-        asset.full_path = full_path;
+        asset.path = full_path;
         fs::path path_obj = fs::u8path(full_path);
         asset.name = path_obj.filename().u8string();
         // File-specific information
@@ -350,7 +350,7 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
             }
         }
         catch (const fs::filesystem_error& e) {
-            LOG_WARN("Could not get file info for {}: {}", asset.full_path, e.what());
+            LOG_WARN("Could not get file info for {}: {}", asset.path, e.what());
             asset.size = 0;
             asset.last_modified = timestamp;
         }
@@ -358,7 +358,7 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
     catch (const fs::filesystem_error& e) {
         LOG_ERROR("Error creating file info for {}: {}", full_path, e.what());
         // Return minimal file info on error
-        asset.full_path = full_path;
+        asset.path = full_path;
         fs::path path_obj = fs::u8path(full_path);
         asset.name = path_obj.filename().u8string();
         asset.last_modified = timestamp;

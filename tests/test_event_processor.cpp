@@ -82,7 +82,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
                 Asset asset;
                 asset.name = fs::u8path(event.path).filename().string();
                 asset.extension = fs::u8path(event.path).extension().string().substr(1); // Remove leading dot
-                asset.full_path = event.path;
+                asset.path = event.path;
                 asset.size = fs::file_size(fs::u8path(event.path));
                 asset.last_modified = std::chrono::system_clock::now();
                         asset.type = AssetType::_3D; // For testing
@@ -132,7 +132,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         Asset original_asset;
         original_asset.name = "original_name.obj";
         original_asset.extension = "obj";
-        original_asset.full_path = test_file.u8string();
+        original_asset.path = test_file.u8string();
         original_asset.size = fs::file_size(test_file);
         original_asset.last_modified = std::chrono::system_clock::now();
         original_asset.type = AssetType::_3D;
@@ -159,7 +159,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         // The tokenizer extracts tokens from the full path, not just the name
         fs::path new_path = temp_dir / "modified_name.obj";
         std::ofstream(new_path) << "modified obj content";  // Create the new file
-        modified_asset.full_path = new_path.u8string();
+        modified_asset.path = new_path.u8string();
         modified_asset.size = fs::file_size(new_path);
         modified_asset.last_modified = std::chrono::system_clock::now();
         
@@ -188,7 +188,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         Asset asset_to_delete;
         asset_to_delete.name = "to_delete.dae";
         asset_to_delete.extension = "dae";
-        asset_to_delete.full_path = test_file.u8string();
+        asset_to_delete.path = test_file.u8string();
         asset_to_delete.size = fs::file_size(test_file);
         asset_to_delete.last_modified = std::chrono::system_clock::now();
         asset_to_delete.type = AssetType::_3D;
@@ -238,7 +238,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
             Asset asset;
             asset.name = filename;
             asset.extension = fs::path(filename).extension().string().substr(1);
-            asset.full_path = test_file.u8string();
+            asset.path = test_file.u8string();
             asset.size = fs::file_size(test_file);
             asset.last_modified = std::chrono::system_clock::now();
                 asset.type = type;
@@ -327,7 +327,7 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         Asset asset;
         asset.name = "a.b";
         asset.extension = "b";
-        asset.full_path = test_file.u8string();
+        asset.path = test_file.u8string();
         asset.size = fs::file_size(test_file);
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::Document;
@@ -355,7 +355,7 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         Asset asset;
         asset.name = "duplicate_test.txt";
         asset.extension = "txt";
-        asset.full_path = test_file.u8string();
+        asset.path = test_file.u8string();
         asset.size = fs::file_size(test_file);
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::Document;

@@ -57,7 +57,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
   LOG_INFO("Database contains {} assets", db_assets.size());
   std::unordered_map<std::string, Asset> db_map;
   for (const auto& asset : db_assets) {
-    db_map[asset.full_path] = asset;
+    db_map[asset.path] = asset;
   }
 
   // Phase 1: Get filesystem paths (fast scan)
@@ -114,9 +114,9 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
 
   // Find files in database that no longer exist on filesystem
   for (const auto& db_asset : db_assets) {
-    if (current_files.find(db_asset.full_path) == current_files.end()) {
+    if (current_files.find(db_asset.path) == current_files.end()) {
       // File no longer exists - create a Deleted event
-      FileEvent event(FileEventType::Deleted, db_asset.full_path);
+      FileEvent event(FileEventType::Deleted, db_asset.path);
       event.timestamp = current_time;
       events_to_queue.push_back(event);
     }
@@ -133,7 +133,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
     std::lock_guard<std::mutex> lock(assets_mutex);
     // Load existing database assets into assets map
     for (const auto& asset : db_assets) {
-      assets[asset.full_path] = asset;
+      assets[asset.path] = asset;
     }
     LOG_INFO("Loaded {} existing assets from database", assets.size());
   }

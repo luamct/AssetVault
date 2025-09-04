@@ -29,7 +29,7 @@ fs::path get_test_files_dir() {
 // Simple helper function for test asset management
 void add_test_asset(AssetMap& assets, const fs::path& path) {
     Asset asset;
-    asset.full_path = path.u8string();
+    asset.path = path.u8string();
     asset.name = path.filename().string();
     asset.type = get_asset_type(path.u8string());
     assets[path.u8string()] = asset;
