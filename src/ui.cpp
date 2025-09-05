@@ -628,7 +628,6 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
     );
   }
 
-
   // Reserve space for all loaded items to enable proper scrolling
   int total_loaded_rows = (search_state.loaded_end_index + columns - 1) / columns;
   float total_content_height = total_loaded_rows * row_height;

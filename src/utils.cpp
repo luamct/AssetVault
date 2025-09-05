@@ -35,26 +35,23 @@ std::string normalize_path_separators(const std::string& path) {
 
 // Function to get relative path from assets folder for display and search
 std::string get_relative_asset_path(const std::string& full_path) {
-  namespace fs = std::filesystem;
+  std::string root_path = normalize_path_separators(Config::ASSET_ROOT_DIRECTORY);
+  std::string normalized_full_path = normalize_path_separators(full_path);
   
-  try {
-    fs::path full_fs_path = fs::u8path(full_path);
-    fs::path assets_root = fs::u8path(Config::ASSET_ROOT_DIRECTORY);
-    
-    // Make both paths absolute for proper comparison
-    full_fs_path = fs::absolute(full_fs_path);
-    assets_root = fs::absolute(assets_root);
-    
-    // Get relative path from assets root
-    fs::path relative_path = fs::relative(full_fs_path, assets_root);
-    
-    // Normalize to forward slashes
-    return relative_path.generic_u8string();
+  // Ensure root path ends with slash for proper comparison
+  if (!root_path.empty() && root_path.back() != '/') {
+    root_path += '/';
   }
-  catch (const fs::filesystem_error&) {
-    // Fallback: just normalize separators in the original path
-    return normalize_path_separators(full_path);
+  
+  // Check if full path starts with root path
+  if (normalized_full_path.length() >= root_path.length() &&
+      normalized_full_path.substr(0, root_path.length()) == root_path) {
+    // Return substring after the root path
+    return normalized_full_path.substr(root_path.length());
   }
+  
+  // Fallback: return normalized full path if not under root
+  return normalized_full_path;
 }
 
 // Function to format path for display (remove everything before first / and convert backslashes)

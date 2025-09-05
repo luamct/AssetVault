@@ -211,13 +211,7 @@ private:
       FSEventStreamEventFlags flags = eventFlags[i];
 
       // Get relative path for logging
-      std::string relative_path = file_path.string();
-      if (relative_path.find(watcher->watched_path) == 0) {
-        relative_path = relative_path.substr(watcher->watched_path.length());
-        if (!relative_path.empty() && relative_path[0] == '/') {
-          relative_path = relative_path.substr(1);
-        }
-      }
+      std::string relative_path = get_relative_asset_path(file_path.string());
 
       // Debug: Log only positive flags for this event
       std::string flag_names = format_fsevents_flags(flags);
@@ -417,13 +411,7 @@ private:
     // For Deleted events, process immediately (don't debounce)
     if (type == FileEventType::Deleted) {
       // Get relative path for logging
-      std::string relative_path = path;
-      if (relative_path.find(watched_path) == 0) {
-        relative_path = relative_path.substr(watched_path.length());
-        if (!relative_path.empty() && relative_path[0] == '/') {
-          relative_path = relative_path.substr(1);
-        }
-      }
+      std::string relative_path = get_relative_asset_path(path);
 
       if (callback) {
         FileEvent event(type, path);

@@ -164,6 +164,9 @@ int main() {
   Logger::initialize(LogLevel::Debug);
   LOG_INFO("AssetInventory application starting...");
 
+  // Initialize application directories (create cache, thumbnail, and data directories)
+  Config::initialize_directories();
+
   // Local variables
   std::map<std::string, Asset> assets;
   std::mutex assets_mutex;  // Mutex to guard access to the assets map
@@ -191,10 +194,17 @@ int main() {
   // Debug: Force clear thumbnails if flag is set
   if (Config::DEBUG_FORCE_THUMBNAIL_CLEAR) {
     LOG_WARN("DEBUG_FORCE_THUMBNAIL_CLEAR is enabled - deleting all thumbnails for debugging...");
+    
+    // Use proper cross-platform thumbnail directory
+    std::filesystem::path thumbnail_dir = Config::get_thumbnail_directory();
+    LOG_INFO("Using thumbnail directory: {}", thumbnail_dir.string());
+    
     try {
-      if (std::filesystem::exists("thumbnails")) {
-        std::filesystem::remove_all("thumbnails");
-        LOG_INFO("All thumbnails deleted successfully");
+      if (std::filesystem::exists(thumbnail_dir)) {
+        std::filesystem::remove_all(thumbnail_dir);
+        LOG_INFO("All thumbnails deleted successfully from: {}", thumbnail_dir.string());
+      } else {
+        LOG_INFO("Thumbnails directory does not exist yet: {}", thumbnail_dir.string());
       }
     }
     catch (const std::filesystem::filesystem_error& e) {
