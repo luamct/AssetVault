@@ -17,10 +17,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include "stb_image_write.h"
-#pragma clang diagnostic pop
 
 // Include NanoSVG for SVG support
 #define NANOSVG_IMPLEMENTATION
@@ -242,6 +239,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   }
 
   // Create new cache entry for this asset
+  LOG_TRACE("[TEXTURE] Cache miss, adding entry to: {}", asset_path);
   TextureCacheEntry& entry = texture_cache_[asset_path];
   entry.file_path = asset_path;
 
@@ -254,13 +252,13 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
 
     // Check if thumbnail exists and load it
     if (std::filesystem::exists(thumbnail_path)) {
-      LOG_TRACE("Thumbnail already exists at {}", thumbnail_path.string());
-      
+      LOG_TRACE("[TEXTURE] Thumbnail already exists at {}", thumbnail_path.generic_u8string());
+
       unsigned int texture_id = load_texture(thumbnail_path.u8string().c_str());
       if (texture_id != 0) {
         // Successfully loaded thumbnail
         entry.texture_id = texture_id;
-        entry.file_path = thumbnail_path.u8string();
+        entry.file_path = thumbnail_path.generic_u8string();
         entry.width = Config::MODEL_THUMBNAIL_SIZE;
         entry.height = Config::MODEL_THUMBNAIL_SIZE;
         entry.loaded = true;
@@ -269,29 +267,29 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
     }
     else {
       // Thumbnail doesn't exist - try to generate it on-demand
-      LOG_TRACE("[RETRY] Model {} has retry count: {}/{}", asset_path, entry.retry_count, Config::MAX_TEXTURE_RETRY_ATTEMPTS);
+      LOG_TRACE("[TEXTURE] Model {} has retry count: {}/{}", asset_path, entry.retry_count, Config::MAX_TEXTURE_RETRY_ATTEMPTS);
 
       if (entry.retry_count >= Config::MAX_TEXTURE_RETRY_ATTEMPTS) {
-        LOG_WARN("[RETRY] Max retries ({}) exceeded for model: {}, using default icon",
+        LOG_WARN("[TEXTURE] Max retries ({}) exceeded for model: {}, using default icon",
           Config::MAX_TEXTURE_RETRY_ATTEMPTS, asset_path);
         // Max retries exceeded, use default icon
         entry.use_default = true;
       }
       else if (is_preview_initialized() && std::filesystem::exists(std::filesystem::u8path(asset.path))) {
-        LOG_TRACE("[RETRY] Attempting thumbnail generation for {} (attempt {}/{})",
+        LOG_TRACE("[TEXTURE] Attempting thumbnail generation for {} (attempt {}/{})",
           asset_path, entry.retry_count + 1, Config::MAX_TEXTURE_RETRY_ATTEMPTS);
 
         ThumbnailResult thumbnail_result = generate_3d_model_thumbnail(asset_path, relative_path);
 
         if (thumbnail_result == ThumbnailResult::SUCCESS) {
-          LOG_TRACE("[RETRY] Thumbnail generation successful for: {}", asset_path);
+          LOG_TRACE("[TEXTURE] Thumbnail generation successful for: {}", asset_path);
           // Thumbnail was successfully generated, reset retry count and load it
-          entry.retry_count = 0; // Reset on success
+          entry.retry_count = 0;
           if (std::filesystem::exists(thumbnail_path)) {
-            unsigned int texture_id = load_texture(thumbnail_path.u8string().c_str());
+            unsigned int texture_id = load_texture(thumbnail_path.generic_u8string().c_str());
             if (texture_id != 0) {
               entry.texture_id = texture_id;
-              entry.file_path = thumbnail_path.u8string();
+              entry.file_path = thumbnail_path.generic_u8string();
               entry.width = Config::MODEL_THUMBNAIL_SIZE;
               entry.height = Config::MODEL_THUMBNAIL_SIZE;
               entry.loaded = true;
@@ -301,13 +299,13 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
         }
         else if (thumbnail_result == ThumbnailResult::NO_GEOMETRY) {
           // Animation-only file - don't retry, mark to use default
-          LOG_INFO("[RETRY] Model is animation-only (no geometry), using default icon: {}", asset_path);
+          LOG_INFO("[TEXTURE] Model is animation-only (no geometry), using default icon: {}", asset_path);
           entry.use_default = true;
         }
         else {
           // Other failures (missing textures, opengl errors, etc.) - increment retry count
           entry.retry_count++;
-          LOG_TRACE("[RETRY] Thumbnail generation failed for {}, retry count now: {}/{}",
+          LOG_TRACE("[TEXTURE] Thumbnail generation failed for {}, retry count now: {}/{}",
             asset_path, entry.retry_count, Config::MAX_TEXTURE_RETRY_ATTEMPTS);
         }
       }
@@ -354,7 +352,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   }
 
   if (texture_id == 0) {
-    LOG_ERROR("Failed to load texture, returning default icon for: {}", asset_path);
+    LOG_ERROR("[TEXTURE] Failed to load texture, returning default icon for: {}", asset_path);
     // Mark as failed to prevent future retry loops
     entry.use_default = true;
     auto icon_it = type_icons_.find(asset.type);
@@ -376,6 +374,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
 void TextureManager::cleanup_texture_cache(const std::string& path) {
   auto cache_it = texture_cache_.find(path);
   if (cache_it != texture_cache_.end()) {
+    LOG_TRACE("Manual cache cleanup for: {} (texture_id: {})", path, cache_it->second.texture_id);
     if (cache_it->second.texture_id != 0) {
       glDeleteTextures(1, &cache_it->second.texture_id);
     }
@@ -396,16 +395,16 @@ bool TextureManager::get_texture_dimensions(const std::string& file_path, int& w
 TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path) {
   // Start total timing
   auto start_total = std::chrono::high_resolution_clock::now();
-  
+
   // Extract filename from path for logging
   std::filesystem::path path_obj(model_path);
   std::string filename = path_obj.filename().string();
-  
+
   LOG_TRACE("[THUMBNAIL] Starting 3D model thumbnail generation for: {}", model_path);
 
   // Create thumbnail directory path using cross-platform cache directory
   std::filesystem::path thumbnail_path = Config::get_thumbnail_directory() / std::filesystem::path(relative_path).replace_extension(".png");
-  LOG_TRACE("[THUMBNAIL] Thumbnail will be saved to: {}", thumbnail_path.string());
+  LOG_TRACE("[THUMBNAIL] Thumbnail will be saved to: {}", thumbnail_path.generic_u8string());
 
   // Load the 3D model (includes texture IO) - timing includes setup overhead
   LOG_TRACE("[THUMBNAIL] Loading 3D model: {}", model_path);
@@ -419,7 +418,8 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
     if (model.has_no_geometry) {
       LOG_INFO("[THUMBNAIL] Model has no geometry (animation-only FBX), skipping thumbnail: {}", model_path);
       return ThumbnailResult::NO_GEOMETRY;
-    } else {
+    }
+    else {
       LOG_ERROR("[THUMBNAIL] Failed to load model: {}", model_path);
       return ThumbnailResult::OTHER_ERROR;
     }
@@ -486,11 +486,11 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
   // Read pixels from framebuffer (no flipping needed - already correct orientation)
   std::vector<unsigned char> pixels(thumbnail_size * thumbnail_size * 4);
   glReadPixels(0, 0, thumbnail_size, thumbnail_size, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-  
+
   auto end_gpu = std::chrono::high_resolution_clock::now();
   auto gpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_gpu - start_gpu);
 
-  // Start write timing (PNG file writing + cleanup) 
+  // Start write timing (PNG file writing + cleanup)
   auto start_write = end_gpu;
 
   // Create directory structure if it doesn't exist
@@ -498,8 +498,9 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
   if (!std::filesystem::exists(parent_dir)) {
     try {
       std::filesystem::create_directories(parent_dir);
-    } catch (const std::filesystem::filesystem_error& e) {
-      LOG_ERROR("Failed to create thumbnail directory: {}: {}", parent_dir.string(), e.what());
+    }
+    catch (const std::filesystem::filesystem_error& e) {
+      LOG_ERROR("Failed to create thumbnail directory: {}: {}", parent_dir.generic_u8string(), e.what());
       return ThumbnailResult::OTHER_ERROR;
     }
   }
@@ -513,7 +514,7 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
   );
 
   if (!write_result) {
-    LOG_ERROR("Failed to write 3D model thumbnail: {}", thumbnail_path.string());
+    LOG_ERROR("Failed to write 3D model thumbnail: {}", thumbnail_path.generic_u8string());
     return ThumbnailResult::OTHER_ERROR;
   }
 
@@ -534,7 +535,7 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
   // Log performance metrics in single line
   auto end_total = end_write;
   auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
-  LOG_INFO("[THUMBNAIL] {} - Total: {}μs (IO: {}μs, GPU: {}μs, Write: {}μs)", 
+  LOG_INFO("[THUMBNAIL] {} - Total: {}μs (IO: {}μs, GPU: {}μs, Write: {}μs)",
     filename, total_duration.count(), io_duration.count(), gpu_duration.count(), write_duration.count());
 
   return ThumbnailResult::SUCCESS;
@@ -805,6 +806,7 @@ void TextureManager::cleanup_preview_system() {
 void TextureManager::queue_texture_invalidation(const std::string& file_path) {
   std::lock_guard<std::mutex> lock(invalidation_mutex_);
   invalidation_queue_.push(file_path);
+  LOG_TRACE("[TEXTURE] Queued invalidation for: {}", file_path);
 }
 
 void TextureManager::process_invalidation_queue() {
@@ -816,10 +818,14 @@ void TextureManager::process_invalidation_queue() {
     // Remove from texture cache if present
     auto cache_it = texture_cache_.find(file_path);
     if (cache_it != texture_cache_.end()) {
+      LOG_TRACE("[TEXTURE] Processing invalidation for: {} (texture_id: {})", file_path, cache_it->second.texture_id);
       if (cache_it->second.texture_id != 0) {
         glDeleteTextures(1, &cache_it->second.texture_id);
       }
       texture_cache_.erase(cache_it);
+    }
+    else {
+      LOG_TRACE("[TEXTURE] Invalidation: entry not found for: {}", file_path);
     }
 
     invalidation_queue_.pop();

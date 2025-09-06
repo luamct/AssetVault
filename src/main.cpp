@@ -161,7 +161,7 @@ int main() {
 #endif
 
   // Initialize logging system
-  Logger::initialize(LogLevel::Debug);
+  Logger::initialize(LogLevel::Trace);
   LOG_INFO("AssetInventory application starting...");
 
   // Initialize application directories (create cache, thumbnail, and data directories)
@@ -194,16 +194,17 @@ int main() {
   // Debug: Force clear thumbnails if flag is set
   if (Config::DEBUG_FORCE_THUMBNAIL_CLEAR) {
     LOG_WARN("DEBUG_FORCE_THUMBNAIL_CLEAR is enabled - deleting all thumbnails for debugging...");
-    
+
     // Use proper cross-platform thumbnail directory
     std::filesystem::path thumbnail_dir = Config::get_thumbnail_directory();
     LOG_INFO("Using thumbnail directory: {}", thumbnail_dir.string());
-    
+
     try {
       if (std::filesystem::exists(thumbnail_dir)) {
         std::filesystem::remove_all(thumbnail_dir);
         LOG_INFO("All thumbnails deleted successfully from: {}", thumbnail_dir.string());
-      } else {
+      }
+      else {
         LOG_INFO("Thumbnails directory does not exist yet: {}", thumbnail_dir.string());
       }
     }
@@ -328,8 +329,16 @@ int main() {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
 
+    // Check if search needs to be updated due to asset changes FIRST
+    // This must happen before texture invalidation to prevent race condition
+    // where deleted assets are still in filtered_assets when textures are invalidated
+    if (search_state.update_needed.exchange(false)) {
+      // Re-apply current search filter to include updated assets
+      filter_assets(search_state, assets, assets_mutex, search_index);
+    }
 
-    // Process texture invalidation queue (thread-safe, once per frame)
+    // Process texture invalidation queue AFTER updating search results
+    // This ensures deleted assets are removed from filtered_assets before invalidation
     texture_manager.process_invalidation_queue();
 
     // Process pending debounced search
@@ -369,12 +378,6 @@ int main() {
           }
         }
       }
-    }
-
-    // Check if search needs to be updated due to asset changes
-    if (search_state.update_needed.exchange(false)) {
-      // Re-apply current search filter to include updated assets
-      filter_assets(search_state, assets, assets_mutex, search_index);
     }
 
     // Create main window that fits perfectly to viewport

@@ -1,6 +1,7 @@
 #include "utils.h"
 #include "config.h"
 #include "asset.h"
+#include "logger.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -21,7 +22,7 @@ std::string truncate_filename(const std::string& filename, size_t max_length) {
 // Function to convert string to lowercase for case-insensitive search
 std::string to_lowercase(const std::string& str) {
   std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(), 
+  std::transform(result.begin(), result.end(), result.begin(),
     [](unsigned char c) { return std::tolower(c); });
   return result;
 }
@@ -37,20 +38,21 @@ std::string normalize_path_separators(const std::string& path) {
 std::string get_relative_asset_path(const std::string& full_path) {
   std::string root_path = normalize_path_separators(Config::ASSET_ROOT_DIRECTORY);
   std::string normalized_full_path = normalize_path_separators(full_path);
-  
+
   // Ensure root path ends with slash for proper comparison
   if (!root_path.empty() && root_path.back() != '/') {
     root_path += '/';
   }
-  
+
   // Check if full path starts with root path
   if (normalized_full_path.length() >= root_path.length() &&
-      normalized_full_path.substr(0, root_path.length()) == root_path) {
+    normalized_full_path.substr(0, root_path.length()) == root_path) {
     // Return substring after the root path
     return normalized_full_path.substr(root_path.length());
   }
-  
+
   // Fallback: return normalized full path if not under root
+  LOG_WARN("Asset path should contain root path: {}", full_path);
   return normalized_full_path;
 }
 
@@ -76,13 +78,15 @@ std::string format_file_size(uint64_t size_bytes) {
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "%.1f MB", size_mb);
     return std::string(buffer);
-  } else if (size_bytes >= 1024) {
+  }
+  else if (size_bytes >= 1024) {
     // Convert to KB
     double size_kb = static_cast<double>(size_bytes) / 1024.0;
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "%.1f KB", size_kb);
     return std::string(buffer);
-  } else {
+  }
+  else {
     // Keep as bytes
     return std::to_string(size_bytes) + " bytes";
   }
@@ -109,36 +113,36 @@ void safe_strcpy(char* dest, size_t dest_size, const char* src) {
 // where k is the number of assets found under the directory
 std::vector<std::filesystem::path> find_assets_under_directory(const std::map<std::string, Asset>& assets, const std::filesystem::path& dir_path) {
   std::vector<std::filesystem::path> result;
-  
+
   if (assets.empty()) {
     return result;
   }
-  
+
   // Convert directory path to string and normalize to forward slashes for consistent matching
   std::string dir_path_str = dir_path.generic_u8string();
   if (!dir_path_str.empty() && dir_path_str.back() != '/') {
     dir_path_str += '/';
   }
-  
+
   // Use binary search to find the first asset with path >= dir_path_str
   auto it = assets.lower_bound(dir_path_str);
-  
+
   // Iterate through all assets that start with dir_path_str (child assets)
   while (it != assets.end()) {
     const std::string& asset_path = it->first;
-    
+
     // Normalize asset path for comparison to handle different path separators
     std::string normalized_asset_path = normalize_path_separators(asset_path);
-    
+
     // Check if this asset is still under the directory
     if (normalized_asset_path.substr(0, dir_path_str.length()) != dir_path_str) {
       break;  // No more assets under this directory
     }
-    
+
     // Add this asset to the result
     result.push_back(fs::u8path(asset_path));
     ++it;
   }
-  
+
   return result;
 }

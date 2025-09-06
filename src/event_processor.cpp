@@ -16,7 +16,7 @@
 namespace fs = std::filesystem;
 
 EventProcessor::EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
-    std::mutex& assets_mutex, std::atomic<bool>& search_update_needed, 
+    std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
     TextureManager& texture_manager, SearchIndex& search_index, size_t batch_size)
     : database_(database), assets_(assets), assets_mutex_(assets_mutex), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), search_index_(search_index), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
@@ -270,6 +270,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
         total_events_processed_++;  // Increment per event processed
 
         // Queue texture invalidation for deleted assets
+        LOG_INFO("[CACHE-DEBUG] Queueing invalidation for deleted asset: {}", event.path);
         texture_manager_.queue_texture_invalidation(event.path);
     }
 

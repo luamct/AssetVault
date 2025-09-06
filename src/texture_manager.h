@@ -13,7 +13,7 @@
 // Texture cache entry structure
 struct TextureCacheEntry {
   unsigned int texture_id;
-  std::string file_path;
+  std::string file_path;  // TODO: Is this actually used. Maybe remove?
   int width;
   int height;
   int retry_count;        // Current retry attempts
@@ -78,7 +78,7 @@ public:
   unsigned int get_preview_depth_texture() const { return preview_depth_texture_; }
   unsigned int get_preview_framebuffer() const { return preview_framebuffer_; }
   unsigned int get_preview_shader() const { return preview_shader_; }
-  
+
   // Audio control icons
   unsigned int get_play_icon() const { return play_icon_; }
   unsigned int get_pause_icon() const { return pause_icon_; }
@@ -100,7 +100,7 @@ private:
   // Invalidation queue for thread-safe texture cache updates
   std::queue<std::string> invalidation_queue_;
   mutable std::mutex invalidation_mutex_;
-  
+
   // Audio control icons
   unsigned int play_icon_;
   unsigned int pause_icon_;
