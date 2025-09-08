@@ -437,7 +437,6 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
                 event_type_str = "Deleted";
                 file_deletion_count++;
                 break;
-            case FileEventType::Modified: event_type_str = "Modified"; break;
             default: event_type_str = "Other"; break;
             }
             std::cout << "  " << event_type_str << ": " << event.path << std::endl;
@@ -714,7 +713,7 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
 
         bool found_modification_event = false;
         for (const auto& event : events) {
-            if (event.type == FileEventType::Modified || event.type == FileEventType::Created) {
+            if (event.type == FileEventType::Created || event.type == FileEventType::Deleted) {
                 found_modification_event = true;
                 break;
             }

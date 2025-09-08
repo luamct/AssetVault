@@ -136,16 +136,12 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
 
     // Group events by type for potential batch optimizations
     std::vector<FileEvent> created_events;
-    std::vector<FileEvent> modified_events;
     std::vector<FileEvent> deleted_events;
 
     for (const auto& event : batch) {
         switch (event.type) {
         case FileEventType::Created:
             created_events.push_back(event);
-            break;
-        case FileEventType::Modified:
-            modified_events.push_back(event);
             break;
         case FileEventType::Deleted:
             deleted_events.push_back(event);
@@ -154,14 +150,12 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     }
 
     // Process each type of event in batch for better performance
-    if (!created_events.empty()) {
-        process_created_events(created_events);
-    }
-    if (!modified_events.empty()) {
-        process_modified_events(modified_events);
-    }
+    // Process deletes first, then creates (important for file modifications sent as Delete+Create)
     if (!deleted_events.empty()) {
         process_deleted_events(deleted_events);
+    }
+    if (!created_events.empty()) {
+        process_created_events(created_events);
     }
 
     // Signal that search needs to be updated
@@ -235,57 +229,6 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
     }
 }
 
-void EventProcessor::process_modified_events(const std::vector<FileEvent>& events) {
-    std::vector<Asset> files_to_update;
-    files_to_update.reserve(events.size());
-
-    // Process all files first and increment progress per file
-    for (const auto& event : events) {
-        try {
-            // Skip if file doesn't exist
-            if (!fs::exists(fs::u8path(event.path))) {
-                total_events_processed_++;  // Count skipped
-                continue;
-            }
-
-            Asset asset = process_file(event.path, event.timestamp);
-
-            // Preserve the existing asset ID if it exists
-            {
-                std::lock_guard<std::mutex> lock(assets_mutex_);
-                auto it = assets_.find(event.path);
-                if (it != assets_.end()) {
-                    asset.id = it->second.id;
-                }
-            }
-
-            files_to_update.push_back(asset);
-            total_events_processed_++;  // Increment per file processed
-
-            // Queue texture invalidation for modified texture assets
-            if (asset.type == AssetType::_2D) {
-                texture_manager_.queue_texture_invalidation(event.path);
-            }
-        }
-        catch (const std::exception& e) {
-            LOG_ERROR("Error processing modified event for {}: {}", event.path, e.what());
-            total_events_processed_++;  // Count failed attempts too
-        }
-    }
-
-    // Batch update database
-    if (!files_to_update.empty()) {
-        database_.update_assets_batch(files_to_update);
-
-        // Batch update assets map
-        std::lock_guard<std::mutex> lock(assets_mutex_);
-        for (const auto& file : files_to_update) {
-            assets_[file.path] = file;
-            // Update search index for modified asset
-            search_index_.update_asset(file.id, file);
-        }
-    }
-}
 
 void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events) {
     std::vector<std::string> paths_to_delete;

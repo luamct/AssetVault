@@ -24,7 +24,7 @@ struct PendingFileEvent {
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
-  PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
+  PendingFileEvent() : original_type(FileEventType::Created), is_active(false) {}
 
   PendingFileEvent(FileEventType type, const std::string& p)
     : original_type(type), path(p), last_activity(std::chrono::steady_clock::now()), is_active(true) {
@@ -188,17 +188,19 @@ private:
       // Process timed-out events
       for (const auto& [path, pending] : events_to_process) {
         if (callback) {
-          // Determine the final event type based on the original event
-          FileEventType final_type;
+          // For modifications, send Delete+Create events
+          // For created, just send Created
           if (pending.original_type == FileEventType::Created) {
-            final_type = FileEventType::Created;
+            FileEvent event(FileEventType::Created, path);
+            callback(event);
           }
           else {
-            final_type = FileEventType::Modified;
+            // Was a modification - send Delete+Create
+            FileEvent delete_event(FileEventType::Deleted, path);
+            callback(delete_event);
+            FileEvent create_event(FileEventType::Created, path);
+            callback(create_event);
           }
-
-          FileEvent event(final_type, path);
-          callback(event);
         }
       }
 
@@ -218,8 +220,7 @@ private:
     if (is_directory) {
       LOG_TRACE("Windows directory event: {} -> {}",
         raw_type == FileEventType::Created ? "Created" :
-        raw_type == FileEventType::Deleted ? "Deleted" :
-        raw_type == FileEventType::Modified ? "Modified" : "Other",
+        raw_type == FileEventType::Deleted ? "Deleted" : "Other",
         full_path.generic_u8string());
 
       // For directory creation (including moves), scan contents and generate file events
@@ -240,8 +241,7 @@ private:
 
     LOG_TRACE("Windows processing: {} as {}", full_path.generic_u8string(),
       raw_type == FileEventType::Created ? "Created" :
-      raw_type == FileEventType::Deleted ? "Deleted" :
-      raw_type == FileEventType::Modified ? "Modified" : "Other");
+      raw_type == FileEventType::Deleted ? "Deleted" : "Other");
 
     std::lock_guard<std::mutex> lock(pending_events_mutex);
 
@@ -403,16 +403,17 @@ private:
       }
       else {
         // Handle other event types normally
-        FileEventType raw_event_type = FileEventType::Modified;  // Default
+        FileEventType raw_event_type = FileEventType::Created;  // Default to Created for unknown
         switch (p_notify->Action) {
         case FILE_ACTION_ADDED:
           raw_event_type = FileEventType::Created;
           break;
         case FILE_ACTION_MODIFIED:
-          raw_event_type = FileEventType::Modified;
+          // We'll debounce this as a non-Created event (triggers Delete+Create later)
+          raw_event_type = FileEventType::Deleted;  // Use Deleted as a marker for modified
           break;
         default:
-          raw_event_type = FileEventType::Modified;
+          raw_event_type = FileEventType::Deleted;  // Unknown changes treated as modifications
           break;
         }
 

@@ -22,7 +22,7 @@ struct PendingFileEvent {
   std::chrono::steady_clock::time_point last_activity;
   bool is_active;
 
-  PendingFileEvent() : original_type(FileEventType::Modified), is_active(false) {}
+  PendingFileEvent() : original_type(FileEventType::Created), is_active(false) {}
 
   PendingFileEvent(FileEventType type, const std::string& p)
     : original_type(type), path(p), last_activity(std::chrono::steady_clock::now()), is_active(true) {
@@ -192,21 +192,13 @@ private:
       fs::path file_path(path_str);
 
       // Skip if it's the watched directory itself (normalize paths for comparison)
-      try {
-        auto normalized_file_path = fs::weakly_canonical(file_path);
-        auto normalized_watched_path = fs::weakly_canonical(watcher->watched_path);
-        if (normalized_file_path == normalized_watched_path) {
-          LOG_DEBUG("Skipped event {}", file_path.string());
-          continue;
-        }
+      auto normalized_file_path = fs::weakly_canonical(file_path);
+      auto normalized_watched_path = fs::weakly_canonical(watcher->watched_path);
+      if (normalized_file_path == normalized_watched_path) {
+        LOG_DEBUG("Skipped event {}", file_path.string());
+        continue;
       }
-      catch (const fs::filesystem_error&) {
-        // If normalization fails, fall back to string comparison
-        if (file_path == watcher->watched_path) {
-          continue;
-        }
-      }
-
+      
       // Determine event type based on flags
       FSEventStreamEventFlags flags = eventFlags[i];
 
@@ -214,18 +206,20 @@ private:
       std::string relative_path = get_relative_asset_path(file_path.string());
 
       // Debug: Log only positive flags for this event
-      std::string flag_names = format_fsevents_flags(flags);
-      LOG_TRACE("FSEvents: '{}' [0x{:X}] {}", relative_path, flags, flag_names);
+      LOG_TRACE("FSEvents: '{}' [0x{:X}] {}", relative_path, flags, format_fsevents_flags(flags));
 
       // Convert path to normalized UTF-8 string for consistent handling
       std::string path = file_path.generic_u8string();
+
+      bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
 
       // Check Renamed flag first as it can be combined with other flags
       if (flags & kFSEventStreamEventFlagItemRenamed) {
         // Check if this is an atomic save operation (file modified via temp file swap)
         if (is_atomic_save(flags)) {
-          // This is an atomic save - treat as a modification
-          watcher->add_pending_event(FileEventType::Modified, path);
+          // This is an atomic save - send Delete+Create events
+          watcher->add_pending_event(FileEventType::Deleted, path);
+          watcher->add_pending_event(FileEventType::Created, path);
         }
         else if (watcher->assets_ && watcher->assets_mutex_) {
           // Not an atomic save - handle as a real rename/move
@@ -234,7 +228,6 @@ private:
           // - Deleted: file doesn't exist AND IS tracked (moved out)
           // - Otherwise: ignore (metadata change or already handled)
 
-          bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
           bool file_exists = fs::exists(file_path);
 
           if (is_directory) {
@@ -308,8 +301,6 @@ private:
       else if (flags & kFSEventStreamEventFlagItemRemoved) {
         // Handle removal events - this should come before Created check
         // because FSEvents can set both Created+Removed for deletion
-        bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
-
         if (is_directory) {
           // For directory deletion, emit events for all tracked assets under it
           // This handles the case where FSEvents doesn't report individual file deletions
@@ -327,8 +318,10 @@ private:
         }
       }
       else if (flags & kFSEventStreamEventFlagItemModified) {
-        if (!(flags & kFSEventStreamEventFlagItemIsDir)) {
-          watcher->add_pending_event(FileEventType::Modified, path);
+        if (!is_directory) {
+          // Send Delete+Create for modifications
+          watcher->add_pending_event(FileEventType::Deleted, path);
+          watcher->add_pending_event(FileEventType::Created, path);
         }
       }
       else {

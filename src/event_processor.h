@@ -71,7 +71,6 @@ private:
 
     // Event processing methods
     void process_created_events(const std::vector<FileEvent>& events);
-    void process_modified_events(const std::vector<FileEvent>& events);
     void process_deleted_events(const std::vector<FileEvent>& events);
 
     // Asset manipulation methods (thread-safe)

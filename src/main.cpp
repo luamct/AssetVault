@@ -42,6 +42,7 @@ EventProcessor* g_event_processor = nullptr;
 // File event callback function (runs on background thread)
 // Queues events for unified processing
 void on_file_event(const FileEvent& event) {
+  LOG_TRACE("[NEW_EVENT] type = {}, asset = {}", FileWatcher::file_event_type_to_string(event.type), event.path);
   g_event_processor->queue_event(event);
 }
 

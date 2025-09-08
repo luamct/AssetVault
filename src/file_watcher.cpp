@@ -57,3 +57,8 @@ std::string FileWatcher::get_watched_path() const { return watched_path; }
 void FileWatcher::set_file_extensions(const std::vector<std::string>& extensions) { file_extensions = extensions; }
 
 void FileWatcher::set_polling_interval(int milliseconds) { polling_interval = milliseconds; }
+
+std::string FileWatcher::file_event_type_to_string(FileEventType file_event_type) {
+  return file_event_type == FileEventType::Created ? "Created" :
+    file_event_type == FileEventType::Deleted ? "Deleted" : "Other";
+}

@@ -27,9 +27,6 @@ void print_file_events(const std::vector<FileEvent>& events, const std::string& 
             case FileEventType::Created: 
                 event_type_str = "Created";
                 break;
-            case FileEventType::Modified: 
-                event_type_str = "Modified";
-                break;
             case FileEventType::Deleted: 
                 event_type_str = "Deleted";
                 break;

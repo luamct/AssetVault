@@ -18,7 +18,7 @@ namespace fs = std::filesystem;
 class FileWatcherImpl;
 
 // Event types for file system changes
-enum class FileEventType { Created, Modified, Deleted };
+enum class FileEventType { Created, Deleted };
 
 // File event structure
 struct FileEvent {
@@ -59,6 +59,8 @@ class FileWatcher {
 
   // Set polling interval for fallback mode (in milliseconds)
   void set_polling_interval(int milliseconds);
+
+  static std::string file_event_type_to_string(FileEventType file_event_type);
 
  private:
   std::unique_ptr<FileWatcherImpl> p_impl;

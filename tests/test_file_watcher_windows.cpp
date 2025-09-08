@@ -440,7 +440,6 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
                 event_type_str = "Deleted";
                 file_delete_count++;
                 break;
-            case FileEventType::Modified: event_type_str = "Modified"; break;
             default: event_type_str = "Other"; break;
             }
             std::cout << "  " << event_type_str << ": " << event.path << std::endl;
@@ -720,14 +719,15 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         auto events = fixture.get_events();
         REQUIRE(events.size() >= 1);
 
-        bool found_modified = false;
-        for (const auto& event : events) {
-            if (event.type == FileEventType::Modified) {
-                found_modified = true;
+        bool found_delete_create = false;
+        for (size_t i = 0; i < events.size() - 1; i++) {
+            if (events[i].type == FileEventType::Deleted && 
+                events[i+1].type == FileEventType::Created) {
+                found_delete_create = true;
                 break;
             }
         }
-        REQUIRE(found_modified);
+        REQUIRE(found_delete_create);
 
         // Cleanup
         fs::remove(file);
@@ -774,7 +774,8 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         bool found_modified = false;
 
         for (const auto& event : events) {
-            if (event.path == file.generic_u8string() && event.type == FileEventType::Modified) {
+            if (event.path == file.generic_u8string() && 
+                (event.type == FileEventType::Deleted || event.type == FileEventType::Created)) {
                 found_modified = true;
             }
         }
