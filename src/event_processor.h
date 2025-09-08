@@ -15,6 +15,7 @@
 #include "asset.h"
 
 // Forward declarations
+struct GLFWwindow;
 class TextureManager;
 class SearchIndex;
 
@@ -23,7 +24,7 @@ class EventProcessor {
 public:
     EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
         std::mutex& assets_mutex, std::atomic<bool>& search_update_needed, 
-        TextureManager& texture_manager, SearchIndex& search_index, size_t batch_size = 100);
+        TextureManager& texture_manager, SearchIndex& search_index, GLFWwindow* thumbnail_context, size_t batch_size = 100);
     ~EventProcessor();
 
     // Start/stop the background processing thread
@@ -77,6 +78,9 @@ private:
     void add_asset(const Asset& asset);
     void update_asset(const Asset& asset);
     void remove_asset(const std::string& path);
+    
+    // OpenGL context setup for thumbnail generation
+    bool setup_thumbnail_opengl_context();
 
     // References to global state
     AssetDatabase& database_;
@@ -104,6 +108,9 @@ private:
 
     // Root path for asset scanning
     std::string root_path_;
+    
+    // OpenGL context for thumbnail generation
+    GLFWwindow* thumbnail_context_;
 
     // Process individual file/directory into Asset
     Asset process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);

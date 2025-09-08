@@ -1,13 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(./build/AssetInventory.app/Contents/MacOS/AssetInventory)",
+      "Bash(cmake:*)"
     ],
     "deny": [],
+    "ask": [],
     "additionalDirectories": [
       "/Users/luamct/GameDev",
       "/tmp"
-    ],
-    "ask": []
+    ]
   }
 }

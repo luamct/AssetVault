@@ -7,6 +7,9 @@
 #include <iostream>
 #include <unordered_set>
 
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
 #include "config.h"
 #include "logger.h"
 #include "search.h"
@@ -17,11 +20,11 @@ namespace fs = std::filesystem;
 
 EventProcessor::EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
     std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
-    TextureManager& texture_manager, SearchIndex& search_index, size_t batch_size)
+    TextureManager& texture_manager, SearchIndex& search_index, GLFWwindow* thumbnail_context, size_t batch_size)
     : database_(database), assets_(assets), assets_mutex_(assets_mutex), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), search_index_(search_index), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
-    root_path_(Config::ASSET_ROOT_DIRECTORY) {
+    root_path_(Config::ASSET_ROOT_DIRECTORY), thumbnail_context_(thumbnail_context) {
 }
 
 EventProcessor::~EventProcessor() {
@@ -86,6 +89,13 @@ size_t EventProcessor::get_queue_size() const {
 }
 
 void EventProcessor::process_events() {
+    // Set up OpenGL context once for this background thread
+    if (setup_thumbnail_opengl_context()) {
+        LOG_DEBUG("OpenGL thumbnail context initialized for EventProcessor thread");
+    } else {
+        LOG_ERROR("Failed to initialize OpenGL thumbnail context for EventProcessor thread");
+    }
+    
     std::vector<FileEvent> batch;
     batch.reserve(batch_size_);
 
@@ -195,6 +205,26 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
     if (!files_to_insert.empty()) {
         database_.insert_assets_batch(files_to_insert);
 
+        // Generate thumbnails for 3D assets before updating search index
+        // This ensures thumbnails exist before assets appear in UI
+        for (const auto& file : files_to_insert) {
+            if (file.type == AssetType::_3D) {
+                // Generate thumbnail path using centralized method
+                fs::path thumbnail_path = file.get_thumbnail_path();
+                
+                LOG_TRACE("[EVENT] Generating thumbnail for 3D asset: {}", file.path);
+                TextureManager::ThumbnailResult result = texture_manager_.generate_3d_model_thumbnail(file.path, thumbnail_path);
+                
+                if (result == TextureManager::ThumbnailResult::SUCCESS) {
+                    LOG_TRACE("[EVENT] Thumbnail generated successfully for: {}", file.path);
+                } else if (result == TextureManager::ThumbnailResult::NO_GEOMETRY) {
+                    LOG_DEBUG("[EVENT] 3D asset has no geometry (animation-only): {}", file.path);
+                } else {
+                    LOG_WARN("[EVENT] Failed to generate thumbnail for: {}", file.path);
+                }
+            }
+        }
+
         // Batch update assets map
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_insert) {
@@ -270,8 +300,27 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
         total_events_processed_++;  // Increment per event processed
 
         // Queue texture invalidation for deleted assets
-        LOG_INFO("[CACHE-DEBUG] Queueing invalidation for deleted asset: {}", event.path);
         texture_manager_.queue_texture_invalidation(event.path);
+        
+        // Delete thumbnail file for 3D assets
+        // Check asset type from the assets map before it's deleted
+        {
+            std::lock_guard<std::mutex> lock(assets_mutex_);
+            auto asset_it = assets_.find(event.path);
+            if (asset_it != assets_.end() && asset_it->second.type == AssetType::_3D) {
+                // Generate thumbnail path using centralized method and delete if exists
+                fs::path thumbnail_path = asset_it->second.get_thumbnail_path();
+                
+                if (fs::exists(thumbnail_path)) {
+                    try {
+                        fs::remove(thumbnail_path);
+                        LOG_TRACE("[EVENT] Deleted thumbnail for removed 3D asset: {}", thumbnail_path.string());
+                    } catch (const fs::filesystem_error& e) {
+                        LOG_WARN("[EVENT] Failed to delete thumbnail {}: {}", thumbnail_path.string(), e.what());
+                    }
+                }
+            }
+        }
     }
 
     // Batch delete all paths from database
@@ -366,4 +415,28 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
     }
 
     return asset;
+}
+
+bool EventProcessor::setup_thumbnail_opengl_context() {
+    if (!thumbnail_context_) {
+        LOG_ERROR("No thumbnail context available for OpenGL setup");
+        return false;
+    }
+    
+    // Make the thumbnail context current for this thread
+    glfwMakeContextCurrent(thumbnail_context_);
+    
+    // Set up OpenGL state for proper 3D rendering (match main context configuration)
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+    
+    // Enable blending for transparency
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    LOG_DEBUG("OpenGL context set up for thumbnail generation thread");
+    return true;
 }

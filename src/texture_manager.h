@@ -10,6 +10,9 @@
 
 #include "asset.h" // For AssetType and Asset
 
+// Forward declaration
+struct GLFWwindow;
+
 // Texture cache entry structure
 struct TextureCacheEntry {
   unsigned int texture_id;
@@ -61,7 +64,8 @@ public:
   };
 
   // 3D model thumbnail generation
-  ThumbnailResult generate_3d_model_thumbnail(const std::string& model_path, const std::string& relative_path);
+  ThumbnailResult generate_3d_model_thumbnail(const std::string& model_path, const std::filesystem::path& thumbnail_path);
+
 
   // Texture cache invalidation (thread-safe)
   void queue_texture_invalidation(const std::string& file_path);
@@ -84,6 +88,9 @@ public:
   unsigned int get_pause_icon() const { return pause_icon_; }
   unsigned int get_speaker_icon() const { return speaker_icon_; }
 
+  // Debug utilities
+  void print_texture_cache() const;
+
 private:
   // Asset thumbnails and icons
   unsigned int default_texture_;
@@ -100,11 +107,13 @@ private:
   // Invalidation queue for thread-safe texture cache updates
   std::queue<std::string> invalidation_queue_;
   mutable std::mutex invalidation_mutex_;
+  
 
   // Audio control icons
   unsigned int play_icon_;
   unsigned int pause_icon_;
   unsigned int speaker_icon_;
+
 
   // Helper methods
   void cleanup_all_textures();

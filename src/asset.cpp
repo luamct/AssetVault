@@ -4,6 +4,9 @@
 #include <map>
 #include <string>
 
+#include "config.h"
+#include "utils.h"
+
 // Asset type mapping based on file extensions - O(1) lookup using map
 AssetType get_asset_type(const std::string& extension) {
 
@@ -150,4 +153,14 @@ bool should_skip_asset(const std::string& extension) {
          type == AssetType::Unknown || 
          type == AssetType::Document || 
          type == AssetType::Directory;
+}
+
+// Get the thumbnail path for this asset (primarily for 3D models)
+std::filesystem::path Asset::get_thumbnail_path() const {
+  // Generate relative path from the asset's full path
+  std::string relative_path = get_relative_asset_path(path);
+  
+  // Build thumbnail path: cache_dir/relative_path with .png extension
+  return Config::get_thumbnail_directory() / 
+         std::filesystem::path(relative_path).replace_extension(".png");
 }

@@ -22,6 +22,9 @@ struct Asset {
   AssetType type;            // Asset type enum
 
   Asset() : id(0), size(0), type(AssetType::Unknown) {}
+  
+  // Get the thumbnail path for this asset (primarily for 3D models)
+  std::filesystem::path get_thumbnail_path() const;
 };
 
 // Asset type utility functions

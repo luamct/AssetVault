@@ -138,6 +138,7 @@ void scan_for_changes(AssetDatabase& database, std::map<std::string, Asset>& ass
     LOG_INFO("Loaded {} existing assets from database", assets.size());
   }
 
+
   // Then queue any detected changes to update from that baseline
   if (!events_to_queue.empty()) {
     auto queue_start = std::chrono::high_resolution_clock::now();
@@ -221,12 +222,6 @@ int main() {
   }
   LOG_INFO("Search index initialized with {} tokens", search_index.get_token_count());
 
-  // Initialize unified event processor for both initial scan and runtime events
-  g_event_processor = new EventProcessor(database, assets, assets_mutex, search_state.update_needed, texture_manager, search_index, Config::EVENT_PROCESSOR_BATCH_SIZE);
-  if (!g_event_processor->start()) {
-    LOG_ERROR("Failed to start EventProcessor");
-    return -1;
-  }
 
   // Initialize GLFW
   if (!glfwInit()) {
@@ -266,6 +261,20 @@ int main() {
     return -1;
   }
 
+  // Create shared OpenGL context for background thumbnail generation
+  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);  // Hidden window
+  GLFWwindow* thumbnail_context = glfwCreateWindow(1, 1, "", nullptr, window);
+  if (!thumbnail_context) {
+    LOG_ERROR("Failed to create thumbnail generation context");
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return -1;
+  }
+  LOG_INFO("Created shared OpenGL context for background thumbnail generation");
+
+  // Switch back to main context
+  glfwMakeContextCurrent(window);
+
   // Initialize Dear ImGui
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -289,6 +298,14 @@ int main() {
   // Initialize texture manager
   if (!texture_manager.initialize()) {
     LOG_ERROR("Failed to initialize texture manager");
+    return -1;
+  }
+
+  // Initialize unified event processor for both initial scan and runtime events
+  // Pass thumbnail context to EventProcessor constructor for proper OpenGL setup
+  g_event_processor = new EventProcessor(database, assets, assets_mutex, search_state.update_needed, texture_manager, search_index, thumbnail_context, Config::EVENT_PROCESSOR_BATCH_SIZE);
+  if (!g_event_processor->start()) {
+    LOG_ERROR("Failed to start EventProcessor");
     return -1;
   }
 
@@ -329,17 +346,15 @@ int main() {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
 
+    // Process texture invalidation queue AFTER updating search results
+    // This ensures deleted assets are removed from filtered_assets before invalidation
+    texture_manager.process_invalidation_queue();
+
     // Check if search needs to be updated due to asset changes FIRST
-    // This must happen before texture invalidation to prevent race condition
-    // where deleted assets are still in filtered_assets when textures are invalidated
     if (search_state.update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
       filter_assets(search_state, assets, assets_mutex, search_index);
     }
-
-    // Process texture invalidation queue AFTER updating search results
-    // This ensures deleted assets are removed from filtered_assets before invalidation
-    texture_manager.process_invalidation_queue();
 
     // Process pending debounced search
     if (search_state.pending_search) {
@@ -378,6 +393,11 @@ int main() {
           }
         }
       }
+    }
+
+    // P key to print texture cache
+    if (ImGui::IsKeyPressed(ImGuiKey_P) && !io.WantTextInput) {
+      texture_manager.print_texture_cache();
     }
 
     // Create main window that fits perfectly to viewport
@@ -457,6 +477,8 @@ int main() {
 
   database.close();
 
+  // Destroy shared thumbnail context
+  glfwDestroyWindow(thumbnail_context);
   glfwDestroyWindow(window);
   glfwTerminate();
 

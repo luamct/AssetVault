@@ -92,7 +92,7 @@ namespace Config {
     constexpr bool DEBUG_FORCE_DB_CLEAR = false;
 
     // Set to true to delete all thumbnails on startup
-    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = true;
+    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = false;
 
     // Font settings
     constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";
