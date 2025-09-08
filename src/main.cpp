@@ -303,7 +303,7 @@ int main() {
 
   // Initialize unified event processor for both initial scan and runtime events
   // Pass thumbnail context to EventProcessor constructor for proper OpenGL setup
-  g_event_processor = new EventProcessor(database, assets, assets_mutex, search_state.update_needed, texture_manager, search_index, thumbnail_context, Config::EVENT_PROCESSOR_BATCH_SIZE);
+  g_event_processor = new EventProcessor(database, assets, assets_mutex, search_state.update_needed, texture_manager, search_index, thumbnail_context);
   if (!g_event_processor->start()) {
     LOG_ERROR("Failed to start EventProcessor");
     return -1;

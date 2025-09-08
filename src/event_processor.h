@@ -24,7 +24,7 @@ class EventProcessor {
 public:
     EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
         std::mutex& assets_mutex, std::atomic<bool>& search_update_needed, 
-        TextureManager& texture_manager, SearchIndex& search_index, GLFWwindow* thumbnail_context, size_t batch_size = 100);
+        TextureManager& texture_manager, SearchIndex& search_index, GLFWwindow* thumbnail_context);
     ~EventProcessor();
 
     // Start/stop the background processing thread

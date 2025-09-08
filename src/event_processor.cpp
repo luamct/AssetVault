@@ -20,9 +20,9 @@ namespace fs = std::filesystem;
 
 EventProcessor::EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
     std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
-    TextureManager& texture_manager, SearchIndex& search_index, GLFWwindow* thumbnail_context, size_t batch_size)
+    TextureManager& texture_manager, SearchIndex& search_index, GLFWwindow* thumbnail_context)
     : database_(database), assets_(assets), assets_mutex_(assets_mutex), search_update_needed_(search_update_needed),
-    texture_manager_(texture_manager), search_index_(search_index), batch_size_(batch_size), running_(false), processing_(false), processed_count_(0),
+    texture_manager_(texture_manager), search_index_(search_index), batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
     root_path_(Config::ASSET_ROOT_DIRECTORY), thumbnail_context_(thumbnail_context) {
 }
@@ -39,7 +39,7 @@ bool EventProcessor::start() {
     running_ = true;
     processing_thread_ = std::thread(&EventProcessor::process_events, this);
 
-    LOG_INFO("EventProcessor started with batch size: {}", batch_size_);
+    LOG_INFO("EventProcessor started with batch size: {}", Config::EVENT_PROCESSOR_BATCH_SIZE);
     return true;
 }
 
