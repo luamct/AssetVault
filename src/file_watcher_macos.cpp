@@ -188,13 +188,11 @@ private:
     char** paths = static_cast<char**>(eventPaths);
 
     for (size_t i = 0; i < numEvents; ++i) {
-      std::string path_str(paths[i]);
-      fs::path file_path(path_str);
+      std::string path(paths[i]);
+      fs::path file_path(path);
 
-      // Skip if it's the watched directory itself (normalize paths for comparison)
-      auto normalized_file_path = fs::weakly_canonical(file_path);
-      auto normalized_watched_path = fs::weakly_canonical(watcher->watched_path);
-      if (normalized_file_path == normalized_watched_path) {
+      // Skip if it's the watched directory itself
+      if (path == watcher->watched_path) {
         LOG_DEBUG("Skipped event {}", file_path.string());
         continue;
       }
@@ -203,13 +201,10 @@ private:
       FSEventStreamEventFlags flags = eventFlags[i];
 
       // Get relative path for logging
-      std::string relative_path = get_relative_asset_path(file_path.string());
+      std::string relative_path = get_relative_asset_path(path);
 
       // Debug: Log only positive flags for this event
       LOG_TRACE("FSEvents: '{}' [0x{:X}] {}", relative_path, flags, format_fsevents_flags(flags));
-
-      // Convert path to normalized UTF-8 string for consistent handling
-      std::string path = file_path.generic_u8string();
 
       bool is_directory = (flags & kFSEventStreamEventFlagItemIsDir) != 0;
 

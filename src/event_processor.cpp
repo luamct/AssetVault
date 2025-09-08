@@ -182,117 +182,104 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
     std::vector<Asset> files_to_insert;
     files_to_insert.reserve(events.size());
 
-    // Process all files first and increment progress per file
+    // Single pass: process files and generate thumbnails for 3D assets
     for (const auto& event : events) {
         try {
             Asset file_info = process_file(event.path, event.timestamp);
+            
+            // Generate thumbnail for 3D assets immediately after processing
+            if (file_info.type == AssetType::_3D) {
+                fs::path thumbnail_path = file_info.get_thumbnail_path();
+                TextureManager::ThumbnailResult result = texture_manager_.generate_3d_model_thumbnail(file_info.path, thumbnail_path);
+                
+                if (result == TextureManager::ThumbnailResult::SUCCESS) {
+                    LOG_TRACE("[EVENT] Thumbnail generated successfully for: {}", file_info.path);
+                } else if (result == TextureManager::ThumbnailResult::NO_GEOMETRY) {
+                    LOG_DEBUG("[EVENT] 3D asset has no geometry (animation-only): {}", file_info.path);
+                } else {
+                    LOG_WARN("[EVENT] Failed to generate thumbnail for: {}", file_info.path);
+                }
+            }
+            
             files_to_insert.push_back(file_info);
-            total_events_processed_++;  // Increment per file processed
+            total_events_processed_++;
         }
         catch (const std::exception& e) {
             LOG_ERROR("Error processing created event for {}: {}", event.path, e.what());
-            total_events_processed_++;  // Count failed attempts too
+            total_events_processed_++;
         }
     }
 
-    // Batch insert to database
+    // Batch operations: database insert and assets map update
     if (!files_to_insert.empty()) {
         database_.insert_assets_batch(files_to_insert);
 
-        // Generate thumbnails for 3D assets before updating search index
-        // This ensures thumbnails exist before assets appear in UI
-        for (const auto& file : files_to_insert) {
-            if (file.type == AssetType::_3D) {
-                // Generate thumbnail path using centralized method
-                fs::path thumbnail_path = file.get_thumbnail_path();
-                
-                LOG_TRACE("[EVENT] Generating thumbnail for 3D asset: {}", file.path);
-                TextureManager::ThumbnailResult result = texture_manager_.generate_3d_model_thumbnail(file.path, thumbnail_path);
-                
-                if (result == TextureManager::ThumbnailResult::SUCCESS) {
-                    LOG_TRACE("[EVENT] Thumbnail generated successfully for: {}", file.path);
-                } else if (result == TextureManager::ThumbnailResult::NO_GEOMETRY) {
-                    LOG_DEBUG("[EVENT] 3D asset has no geometry (animation-only): {}", file.path);
-                } else {
-                    LOG_WARN("[EVENT] Failed to generate thumbnail for: {}", file.path);
-                }
-            }
-        }
-
-        // Batch update assets map
+        // Single pass: update assets map and search index
         std::lock_guard<std::mutex> lock(assets_mutex_);
         for (const auto& file : files_to_insert) {
             assets_[file.path] = file;
-            // Update search index for new asset
             search_index_.add_asset(file.id, file);
         }
     }
 }
 
-
 void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events) {
+    if (events.empty()) return;
+
     std::vector<std::string> paths_to_delete;
+    std::vector<uint32_t> deleted_asset_ids;
     paths_to_delete.reserve(events.size());
+    deleted_asset_ids.reserve(events.size());
 
-    // Collect all paths - file watchers handle the complexity of generating
-    // appropriate events for each platform's behavior
+    // Queue texture invalidation first (no mutex needed)
     for (const auto& event : events) {
-        std::string path_utf8 = event.path;
-        paths_to_delete.push_back(path_utf8);
-
-        total_events_processed_++;  // Increment per event processed
-
-        // Queue texture invalidation for deleted assets
         texture_manager_.queue_texture_invalidation(event.path);
+        total_events_processed_++;
+    }
+
+    // Single pass: collect paths, asset IDs, and handle thumbnail cleanup
+    {
+        std::lock_guard<std::mutex> lock(assets_mutex_);
         
-        // Delete thumbnail file for 3D assets
-        // Check asset type from the assets map before it's deleted
-        {
-            std::lock_guard<std::mutex> lock(assets_mutex_);
-            auto asset_it = assets_.find(event.path);
-            if (asset_it != assets_.end() && asset_it->second.type == AssetType::_3D) {
-                // Generate thumbnail path using centralized method and delete if exists
-                fs::path thumbnail_path = asset_it->second.get_thumbnail_path();
+        for (const auto& event : events) {
+            std::string path = event.path;
+            paths_to_delete.push_back(path);
+            
+            auto asset_it = assets_.find(path);
+            if (asset_it != assets_.end()) {
+                const Asset& asset = asset_it->second;
                 
-                if (fs::exists(thumbnail_path)) {
-                    try {
-                        fs::remove(thumbnail_path);
-                        LOG_TRACE("[EVENT] Deleted thumbnail for removed 3D asset: {}", thumbnail_path.string());
-                    } catch (const fs::filesystem_error& e) {
-                        LOG_WARN("[EVENT] Failed to delete thumbnail {}: {}", thumbnail_path.string(), e.what());
+                // Collect asset ID for search index cleanup
+                if (asset.id > 0) {
+                    deleted_asset_ids.push_back(asset.id);
+                }
+                
+                // Delete thumbnail for 3D assets
+                if (asset.type == AssetType::_3D) {
+                    fs::path thumbnail_path = asset.get_thumbnail_path();
+                    if (fs::exists(thumbnail_path)) {
+                        try {
+                            fs::remove(thumbnail_path);
+                            LOG_TRACE("[EVENT] Deleted thumbnail for removed 3D asset: {}", thumbnail_path.string());
+                        } catch (const fs::filesystem_error& e) {
+                            LOG_WARN("[EVENT] Failed to delete thumbnail {}: {}", thumbnail_path.string(), e.what());
+                        }
                     }
                 }
+                
+                // Remove from assets map immediately
+                assets_.erase(asset_it);
             }
+        }
+        
+        // Remove from search index in the same critical section
+        for (uint32_t asset_id : deleted_asset_ids) {
+            search_index_.remove_asset(asset_id);
         }
     }
 
-    // Batch delete all paths from database
-    if (!paths_to_delete.empty()) {
-        // Get asset IDs before deletion for search index cleanup
-        std::vector<uint32_t> deleted_asset_ids;
-        {
-            std::lock_guard<std::mutex> lock(assets_mutex_);
-            for (const auto& path : paths_to_delete) {
-                auto it = assets_.find(path);
-                if (it != assets_.end() && it->second.id > 0) {
-                    deleted_asset_ids.push_back(it->second.id);
-                }
-            }
-        }
-
-        database_.delete_assets_batch(paths_to_delete);
-
-        // Remove from in-memory assets map and search index
-        std::lock_guard<std::mutex> lock(assets_mutex_);
-        for (size_t i = 0; i < paths_to_delete.size(); ++i) {
-            const auto& path = paths_to_delete[i];
-            assets_.erase(path);
-            // Remove from search index if we have the ID
-            if (i < deleted_asset_ids.size()) {
-                search_index_.remove_asset(deleted_asset_ids[i]);
-            }
-        }
-    }
+    // Batch delete from database (outside mutex)
+    database_.delete_assets_batch(paths_to_delete);
 }
 
 // Individual asset manipulation methods (still used by batch processing)
