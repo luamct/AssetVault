@@ -700,7 +700,7 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
     // Display thumbnail image
     ImGui::SetCursorScreenPos(image_pos);
     if (ImGui::ImageButton(
-      ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.texture_id, display_size)) {
+      ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.get_texture_id(), display_size)) {
       search_state.selected_asset_index = static_cast<int>(i);
       LOG_DEBUG("Selected: {}", search_state.filtered_assets[i].name);
     }
@@ -927,7 +927,7 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
 
       // Display audio icon in preview area
       TextureCacheEntry audio_entry = texture_manager.get_asset_texture(selected_asset);
-      if (audio_entry.texture_id != 0) {
+      if (audio_entry.get_texture_id() != 0) {
         float icon_dim = Config::ICON_SCALE * std::min(avail_width, avail_height);
         ImVec2 icon_size(icon_dim, icon_dim);
 
@@ -938,7 +938,7 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
         ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
         ImGui::SetCursorScreenPos(image_pos);
 
-        ImGui::Image((ImTextureID) (intptr_t) audio_entry.texture_id, icon_size);
+        ImGui::Image((ImTextureID) (intptr_t) audio_entry.get_texture_id(), icon_size);
 
         // Restore cursor for controls below
         ImGui::SetCursorScreenPos(container_pos);
@@ -1072,7 +1072,7 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
     else {
       // 2D Preview for non-model assets
       TextureCacheEntry preview_entry = texture_manager.get_asset_texture(selected_asset);
-      if (preview_entry.texture_id != 0) {
+      if (preview_entry.get_texture_id() != 0) {
         ImVec2 preview_size(avail_width, avail_height);
 
         if (selected_asset.type == AssetType::_2D) {
@@ -1099,7 +1099,7 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
         ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
         ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
-        ImGui::Image((ImTextureID) (intptr_t) preview_entry.texture_id, preview_size);
+        ImGui::Image((ImTextureID) (intptr_t) preview_entry.get_texture_id(), preview_size);
 
         // Restore cursor for info below
         ImGui::SetCursorScreenPos(container_pos);

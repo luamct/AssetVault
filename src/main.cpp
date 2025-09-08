@@ -163,7 +163,7 @@ int main() {
 #endif
 
   // Initialize logging system
-  Logger::initialize(LogLevel::Trace);
+  Logger::initialize(LogLevel::Debug);
   LOG_INFO("AssetInventory application starting...");
 
   // Initialize application directories (create cache, thumbnail, and data directories)
@@ -347,8 +347,7 @@ int main() {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
 
-    // Process texture invalidation queue AFTER updating search results
-    // This ensures deleted assets are removed from filtered_assets before invalidation
+    // Removes texture cache entries for deleted assets
     texture_manager.process_invalidation_queue();
 
     // Check if search needs to be updated due to asset changes FIRST

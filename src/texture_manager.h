@@ -15,15 +15,23 @@ struct GLFWwindow;
 
 // Texture cache entry structure
 struct TextureCacheEntry {
-  unsigned int texture_id;
-  std::string file_path;  // TODO: Is this actually used. Maybe remove?
+  unsigned int texture_id;          // The owned texture ID for this specific asset (deleted on invalidation)
+  unsigned int default_texture_id;  // Reference to shared default/type icon texture (never deleted on invalidation)
+  std::string file_path;             // TODO: Is this actually used. Maybe remove?
   int width;
   int height;
-  int retry_count;        // Current retry attempts
-  bool loaded;           // Whether texture is successfully loaded
-  bool use_default;      // Whether to use default icon (failed/animation-only)
+  int retry_count;                   // Current retry attempts
+  bool loaded;                       // Whether texture is successfully loaded
 
-  TextureCacheEntry() : texture_id(0), width(0), height(0), retry_count(0), loaded(false), use_default(false) {}
+  TextureCacheEntry() : texture_id(0), default_texture_id(0), width(0), height(0), retry_count(0), loaded(false) {}
+  
+  /**
+   * Returns the texture ID for rendering: default_texture_id if set, otherwise texture_id.
+   * Prevents shared type icons from being deleted during asset invalidation.
+   */
+  unsigned int get_texture_id() const {
+    return (default_texture_id > 0) ? default_texture_id : texture_id;
+  }
 };
 
 class TextureManager {
