@@ -44,7 +44,7 @@ private:
   std::string watched_path;
 
   // Buffer for file change notifications
-  char buffer[4096];
+  char buffer[65536];
   DWORD bytes_returned;
 
   // Timer-based event tracking

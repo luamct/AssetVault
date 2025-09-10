@@ -353,6 +353,7 @@ int main() {
     // Check if search needs to be updated due to asset changes FIRST
     if (search_state.update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
+      LOG_DEBUG("[SEARCH] New search triggered!");
       filter_assets(search_state, assets, assets_mutex, search_index);
     }
 

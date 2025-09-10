@@ -211,9 +211,9 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
     else {
       material.name = "Material_" + std::to_string(m);
     }
-    
+
     LOG_TRACE("[MATERIAL] Processing material {}: '{}'", m, material.name);
-    
+
     // Debug: Check all texture types this material has
     LOG_TRACE("[MATERIAL] === Texture inventory for material '{}' ===", material.name);
     LOG_TRACE("[MATERIAL]   Diffuse textures: {}", ai_material->GetTextureCount(aiTextureType_DIFFUSE));
@@ -225,25 +225,25 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
     LOG_TRACE("[MATERIAL]   Ambient textures: {}", ai_material->GetTextureCount(aiTextureType_AMBIENT));
     LOG_TRACE("[MATERIAL]   Height/Bump textures: {}", ai_material->GetTextureCount(aiTextureType_HEIGHT));
     LOG_TRACE("[MATERIAL]   Reflection textures: {}", ai_material->GetTextureCount(aiTextureType_REFLECTION));
-    
+
     // Debug: Check material properties
     aiColor3D emissive_color;
     float emissive_intensity = 0.0f;
     float metallic_factor = 0.0f;
     float roughness_factor = 0.5f;
-    
+
     if (ai_material->Get(AI_MATKEY_COLOR_EMISSIVE, emissive_color) == AI_SUCCESS) {
-        LOG_TRACE("[MATERIAL]   Emissive color: ({:.3f}, {:.3f}, {:.3f})", 
-                  emissive_color.r, emissive_color.g, emissive_color.b);
+      LOG_TRACE("[MATERIAL]   Emissive color: ({:.3f}, {:.3f}, {:.3f})",
+        emissive_color.r, emissive_color.g, emissive_color.b);
     }
     if (ai_material->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissive_intensity) == AI_SUCCESS) {
-        LOG_TRACE("[MATERIAL]   Emissive intensity: {:.3f}", emissive_intensity);
+      LOG_TRACE("[MATERIAL]   Emissive intensity: {:.3f}", emissive_intensity);
     }
     if (ai_material->Get(AI_MATKEY_METALLIC_FACTOR, metallic_factor) == AI_SUCCESS) {
-        LOG_TRACE("[MATERIAL]   Metallic factor: {:.3f}", metallic_factor);
+      LOG_TRACE("[MATERIAL]   Metallic factor: {:.3f}", metallic_factor);
     }
     if (ai_material->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness_factor) == AI_SUCCESS) {
-        LOG_TRACE("[MATERIAL]   Roughness factor: {:.3f}", roughness_factor);
+      LOG_TRACE("[MATERIAL]   Roughness factor: {:.3f}", roughness_factor);
     }
 
     // Check for diffuse textures first
@@ -252,7 +252,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
 
     // Track if this material references texture files that don't exist (indicates missing files)
     bool has_missing_texture_files = false;
-    
+
     // Try to load texture
     for (unsigned int texIndex = 0; texIndex < diffuse_count; texIndex++) {
       aiString texture_path;
@@ -260,16 +260,16 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
 
       if (texFound == AI_SUCCESS) {
         std::string filename = texture_path.C_Str();
-        
+
         // Fix path separators: convert Windows backslashes to forward slashes for cross-platform compatibility
         std::replace(filename.begin(), filename.end(), '\\', '/');
-        
+
         LOG_TRACE("[MATERIAL] Trying to load texture: '{}'", filename);
 
         // Try to load the texture
         std::string fileloc = basepath + filename;
         LOG_TRACE("[MATERIAL] Trying path: {}", fileloc);
-        
+
         if (std::filesystem::exists(fileloc)) {
           LOG_TRACE("[MATERIAL] File exists, attempting to load texture: {}", fileloc);
           material.texture_id = texture_manager.load_texture_for_model(fileloc);
@@ -277,7 +277,8 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
             LOG_TRACE("[MATERIAL] Successfully loaded texture with ID: {}", material.texture_id);
             material.has_texture = true;
             break; // Use first successful texture
-          } else {
+          }
+          else {
             LOG_WARN("[MATERIAL] Failed to load texture: {}", fileloc);
           }
         }
@@ -286,7 +287,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
           // Try alternative path
           std::filesystem::path alt_path = std::filesystem::path(model_path).parent_path() / filename;
           LOG_TRACE("[MATERIAL] Trying alternative path: {}", alt_path.string());
-          
+
           if (std::filesystem::exists(alt_path)) {
             LOG_TRACE("[MATERIAL] Alternative file exists, attempting to load: {}", alt_path.string());
             material.texture_id = texture_manager.load_texture_for_model(alt_path.string());
@@ -294,14 +295,15 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
               material.has_texture = true;
               break;
             }
-          } else {
+          }
+          else {
             LOG_TRACE("[MATERIAL] Texture file referenced but not found: {}", filename);
             has_missing_texture_files = true;
           }
         }
       }
     }
-    
+
     // Store whether this material has missing texture files (for retry logic)
     material.has_missing_texture_files = has_missing_texture_files;
 
@@ -319,42 +321,42 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
     material.ambient_color = glm::vec3(ambient_color.r, ambient_color.g, ambient_color.b);
     material.specular_color = glm::vec3(specular_color.r, specular_color.g, specular_color.b);
     material.emissive_color = glm::vec3(emissive_color.r, emissive_color.g, emissive_color.b);
-    
+
     // Check if material has significant emissive properties
-    material.has_emissive = (material.emissive_color.r > 0.01f || 
-                             material.emissive_color.g > 0.01f || 
-                             material.emissive_color.b > 0.01f);
-    
+    material.has_emissive = (material.emissive_color.r > 0.01f ||
+      material.emissive_color.g > 0.01f ||
+      material.emissive_color.b > 0.01f);
+
     // Debug: Log all color properties
-    LOG_TRACE("[MATERIAL]   Diffuse color: ({:.3f}, {:.3f}, {:.3f})", 
-              diffuse_color.r, diffuse_color.g, diffuse_color.b);
-    LOG_TRACE("[MATERIAL]   Ambient color: ({:.3f}, {:.3f}, {:.3f})", 
-              ambient_color.r, ambient_color.g, ambient_color.b);
-    LOG_TRACE("[MATERIAL]   Specular color: ({:.3f}, {:.3f}, {:.3f})", 
-              specular_color.r, specular_color.g, specular_color.b);
-              
+    LOG_TRACE("[MATERIAL]   Diffuse color: ({:.3f}, {:.3f}, {:.3f})",
+      diffuse_color.r, diffuse_color.g, diffuse_color.b);
+    LOG_TRACE("[MATERIAL]   Ambient color: ({:.3f}, {:.3f}, {:.3f})",
+      ambient_color.r, ambient_color.g, ambient_color.b);
+    LOG_TRACE("[MATERIAL]   Specular color: ({:.3f}, {:.3f}, {:.3f})",
+      specular_color.r, specular_color.g, specular_color.b);
+
     // Check for additional properties that could cause glow effects
     float shininess = 0.0f;
     float opacity = 1.0f;
     float reflectivity = 0.0f;
     float refraction_index = 1.0f;
-    
+
     if (ai_material->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
-        material.shininess = shininess;
-        LOG_TRACE("[MATERIAL]   Shininess: {:.3f}", shininess);
+      material.shininess = shininess;
+      LOG_TRACE("[MATERIAL]   Shininess: {:.3f}", shininess);
     }
     if (ai_material->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissive_intensity) == AI_SUCCESS) {
-        material.emissive_intensity = emissive_intensity;
-        LOG_TRACE("[MATERIAL]   Emissive intensity: {:.3f}", emissive_intensity);
+      material.emissive_intensity = emissive_intensity;
+      LOG_TRACE("[MATERIAL]   Emissive intensity: {:.3f}", emissive_intensity);
     }
     if (ai_material->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
-        LOG_TRACE("[MATERIAL]   Opacity: {:.3f}", opacity);
+      LOG_TRACE("[MATERIAL]   Opacity: {:.3f}", opacity);
     }
     if (ai_material->Get(AI_MATKEY_REFLECTIVITY, reflectivity) == AI_SUCCESS) {
-        LOG_TRACE("[MATERIAL]   Reflectivity: {:.3f}", reflectivity);
+      LOG_TRACE("[MATERIAL]   Reflectivity: {:.3f}", reflectivity);
     }
     if (ai_material->Get(AI_MATKEY_REFRACTI, refraction_index) == AI_SUCCESS) {
-        LOG_TRACE("[MATERIAL]   Refraction index: {:.3f}", refraction_index);
+      LOG_TRACE("[MATERIAL]   Refraction index: {:.3f}", refraction_index);
     }
 
     // Check if material color is black (0,0,0) and set a default if so
@@ -365,15 +367,15 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
     // Create material texture if no texture was loaded (blends diffuse + emissive)
     if (!material.has_texture) {
       LOG_TRACE("[MATERIAL] No texture loaded for material '{}', creating material texture with diffuse=({:.3f}, {:.3f}, {:.3f}) + emissive=({:.3f}, {:.3f}, {:.3f})",
-                material.name, 
-                material.diffuse_color.x, material.diffuse_color.y, material.diffuse_color.z,
-                material.emissive_color.x, material.emissive_color.y, material.emissive_color.z);
+        material.name,
+        material.diffuse_color.x, material.diffuse_color.y, material.diffuse_color.z,
+        material.emissive_color.x, material.emissive_color.y, material.emissive_color.z);
       material.texture_id = texture_manager.create_material_texture(
         material.diffuse_color, material.emissive_color, material.emissive_intensity);
     }
 
-    LOG_TRACE("[MATERIAL] Final material '{}': has_texture={}, texture_id={}", 
-              material.name, material.has_texture, material.texture_id);
+    LOG_TRACE("[MATERIAL] Final material '{}': has_texture={}, texture_id={}",
+      material.name, material.has_texture, material.texture_id);
     model.materials.push_back(material);
   }
 }
@@ -489,7 +491,7 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
 bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager) {
   // Clean up previous model
   cleanup_model(model);
-  
+
   // Initialize model state
   model.path = filepath;
   model.has_no_geometry = false;
@@ -521,7 +523,6 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 
   // Check if the model has any visible geometry
   if (model.vertices.empty() || model.indices.empty()) {
-    LOG_INFO("Model has no visible geometry (animation-only FBX): {}", filepath);
     model.has_no_geometry = true;
     return false;
   }

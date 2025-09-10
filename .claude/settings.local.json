@@ -7,9 +7,6 @@
     ],
     "deny": [],
     "ask": [],
-    "additionalDirectories": [
-      "/Users/luamct/GameDev",
-      "/tmp"
-    ]
+    "additionalDirectories": []
   }
 }
