@@ -15,8 +15,8 @@ struct GLFWwindow;
 
 // Texture cache entry structure
 struct TextureCacheEntry {
-  unsigned int texture_id;          // The owned texture ID for this specific asset (deleted on invalidation)
-  unsigned int default_texture_id;  // Reference to shared default/type icon texture (never deleted on invalidation)
+  unsigned int texture_id;          // The owned texture ID for this specific asset (deleted during cleanup)
+  unsigned int default_texture_id;  // Reference to shared default/type icon texture (never deleted during cleanup)
   std::string file_path;             // TODO: Is this actually used. Maybe remove?
   int width;
   int height;
@@ -27,7 +27,7 @@ struct TextureCacheEntry {
   
   /**
    * Returns the texture ID for rendering: default_texture_id if set, otherwise texture_id.
-   * Prevents shared type icons from being deleted during asset invalidation.
+   * Prevents shared type icons from being deleted during asset cleanup.
    */
   unsigned int get_texture_id() const {
     return (default_texture_id > 0) ? default_texture_id : texture_id;
@@ -75,9 +75,9 @@ public:
   ThumbnailResult generate_3d_model_thumbnail(const std::string& model_path, const std::filesystem::path& thumbnail_path);
 
 
-  // Texture cache invalidation (thread-safe)
-  void queue_texture_invalidation(const std::string& file_path);
-  void process_invalidation_queue();
+  // Texture cache cleanup (thread-safe)
+  void queue_texture_cleanup(const std::string& file_path, AssetType asset_type);
+  void process_cleanup_queue();
   void clear_texture_cache(); // Clear all cached textures (for path encoding changes)
 
   // 3D preview system
@@ -112,9 +112,14 @@ private:
   unsigned int preview_shader_;
   bool preview_initialized_;
 
-  // Invalidation queue for thread-safe texture cache updates
-  std::queue<std::string> invalidation_queue_;
-  mutable std::mutex invalidation_mutex_;
+  // Cleanup queue for thread-safe texture cache updates and thumbnail deletion
+  struct CleanupItem {
+    std::string file_path;
+    AssetType asset_type;
+    CleanupItem(const std::string& path, AssetType type) : file_path(path), asset_type(type) {}
+  };
+  std::queue<CleanupItem> cleanup_queue_;
+  mutable std::mutex cleanup_mutex_;
   
 
   // Audio control icons

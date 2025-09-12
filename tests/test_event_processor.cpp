@@ -18,11 +18,15 @@ namespace fs = std::filesystem;
 // Mock TextureManager for testing
 class MockTextureManager {
 public:
-    void queue_texture_invalidation(const fs::path& path) {
-        invalidated_textures.push_back(path);
+    void queue_texture_cleanup(const fs::path& path, AssetType asset_type) {
+        invalidated_textures.push_back({path, asset_type});
     }
     
-    std::vector<fs::path> invalidated_textures;
+    struct CleanupEntry {
+        fs::path path;
+        AssetType asset_type;
+    };
+    std::vector<CleanupEntry> invalidated_textures;
 };
 
 TEST_CASE("EventProcessor search index integration", "[event_processor][search_index]") {

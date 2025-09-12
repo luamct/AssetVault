@@ -44,7 +44,7 @@ private:
   std::string watched_path;
 
   // Buffer for file change notifications
-  char buffer[65536];
+  char buffer[20 * 1024 * 1024]; // 20MB ~ +100,000 events
   DWORD bytes_returned;
 
   // Timer-based event tracking

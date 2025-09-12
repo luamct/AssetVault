@@ -236,7 +236,7 @@ void TextureManager::load_type_textures() {
 }
 
 TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
-  std::lock_guard<std::mutex> lock(invalidation_mutex_);
+  std::lock_guard<std::mutex> lock(cleanup_mutex_);
   const auto& asset_path = asset.path;
 
   // Check if asset is already in cache
@@ -786,17 +786,19 @@ void TextureManager::cleanup_preview_system() {
   }
 }
 
-void TextureManager::queue_texture_invalidation(const std::string& file_path) {
-  std::lock_guard<std::mutex> lock(invalidation_mutex_);
-  invalidation_queue_.push(file_path);
-  LOG_TRACE("[TEXTURE] Queued invalidation for: {}", file_path);
+void TextureManager::queue_texture_cleanup(const std::string& file_path, AssetType asset_type) {
+  std::lock_guard<std::mutex> lock(cleanup_mutex_);
+  cleanup_queue_.emplace(file_path, asset_type);
+  LOG_TRACE("[TEXTURE] Queued cleanup for: {} (type: {})", file_path, static_cast<int>(asset_type));
 }
 
-void TextureManager::process_invalidation_queue() {
-  std::lock_guard<std::mutex> lock(invalidation_mutex_);
+void TextureManager::process_cleanup_queue() {
+  std::lock_guard<std::mutex> lock(cleanup_mutex_);
 
-  while (!invalidation_queue_.empty()) {
-    const std::string& file_path = invalidation_queue_.front();
+  while (!cleanup_queue_.empty()) {
+    const CleanupItem& item = cleanup_queue_.front();
+    const std::string& file_path = item.file_path;
+    AssetType asset_type = item.asset_type;
 
     // Remove from texture cache if present
     auto cache_it = texture_cache_.find(file_path);
@@ -804,23 +806,42 @@ void TextureManager::process_invalidation_queue() {
       // Only delete the texture if it's owned by this cache entry (not a shared default icon)
       // default_texture_id > 0 means this entry is using a shared type icon that must not be deleted
       if (cache_it->second.texture_id != 0 && cache_it->second.default_texture_id == 0) {
-        LOG_TRACE("[TEXTURE] Processing invalidation for: {} (texture_id: {})",
+        LOG_TRACE("[TEXTURE] Processing cleanup for: {} (texture_id: {})",
           file_path, cache_it->second.texture_id);
         glDeleteTextures(1, &cache_it->second.texture_id);
       }
       else if (cache_it->second.default_texture_id > 0) {
-        LOG_TRACE("[TEXTURE] Processing invalidation for: {} (keeping default_texture_id: {})",
+        LOG_TRACE("[TEXTURE] Processing cleanup for: {} (keeping default_texture_id: {})",
           file_path, cache_it->second.default_texture_id);
       }
       texture_cache_.erase(cache_it);
     }
 
-    invalidation_queue_.pop();
+    // Delete thumbnail for 3D assets
+    if (asset_type == AssetType::_3D) {
+      // Create a temporary Asset object to get the thumbnail path
+      Asset temp_asset;
+      temp_asset.path = file_path;
+      temp_asset.type = asset_type;
+      
+      std::filesystem::path thumbnail_path = temp_asset.get_thumbnail_path();
+      if (std::filesystem::exists(thumbnail_path)) {
+        try {
+          std::filesystem::remove(thumbnail_path);
+          LOG_TRACE("[TEXTURE] Deleted thumbnail for removed 3D asset: {}", thumbnail_path.string());
+        }
+        catch (const std::filesystem::filesystem_error& e) {
+          LOG_WARN("[TEXTURE] Failed to delete thumbnail {}: {}", thumbnail_path.string(), e.what());
+        }
+      }
+    }
+
+    cleanup_queue_.pop();
   }
 }
 
 void TextureManager::clear_texture_cache() {
-  std::lock_guard<std::mutex> lock(invalidation_mutex_);
+  std::lock_guard<std::mutex> lock(cleanup_mutex_);
 
   // Clean up all cached textures (but preserve type icons and default texture)
   for (auto& entry : texture_cache_) {
@@ -833,7 +854,7 @@ void TextureManager::clear_texture_cache() {
 }
 
 void TextureManager::print_texture_cache() const {
-  std::lock_guard<std::mutex> lock(invalidation_mutex_);
+  std::lock_guard<std::mutex> lock(cleanup_mutex_);
 
   LOG_INFO("====== TEXTURE CACHE DUMP ======");
   LOG_INFO("Total entries: {}", texture_cache_.size());

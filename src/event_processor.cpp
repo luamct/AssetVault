@@ -225,11 +225,8 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     paths_to_delete.reserve(events.size());
     deleted_asset_ids.reserve(events.size());
 
-    // Queue texture invalidation first (no mutex needed)
-    for (const auto& event : events) {
-        texture_manager_.queue_texture_invalidation(event.path);
-        total_events_processed_++;
-    }
+    // Total events processing counter (will be updated in the main loop)
+    // Texture cleanup will be queued with asset type information below
 
     // Single pass: collect paths, asset IDs, and handle thumbnail cleanup
     {
@@ -248,23 +245,17 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
                     deleted_asset_ids.push_back(asset.id);
                 }
 
-                // Delete thumbnail for 3D assets
-                if (asset.type == AssetType::_3D) {
-                    fs::path thumbnail_path = asset.get_thumbnail_path();
-                    if (fs::exists(thumbnail_path)) {
-                        try {
-                            fs::remove(thumbnail_path);
-                            LOG_TRACE("[EVENT] Deleted thumbnail for removed 3D asset: {}", thumbnail_path.string());
-                        }
-                        catch (const fs::filesystem_error& e) {
-                            LOG_WARN("[EVENT] Failed to delete thumbnail {}: {}", thumbnail_path.string(), e.what());
-                        }
-                    }
-                }
+                // Queue texture cleanup with asset type (includes thumbnail deletion for 3D assets)
+                texture_manager_.queue_texture_cleanup(event.path, asset.type);
 
                 // Remove from assets map immediately
                 assets_.erase(asset_it);
+            } else {
+                // Asset not found in memory, queue cleanup with Unknown type (no thumbnail deletion)
+                texture_manager_.queue_texture_cleanup(event.path, AssetType::Unknown);
             }
+
+            total_events_processed_++;
         }
 
         // Remove from search index in the same critical section
