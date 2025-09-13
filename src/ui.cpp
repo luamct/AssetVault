@@ -592,6 +592,9 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
     ImGui::Separator();
   }
 
+  // Create an inner scrolling region so the header above stays visible
+  ImGui::BeginChild("AssetGridScroll", ImVec2(0, 0), false);
+
   // Calculate grid layout upfront since all items have the same size
   float available_width = panel_width - 20.0f;                     // Account for padding
   float item_height = Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN + Config::TEXT_HEIGHT; // Full item height including text
@@ -738,6 +741,10 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
     }
   }
 
+  // End inner scrolling region (grid)
+  ImGui::EndChild();
+
+  // End outer container
   ImGui::EndChild();
 }
 
