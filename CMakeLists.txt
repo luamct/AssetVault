@@ -58,6 +58,7 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(Catch2 CONFIG REQUIRED)
+find_package(lunasvg CONFIG REQUIRED)
 
 # SQLite is now managed by vcpkg with features: fts5, json1, dbstat
 
@@ -141,7 +142,6 @@ target_include_directories(AssetInventory PRIVATE
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
     ${CMAKE_CURRENT_SOURCE_DIR}/external
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/nanosvg
 )
 
 # Link libraries
@@ -153,6 +153,7 @@ target_link_libraries(AssetInventory PRIVATE
     glad
     glm::glm
     spdlog::spdlog
+    lunasvg::lunasvg
 )
 
 # Platform-specific system libraries

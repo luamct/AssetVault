@@ -14,11 +14,6 @@ This directory contains dependencies that cannot be managed through vcpkg for sp
 - **Type**: Source files compiled as static library
 - **Note**: Tightly coupled to our OpenGL 3.3/4.1 core profile usage
 
-### nanosvg/ (124KB)
-- **Reason**: Not available in vcpkg, header-only library
-- **Type**: Header-only
-- **Usage**: SVG rendering for asset thumbnails
-
 ### miniaudio.h (3.8MB)
 - **Reason**: Not available in vcpkg, header-only library
 - **Type**: Single header file
@@ -41,5 +36,6 @@ This directory contains dependencies that cannot be managed through vcpkg for sp
 - GLM (math library)
 - spdlog (logging)
 - Catch2 (unit testing)
+- lunasvg (SVG rendering)
 
 Total size reduced from ~27MB to ~8MB through vcpkg migration.

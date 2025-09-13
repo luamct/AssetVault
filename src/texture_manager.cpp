@@ -20,11 +20,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-// Include NanoSVG for SVG support
-#define NANOSVG_IMPLEMENTATION
-#include "nanosvg.h"
-#define NANOSVGRAST_IMPLEMENTATION
-#include "nanosvgrast.h"
+// SVG rasterization: prefer lunasvg for CSS+style support; keep NanoSVG as fallback if needed
+#include <lunasvg.h>
 
 #include "asset.h" // For SVG_THUMBNAIL_SIZE
 #include "config.h" // For MODEL_THUMBNAIL_SIZE, MAX_TEXTURE_RETRY_ATTEMPTS
@@ -246,7 +243,8 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
         LOG_TRACE("[TextureManager] 2D asset '{}': SVG thumbnail loaded, texture_id: {}, size: {}x{}",
           relative_path, texture_id, width, height);
       }
-    } else {
+    }
+    else {
       LOG_WARN("[TextureManager] 2D asset '{}': SVG thumbnail not found at {}", relative_path, thumbnail_path.string());
     }
   }
@@ -450,59 +448,36 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
 }
 
 bool TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path) {
-  const std::string svg_path_str = svg_path.string();
-  
-  // Parse SVG file
-  NSVGimage* image = nsvgParseFromFile(svg_path_str.c_str(), "px", 96.0f);
-  if (!image) {
-    LOG_WARN("[SVG] Failed to parse SVG: {}", svg_path_str);
+  LOG_DEBUG("[SVG] Rendering with lunasvg");
+  const std::string svg_path_str = svg_path.u8string();
+
+  // Load SVG with lunasvg (supports CSS classes, gradients, styles)
+  auto document = lunasvg::Document::loadFromFile(svg_path_str);
+  if (!document) {
+    LOG_WARN("[SVG] Failed to load SVG with lunasvg: {}", svg_path_str);
     return false;
   }
 
-  if (image->width <= 0 || image->height <= 0) {
-    LOG_WARN("[SVG] Invalid SVG dimensions: {}x{} for {}", image->width, image->height, svg_path_str);
-    nsvgDelete(image);
+  // Compute output size preserving aspect ratio, fit within Config::SVG_THUMBNAIL_SIZE
+  double svg_w = document->width();
+  double svg_h = document->height();
+  if (svg_w <= 0.0 || svg_h <= 0.0) {
+    // Fallback to square if dimensions missing
+    svg_w = svg_h = static_cast<double>(Config::SVG_THUMBNAIL_SIZE);
+  }
+  const double target = static_cast<double>(Config::SVG_THUMBNAIL_SIZE);
+  const double scale = std::min(target / svg_w, target / svg_h);
+  const int out_w = std::max(1, static_cast<int>(std::round(svg_w * scale)));
+  const int out_h = std::max(1, static_cast<int>(std::round(svg_h * scale)));
+
+  auto bitmap = document->renderToBitmap(out_w, out_h);
+  if (bitmap.isNull()) {
+    LOG_WARN("[SVG] lunasvg failed to render: {}", svg_path_str);
     return false;
   }
 
-  // Calculate scale factor to fit SVG into target dimensions while preserving aspect ratio
-  float scale_x = static_cast<float>(Config::SVG_THUMBNAIL_SIZE) / image->width;
-  float scale_y = static_cast<float>(Config::SVG_THUMBNAIL_SIZE) / image->height;
-  float scale = std::min(scale_x, scale_y);
-
-  // Calculate actual output dimensions maintaining aspect ratio
-  int w = static_cast<int>(image->width * scale);
-  int h = static_cast<int>(image->height * scale);
-
-  if (w <= 0 || h <= 0) {
-    LOG_WARN("[SVG] Invalid raster dimensions: {}x{} for {}", w, h, svg_path_str);
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Create rasterizer
-  NSVGrasterizer* rast = nsvgCreateRasterizer();
-  if (!rast) {
-    LOG_WARN("[SVG] Failed to create SVG rasterizer for: {}", svg_path_str);
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Allocate image buffer
-  unsigned char* img_data = static_cast<unsigned char*>(malloc(w * h * 4));
-  if (!img_data) {
-    LOG_WARN("[SVG] Failed to allocate image buffer for: {}", svg_path_str);
-    nsvgDeleteRasterizer(rast);
-    nsvgDelete(image);
-    return false;
-  }
-
-  // Rasterize SVG
-  nsvgRasterize(rast, image, 0, 0, scale, img_data, w, h, w * 4);
-
-  // Cleanup SVG resources
-  nsvgDeleteRasterizer(rast);
-  nsvgDelete(image);
+  // lunasvg returns ARGB32 premultiplied. Convert to RGBA plain for stb_image_write.
+  bitmap.convertToRGBA();
 
   // Ensure thumbnail directory exists
   std::filesystem::path thumbnail_dir = thumbnail_path.parent_path();
@@ -510,23 +485,19 @@ bool TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_pat
   std::filesystem::create_directories(thumbnail_dir, ec);
   if (ec) {
     LOG_WARN("[SVG] Failed to create thumbnail directory {}: {}", thumbnail_dir.string(), ec.message());
-    free(img_data);
     return false;
   }
 
-  // Write PNG file
-  const std::string thumbnail_path_str = thumbnail_path.string();
-  int success = stbi_write_png(thumbnail_path_str.c_str(), w, h, 4, img_data, w * 4);
-
-  // Cleanup
-  free(img_data);
-
-  if (!success) {
-    LOG_WARN("[SVG] Failed to write PNG thumbnail: {}", thumbnail_path_str);
+  // Write PNG using stb_image_write (bitmap is RGBA)
+  const std::string out_path = thumbnail_path.u8string();
+  const unsigned char* data = reinterpret_cast<const unsigned char*>(bitmap.data());
+  const int stride = bitmap.stride();
+  if (!stbi_write_png(out_path.c_str(), out_w, out_h, 4, data, stride)) {
+    LOG_WARN("[SVG] Failed to write PNG: {}", out_path);
     return false;
   }
 
-  LOG_TRACE("[SVG] Generated thumbnail: {} -> {} ({}x{})", svg_path_str, thumbnail_path_str, w, h);
+  LOG_TRACE("[SVG] Generated thumbnail via lunasvg: {} -> {} ({}x{})", svg_path_str, out_path, out_w, out_h);
   return true;
 }
 

@@ -11,7 +11,8 @@
     },
     "glm",
     "spdlog",
-    "catch2"
+    "catch2",
+    "lunasvg"
   ],
   "builtin-baseline": "8cce1e1118ea2569d5117f096035671a8490b8f4"
 }
