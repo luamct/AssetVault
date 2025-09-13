@@ -109,7 +109,8 @@ namespace Config {
         const char* localappdata = std::getenv("LOCALAPPDATA");
         if (localappdata) {
             return std::filesystem::path(localappdata) / "AssetInventory";
-        } else {
+        }
+        else {
             // Fallback to current directory if env var not found
             return "cache";
         }
@@ -118,7 +119,8 @@ namespace Config {
         const char* home = std::getenv("HOME");
         if (home) {
             return std::filesystem::path(home) / "Library" / "Caches" / "AssetInventory";
-        } else {
+        }
+        else {
             return "cache";
         }
 #else
@@ -126,11 +128,13 @@ namespace Config {
         const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
         if (xdg_cache) {
             return std::filesystem::path(xdg_cache) / "AssetInventory";
-        } else {
+        }
+        else {
             const char* home = std::getenv("HOME");
             if (home) {
                 return std::filesystem::path(home) / ".cache" / "AssetInventory";
-            } else {
+            }
+            else {
                 return "cache";
             }
         }
@@ -144,7 +148,8 @@ namespace Config {
         const char* localappdata = std::getenv("LOCALAPPDATA");
         if (localappdata) {
             return std::filesystem::path(localappdata) / "AssetInventory";
-        } else {
+        }
+        else {
             return "data";
         }
 #elif __APPLE__
@@ -152,7 +157,8 @@ namespace Config {
         const char* home = std::getenv("HOME");
         if (home) {
             return std::filesystem::path(home) / "Library" / "Application Support" / "AssetInventory";
-        } else {
+        }
+        else {
             return "data";
         }
 #else
@@ -160,11 +166,13 @@ namespace Config {
         const char* xdg_data = std::getenv("XDG_DATA_HOME");
         if (xdg_data) {
             return std::filesystem::path(xdg_data) / "AssetInventory";
-        } else {
+        }
+        else {
             const char* home = std::getenv("HOME");
             if (home) {
                 return std::filesystem::path(home) / ".local" / "share" / "AssetInventory";
-            } else {
+            }
+            else {
                 return "data";
             }
         }
@@ -188,13 +196,13 @@ namespace Config {
         if (!std::filesystem::exists(cache_dir)) {
             std::filesystem::create_directories(cache_dir);
         }
-        
+
         // Create thumbnail directory
         std::filesystem::path thumbnail_dir = get_thumbnail_directory();
         if (!std::filesystem::exists(thumbnail_dir)) {
             std::filesystem::create_directories(thumbnail_dir);
         }
-        
+
         // Create data directory for database
         std::filesystem::path data_dir = get_data_directory();
         if (!std::filesystem::exists(data_dir)) {

@@ -160,7 +160,6 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     }
 
     // Signal that search needs to be updated
-    LOG_DEBUG("[BATCH] Signalling for a search update");
     search_update_needed_ = true;
 
     // Calculate timing metrics
@@ -189,10 +188,14 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
         try {
             Asset file_info = process_file(event.path, event.timestamp);
 
-            // Generate thumbnail for 3D assets immediately after processing
+            // Generate thumbnails immediately after processing
             if (file_info.type == AssetType::_3D) {
                 fs::path thumbnail_path = file_info.get_thumbnail_path();
                 texture_manager_.generate_3d_model_thumbnail(file_info.path, thumbnail_path);
+            }
+            else if (file_info.type == AssetType::_2D && file_info.extension == ".svg") {
+                fs::path thumbnail_path = file_info.get_thumbnail_path();
+                TextureManager::generate_svg_thumbnail(file_info.path, thumbnail_path);
             }
 
             files_to_insert.push_back(file_info);
@@ -236,6 +239,9 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
             std::string path = event.path;
             paths_to_delete.push_back(path);
 
+            // Always queue texture/thumbnail cleanup for this path
+            texture_manager_.queue_texture_cleanup(path);
+
             auto asset_it = assets_.find(path);
             if (asset_it != assets_.end()) {
                 const Asset& asset = asset_it->second;
@@ -245,14 +251,8 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
                     deleted_asset_ids.push_back(asset.id);
                 }
 
-                // Queue texture cleanup with asset type (includes thumbnail deletion for 3D assets)
-                texture_manager_.queue_texture_cleanup(event.path, asset.type);
-
                 // Remove from assets map immediately
                 assets_.erase(asset_it);
-            } else {
-                // Asset not found in memory, queue cleanup with Unknown type (no thumbnail deletion)
-                texture_manager_.queue_texture_cleanup(event.path, AssetType::Unknown);
             }
 
             total_events_processed_++;

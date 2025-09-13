@@ -133,84 +133,6 @@ unsigned int TextureManager::load_texture(const char* filename, int* out_width, 
   return texture_id;
 }
 
-unsigned int TextureManager::load_svg_texture(
-  const char* filename,
-  int target_width, int target_height,
-  int* actual_width, int* actual_height
-) {
-  NSVGimage* image = nsvgParseFromFile(filename, "px", 96.0f);
-
-  if (!image) {
-    LOG_ERROR("Failed to parse SVG: {}", filename);
-    return 0;
-  }
-
-  if (image->width <= 0 || image->height <= 0) {
-    LOG_ERROR("Invalid SVG dimensions: {}x{}", image->width, image->height);
-    nsvgDelete(image);
-    return 0;
-  }
-
-  // Calculate scale factor to fit SVG into target dimensions while preserving aspect ratio
-  float scale_x = static_cast<float>(target_width) / image->width;
-  float scale_y = static_cast<float>(target_height) / image->height;
-  float scale = std::min(scale_x, scale_y);
-
-  // Calculate actual output dimensions maintaining aspect ratio
-  int w = static_cast<int>(image->width * scale);
-  int h = static_cast<int>(image->height * scale);
-
-  if (w <= 0 || h <= 0) {
-    LOG_ERROR("Invalid raster dimensions: {}x{}", w, h);
-    nsvgDelete(image);
-    return 0;
-  }
-
-  // Create rasterizer
-  NSVGrasterizer* rast = nsvgCreateRasterizer();
-  if (!rast) {
-    LOG_ERROR("Failed to create SVG rasterizer for: {}", filename);
-    nsvgDelete(image);
-    return 0;
-  }
-
-  // Allocate image buffer like the nanosvg examples do
-  unsigned char* img_data = static_cast<unsigned char*>(malloc(w * h * 4));
-  if (!img_data) {
-    LOG_ERROR("Failed to allocate image buffer for: {}", filename);
-    nsvgDeleteRasterizer(rast);
-    nsvgDelete(image);
-    return 0;
-  }
-
-  nsvgRasterize(rast, image, 0, 0, scale, img_data, w, h, w * 4);
-
-  // Create OpenGL texture
-  unsigned int texture_id;
-
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters (use linear filtering for SVG)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-  // Upload texture data at original size
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data);
-
-  // Return actual dimensions if requested
-  if (actual_width) *actual_width = w;
-  if (actual_height) *actual_height = h;
-
-  // Cleanup
-  free(img_data);
-  nsvgDeleteRasterizer(rast);
-  nsvgDelete(image);
-
-  return texture_id;
-}
 
 void TextureManager::load_type_textures() {
   const std::unordered_map<AssetType, const char*> texture_paths = {
@@ -269,7 +191,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
         entry.width = Config::MODEL_THUMBNAIL_SIZE;
         entry.height = Config::MODEL_THUMBNAIL_SIZE;
         entry.loaded = true;
-        LOG_DEBUG("[TextureManager] 3D model '{}': thumbnail loaded, texture_id: {}", relative_path, texture_id);
+        LOG_TRACE("[TextureManager] 3D model '{}': thumbnail loaded, texture_id: {}", relative_path, texture_id);
         return entry;
       }
       else {
@@ -315,12 +237,17 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   unsigned int texture_id = 0;
   int width = 0, height = 0;
 
-  // Handle SVG files - render on-demand directly to OpenGL texture
+  // Handle SVG files - load pre-generated PNG thumbnail
   if (asset.extension == ".svg") {
-    texture_id = load_svg_texture(asset.path.c_str(), Config::SVG_THUMBNAIL_SIZE, Config::SVG_THUMBNAIL_SIZE, &width, &height);
-    if (texture_id != 0) {
-      LOG_TRACE("[TextureManager] 2D asset '{}': SVG loaded, texture_id: {}, size: {}x{}",
-        relative_path, texture_id, width, height);
+    std::filesystem::path thumbnail_path = asset.get_thumbnail_path();
+    if (std::filesystem::exists(thumbnail_path)) {
+      texture_id = load_texture(thumbnail_path.string().c_str(), &width, &height);
+      if (texture_id != 0) {
+        LOG_TRACE("[TextureManager] 2D asset '{}': SVG thumbnail loaded, texture_id: {}, size: {}x{}",
+          relative_path, texture_id, width, height);
+      }
+    } else {
+      LOG_WARN("[TextureManager] 2D asset '{}': SVG thumbnail not found at {}", relative_path, thumbnail_path.string());
     }
   }
   else {
@@ -515,10 +442,92 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
   // Log performance metrics in single line
   auto end_total = end_write;
   auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
-  LOG_INFO("[THUMBNAIL] {} - Total: {}μs (IO: {}μs, GPU: {}μs, Write: {}μs)",
-    filename, total_duration.count(), io_duration.count(), gpu_duration.count(), write_duration.count());
+  LOG_INFO("[THUMBNAIL] {} - Total: {:.1f}ms (IO: {:.1f}ms, GPU: {:.1f}ms, Write: {:.1f}ms)",
+    filename, total_duration.count() / 1000.0, io_duration.count() / 1000.0,
+    gpu_duration.count() / 1000.0, write_duration.count() / 1000.0);
 
   return ThumbnailResult::SUCCESS;
+}
+
+bool TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path) {
+  const std::string svg_path_str = svg_path.string();
+  
+  // Parse SVG file
+  NSVGimage* image = nsvgParseFromFile(svg_path_str.c_str(), "px", 96.0f);
+  if (!image) {
+    LOG_WARN("[SVG] Failed to parse SVG: {}", svg_path_str);
+    return false;
+  }
+
+  if (image->width <= 0 || image->height <= 0) {
+    LOG_WARN("[SVG] Invalid SVG dimensions: {}x{} for {}", image->width, image->height, svg_path_str);
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Calculate scale factor to fit SVG into target dimensions while preserving aspect ratio
+  float scale_x = static_cast<float>(Config::SVG_THUMBNAIL_SIZE) / image->width;
+  float scale_y = static_cast<float>(Config::SVG_THUMBNAIL_SIZE) / image->height;
+  float scale = std::min(scale_x, scale_y);
+
+  // Calculate actual output dimensions maintaining aspect ratio
+  int w = static_cast<int>(image->width * scale);
+  int h = static_cast<int>(image->height * scale);
+
+  if (w <= 0 || h <= 0) {
+    LOG_WARN("[SVG] Invalid raster dimensions: {}x{} for {}", w, h, svg_path_str);
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Create rasterizer
+  NSVGrasterizer* rast = nsvgCreateRasterizer();
+  if (!rast) {
+    LOG_WARN("[SVG] Failed to create SVG rasterizer for: {}", svg_path_str);
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Allocate image buffer
+  unsigned char* img_data = static_cast<unsigned char*>(malloc(w * h * 4));
+  if (!img_data) {
+    LOG_WARN("[SVG] Failed to allocate image buffer for: {}", svg_path_str);
+    nsvgDeleteRasterizer(rast);
+    nsvgDelete(image);
+    return false;
+  }
+
+  // Rasterize SVG
+  nsvgRasterize(rast, image, 0, 0, scale, img_data, w, h, w * 4);
+
+  // Cleanup SVG resources
+  nsvgDeleteRasterizer(rast);
+  nsvgDelete(image);
+
+  // Ensure thumbnail directory exists
+  std::filesystem::path thumbnail_dir = thumbnail_path.parent_path();
+  std::error_code ec;
+  std::filesystem::create_directories(thumbnail_dir, ec);
+  if (ec) {
+    LOG_WARN("[SVG] Failed to create thumbnail directory {}: {}", thumbnail_dir.string(), ec.message());
+    free(img_data);
+    return false;
+  }
+
+  // Write PNG file
+  const std::string thumbnail_path_str = thumbnail_path.string();
+  int success = stbi_write_png(thumbnail_path_str.c_str(), w, h, 4, img_data, w * 4);
+
+  // Cleanup
+  free(img_data);
+
+  if (!success) {
+    LOG_WARN("[SVG] Failed to write PNG thumbnail: {}", thumbnail_path_str);
+    return false;
+  }
+
+  LOG_TRACE("[SVG] Generated thumbnail: {} -> {} ({}x{})", svg_path_str, thumbnail_path_str, w, h);
+  return true;
 }
 
 unsigned int TextureManager::load_texture_for_model(const std::string& filepath) {
@@ -786,19 +795,17 @@ void TextureManager::cleanup_preview_system() {
   }
 }
 
-void TextureManager::queue_texture_cleanup(const std::string& file_path, AssetType asset_type) {
+void TextureManager::queue_texture_cleanup(const std::string& file_path) {
   std::lock_guard<std::mutex> lock(cleanup_mutex_);
-  cleanup_queue_.emplace(file_path, asset_type);
-  LOG_TRACE("[TEXTURE] Queued cleanup for: {} (type: {})", file_path, static_cast<int>(asset_type));
+  cleanup_queue_.emplace(file_path);
+  LOG_TRACE("[TEXTURE] Queued cleanup for: {}", file_path);
 }
 
 void TextureManager::process_cleanup_queue() {
   std::lock_guard<std::mutex> lock(cleanup_mutex_);
 
   while (!cleanup_queue_.empty()) {
-    const CleanupItem& item = cleanup_queue_.front();
-    const std::string& file_path = item.file_path;
-    AssetType asset_type = item.asset_type;
+    const std::string file_path = cleanup_queue_.front();
 
     // Remove from texture cache if present
     auto cache_it = texture_cache_.find(file_path);
@@ -817,18 +824,15 @@ void TextureManager::process_cleanup_queue() {
       texture_cache_.erase(cache_it);
     }
 
-    // Delete thumbnail for 3D assets
-    if (asset_type == AssetType::_3D) {
-      // Create a temporary Asset object to get the thumbnail path
+    // Delete thumbnail if present for any asset path
+    {
       Asset temp_asset;
       temp_asset.path = file_path;
-      temp_asset.type = asset_type;
-      
       std::filesystem::path thumbnail_path = temp_asset.get_thumbnail_path();
       if (std::filesystem::exists(thumbnail_path)) {
         try {
           std::filesystem::remove(thumbnail_path);
-          LOG_TRACE("[TEXTURE] Deleted thumbnail for removed 3D asset: {}", thumbnail_path.string());
+          LOG_TRACE("[TEXTURE] Deleted thumbnail for removed asset: {}", thumbnail_path.string());
         }
         catch (const std::filesystem::filesystem_error& e) {
           LOG_WARN("[TEXTURE] Failed to delete thumbnail {}: {}", thumbnail_path.string(), e.what());

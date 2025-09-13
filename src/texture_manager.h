@@ -47,7 +47,6 @@ public:
   // Asset texture management
   unsigned int load_texture(const char* filename);
   unsigned int load_texture(const char* filename, int* out_width, int* out_height);
-  unsigned int load_svg_texture(const char* filename, int target_width, int target_height, int* actual_width = nullptr, int* actual_height = nullptr);
   TextureCacheEntry get_asset_texture(const Asset& asset);
   const std::string& u8_path(const Asset& asset);
   void load_type_textures();
@@ -74,9 +73,12 @@ public:
   // 3D model thumbnail generation
   ThumbnailResult generate_3d_model_thumbnail(const std::string& model_path, const std::filesystem::path& thumbnail_path);
 
+  // SVG thumbnail generation (static - can be called without instance)
+  static bool generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path);
+
 
   // Texture cache cleanup (thread-safe)
-  void queue_texture_cleanup(const std::string& file_path, AssetType asset_type);
+  void queue_texture_cleanup(const std::string& file_path);
   void process_cleanup_queue();
   void clear_texture_cache(); // Clear all cached textures (for path encoding changes)
 
@@ -113,12 +115,7 @@ private:
   bool preview_initialized_;
 
   // Cleanup queue for thread-safe texture cache updates and thumbnail deletion
-  struct CleanupItem {
-    std::string file_path;
-    AssetType asset_type;
-    CleanupItem(const std::string& path, AssetType type) : file_path(path), asset_type(type) {}
-  };
-  std::queue<CleanupItem> cleanup_queue_;
+  std::queue<std::string> cleanup_queue_;
   mutable std::mutex cleanup_mutex_;
   
 
