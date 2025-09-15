@@ -378,7 +378,6 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
   auto start_time = std::chrono::high_resolution_clock::now();
 
   search_state.filtered_assets.clear();
-  search_state.selected_asset_index = -1; // Clear selection when search results change
 
   // Reset model preview state when filtering
   search_state.model_preview_row = -1;

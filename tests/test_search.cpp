@@ -704,8 +704,8 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
         filter_assets(search_state, test_assets, test_mutex, search_index);
 
-        // Should reset selection and preview state
-        REQUIRE(search_state.selected_asset_index == -1);
+        // Selection should be preserved across filtering; preview row resets
+        REQUIRE(search_state.selected_asset_index == 5);
         REQUIRE(search_state.model_preview_row == -1);
         // Should initialize loaded range
         REQUIRE(search_state.loaded_start_index == 0);

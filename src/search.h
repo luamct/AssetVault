@@ -208,4 +208,3 @@ private:
     bool save_token_assets_to_db(uint32_t token_id, const std::vector<uint32_t>& asset_ids) const;
     bool clear_database_index() const;
 };
-
