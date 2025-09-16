@@ -377,7 +377,8 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
   std::mutex& assets_mutex, SearchIndex& search_index) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  search_state.filtered_assets.clear();
+  search_state.results.clear();
+  search_state.results_ids.clear();
 
   // Reset model preview state when filtering
   search_state.model_preview_row = -1;
@@ -490,14 +491,17 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
     }
 
     // Asset passed all filters
-    search_state.filtered_assets.push_back(asset);
+    search_state.results.push_back(asset);
+    if (asset.id > 0) {
+      search_state.results_ids.insert(asset.id);
+    }
     filtered_count++;
   }
 
   // Initialize loaded range for infinite scroll
   search_state.loaded_start_index = 0;
   search_state.loaded_end_index = std::min(
-    static_cast<int>(search_state.filtered_assets.size()),
+    static_cast<int>(search_state.results.size()),
     SearchState::LOAD_BATCH_SIZE
   );
 

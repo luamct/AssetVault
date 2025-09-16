@@ -552,13 +552,36 @@ void render_progress_panel(EventProcessor* processor, float panel_width, float p
   // Unified progress bar for all asset processing
   bool show_progress = (processor && processor->has_pending_work());
 
-  if (show_progress) {
-    ImGui::TextColored(Theme::TEXT_HEADER, "Processing Assets");
+  // Header row: left = status (only when processing), right = FPS
+  {
+    // Left: status label only when processing
+    if (show_progress) {
+      ImGui::TextColored(Theme::TEXT_HEADER, "Processing Assets");
+    }
 
+    // Right: FPS
+    ImGuiIO& io = ImGui::GetIO();
+    char fps_buf[32];
+    snprintf(fps_buf, sizeof(fps_buf), "%.1f FPS", io.Framerate);
+    ImVec2 fps_size = ImGui::CalcTextSize(fps_buf);
+    float right_x = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - fps_size.x;
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(right_x);
+    ImGui::Text("%s", fps_buf);
+  }
+
+  if (show_progress) {
     // Progress bar data from event processor
     float progress = processor->get_progress();
     size_t processed = processor->get_total_processed();
     size_t total = processor->get_total_queued();
+
+    // Vertically center the progress bar within the panel child
+    float bar_height = ImGui::GetFrameHeight();
+    float target_y = (panel_height - bar_height) * 0.5f;
+    if (target_y > ImGui::GetCursorPosY()) {
+      ImGui::SetCursorPosY(target_y);
+    }
 
     // Draw progress bar without text overlay
     ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "");
@@ -587,8 +610,8 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
   ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), true);
 
   // Show total results count if we have results
-  if (!search_state.filtered_assets.empty()) {
-    ImGui::Text("Showing %d of %zu results", search_state.loaded_end_index, search_state.filtered_assets.size());
+  if (!search_state.results.empty()) {
+    ImGui::Text("Showing %d of %zu results", search_state.loaded_end_index, search_state.results.size());
     ImGui::Separator();
   }
 
@@ -623,11 +646,11 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
 
   // Check if we need to load more items (when approaching the end of loaded items)
   int load_threshold_row = (search_state.loaded_end_index - SearchState::LOAD_BATCH_SIZE / 2) / columns;
-  if (last_visible_row >= load_threshold_row && search_state.loaded_end_index < static_cast<int>(search_state.filtered_assets.size())) {
+  if (last_visible_row >= load_threshold_row && search_state.loaded_end_index < static_cast<int>(search_state.results.size())) {
     // Load more items
     search_state.loaded_end_index = std::min(
       search_state.loaded_end_index + SearchState::LOAD_BATCH_SIZE,
-      static_cast<int>(search_state.filtered_assets.size())
+      static_cast<int>(search_state.results.size())
     );
   }
 
@@ -657,14 +680,14 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
     ImGui::BeginGroup();
 
     // Load texture (all items in loop are visible now)
-    TextureCacheEntry texture_entry = texture_manager.get_asset_texture(search_state.filtered_assets[i]);
+    TextureCacheEntry texture_entry = texture_manager.get_asset_texture(search_state.results[i]);
 
     // Calculate display size based on asset type
     ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
 
     // Check if this asset has actual thumbnail dimensions (textures or 3D model thumbnails)
     bool has_thumbnail_dimensions = false;
-    if (search_state.filtered_assets[i].type == AssetType::_2D || search_state.filtered_assets[i].type == AssetType::_3D) {
+    if (search_state.results[i].type == AssetType::_2D || search_state.results[i].type == AssetType::_3D) {
       // TextureCacheEntry already contains the dimensions, no need for separate call
       has_thumbnail_dimensions = (texture_entry.width > 0 && texture_entry.height > 0);
     }
@@ -705,17 +728,19 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
     if (ImGui::ImageButton(
       ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.get_texture_id(), display_size)) {
       search_state.selected_asset_index = static_cast<int>(i);
-      LOG_DEBUG("Selected: {}", search_state.filtered_assets[i].name);
+      search_state.selected_asset = search_state.results[i];
+      LOG_DEBUG("Selected: {}", search_state.results[i].name);
     }
 
     // Handle right-click context menu
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
       search_state.selected_asset_index = static_cast<int>(i);
+      search_state.selected_asset = search_state.results[i];
       ImGui::OpenPopup(("AssetContextMenu##" + std::to_string(i)).c_str());
     }
 
     // Render context menu using dedicated method
-    render_asset_context_menu(search_state.filtered_assets[i], "AssetContextMenu##" + std::to_string(i));
+    render_asset_context_menu(search_state.results[i], "AssetContextMenu##" + std::to_string(i));
 
     ImGui::PopStyleColor(3);
 
@@ -723,7 +748,7 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
     ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN));
 
     // Asset name below thumbnail
-    std::string truncated_name = truncate_filename(search_state.filtered_assets[i].name);
+    std::string truncated_name = truncate_filename(search_state.results[i].name);
     ImGui::SetCursorPosX(
       ImGui::GetCursorPosX() + (Config::THUMBNAIL_SIZE - ImGui::CalcTextSize(truncated_name.c_str()).x) * 0.5f);
     ImGui::TextWrapped("%s", truncated_name.c_str());
@@ -732,7 +757,7 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
   }
 
   // Show message if no assets found
-  if (search_state.filtered_assets.empty()) {
+  if (search_state.results.empty()) {
     if (assets.empty()) {
       ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets found. Add files to the 'assets' directory.");
     }
@@ -758,26 +783,35 @@ void render_preview_panel(SearchState& search_state, TextureManager& texture_man
   float avail_height = avail_width;                           // Square aspect ratio for preview area
 
   // Track previously selected asset for cleanup
-  static int prev_selected_index = -1;
+  static uint32_t prev_selected_id = 0;
   static AssetType prev_selected_type = AssetType::Unknown;
 
-  // Handle asset selection changes
-  if (search_state.selected_asset_index != prev_selected_index) {
-    // If we were playing audio and switched to a different asset, stop and unload
+  // Handle asset selection changes (by id)
+  if ((search_state.selected_asset ? search_state.selected_asset->id : 0) != prev_selected_id) {
     if (prev_selected_type == AssetType::Audio && audio_manager.has_audio_loaded()) {
       audio_manager.unload_audio();
     }
-    prev_selected_index = search_state.selected_asset_index;
-    if (search_state.selected_asset_index >= 0) {
-      prev_selected_type = search_state.filtered_assets[search_state.selected_asset_index].type;
-    }
-    else {
-      prev_selected_type = AssetType::Unknown;
+    prev_selected_id = search_state.selected_asset ? search_state.selected_asset->id : 0;
+    prev_selected_type = (search_state.selected_asset.has_value()) ? search_state.selected_asset->type : AssetType::Unknown;
+  }
+
+  // Validate current selection against filtered results (no disk access)
+  if (search_state.selected_asset_index >= 0) {
+    // Bounds check for highlight index only
+    if (search_state.selected_asset_index >= static_cast<int>(search_state.results.size())) {
+      search_state.selected_asset_index = -1;
     }
   }
 
-  if (search_state.selected_asset_index >= 0) {
-    const Asset& selected_asset = search_state.filtered_assets[search_state.selected_asset_index];
+  // If selected id is no longer present, clear selection entirely
+  if (search_state.selected_asset &&
+      search_state.results_ids.find(search_state.selected_asset->id) == search_state.results_ids.end()) {
+    search_state.selected_asset_index = -1;
+    search_state.selected_asset.reset();
+  }
+
+  if (search_state.selected_asset.has_value()) {
+    const Asset& selected_asset = *search_state.selected_asset;
 
     // Check if selected asset is a model
     if (selected_asset.type == AssetType::_3D && texture_manager.is_preview_initialized()) {

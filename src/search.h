@@ -8,6 +8,8 @@
 #include <map>
 #include <mutex>
 #include <unordered_map>
+#include <optional>
+#include <unordered_set>
 #include "asset.h"
 
 // Token types for search query parsing
@@ -100,8 +102,12 @@ struct SearchState {
   bool pending_search = false;
 
   // UI state
-  std::vector<Asset> filtered_assets;
+  std::vector<Asset> results;
   int selected_asset_index = -1; // -1 means no selection
+  std::optional<Asset> selected_asset; // Copy used for stable preview/audio
+
+  // Fast membership check for current results (IDs only)
+  std::unordered_set<uint32_t> results_ids;
 
   // Infinite scroll state
   static constexpr int LOAD_BATCH_SIZE = 50;

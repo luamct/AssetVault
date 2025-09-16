@@ -638,11 +638,11 @@ TEST_CASE("filter_assets functionality", "[search]") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster");
         filter_assets(search_state, test_assets, test_mutex, search_index);
 
-        REQUIRE(search_state.filtered_assets.size() == 2);
+        REQUIRE(search_state.results.size() == 2);
         // Check that both monster assets are in results (order may vary with unordered_map)
         bool has_monster_texture = false;
         bool has_monster_model = false;
-        for (const auto& asset : search_state.filtered_assets) {
+        for (const auto& asset : search_state.results) {
             if (asset.name == "monster_texture") has_monster_texture = true;
             if (asset.name == "monster_model") has_monster_model = true;
         }
@@ -654,16 +654,16 @@ TEST_CASE("filter_assets functionality", "[search]") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d");
         filter_assets(search_state, test_assets, test_mutex, search_index);
 
-        REQUIRE(search_state.filtered_assets.size() == 2);
-        REQUIRE(search_state.filtered_assets[0].type == AssetType::_2D);
-        REQUIRE(search_state.filtered_assets[1].type == AssetType::_2D);
+        REQUIRE(search_state.results.size() == 2);
+        REQUIRE(search_state.results[0].type == AssetType::_2D);
+        REQUIRE(search_state.results[1].type == AssetType::_2D);
     }
 
     SECTION("Filter by multiple types") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d,audio");
         filter_assets(search_state, test_assets, test_mutex, search_index);
 
-        REQUIRE(search_state.filtered_assets.size() == 4);
+        REQUIRE(search_state.results.size() == 4);
         // Should include both 2D textures and both audio files
     }
 
@@ -671,11 +671,11 @@ TEST_CASE("filter_assets functionality", "[search]") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d texture");
         filter_assets(search_state, test_assets, test_mutex, search_index);
 
-        REQUIRE(search_state.filtered_assets.size() == 2);
+        REQUIRE(search_state.results.size() == 2);
         // Check that both texture assets are in results (order may vary with unordered_map)
         bool has_monster_texture = false;
         bool has_robot_texture = false;
-        for (const auto& asset : search_state.filtered_assets) {
+        for (const auto& asset : search_state.results) {
             if (asset.name == "monster_texture") has_monster_texture = true;
             if (asset.name == "robot_texture") has_robot_texture = true;
         }
@@ -687,14 +687,14 @@ TEST_CASE("filter_assets functionality", "[search]") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "nonexistent");
         filter_assets(search_state, test_assets, test_mutex, search_index);
 
-        REQUIRE(search_state.filtered_assets.empty());
+        REQUIRE(search_state.results.empty());
     }
 
     SECTION("Empty query returns all") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "");
         filter_assets(search_state, test_assets, test_mutex, search_index);
 
-        REQUIRE(search_state.filtered_assets.size() == test_assets.size());
+        REQUIRE(search_state.results.size() == test_assets.size());
     }
 
     SECTION("Search state initialization") {
