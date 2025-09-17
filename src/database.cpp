@@ -85,6 +85,12 @@ bool AssetDatabase::create_tables() {
         CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens(token);
         CREATE INDEX IF NOT EXISTS idx_token_assets_token ON token_assets(token_id);
         CREATE INDEX IF NOT EXISTS idx_token_assets_asset ON token_assets(asset_id);
+
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
     )";
 
   return execute_sql(create_table_sql);
@@ -95,6 +101,7 @@ bool AssetDatabase::drop_tables() {
     DROP TABLE IF EXISTS token_assets;
     DROP TABLE IF EXISTS tokens;
     DROP TABLE IF EXISTS assets;
+    DROP TABLE IF EXISTS config;
   )";
   return execute_sql(drop_table_sql);
 }
@@ -478,6 +485,71 @@ bool AssetDatabase::delete_assets_batch(const std::vector<std::string>& paths) {
 
 bool AssetDatabase::clear_all_assets() {
   return execute_sql("DELETE FROM assets");
+}
+
+bool AssetDatabase::upsert_config_value(const std::string& key, const std::string& value) {
+  const std::string sql = R"(
+        INSERT INTO config(key, value, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = CURRENT_TIMESTAMP
+    )";
+
+  sqlite3_stmt* stmt;
+  if (!prepare_statement(sql, &stmt)) {
+    return false;
+  }
+
+  bool success =
+    (sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
+
+  if (!success) {
+    print_sqlite_error("binding config upsert parameters");
+  }
+
+  if (success) {
+    int rc = sqlite3_step(stmt);
+    success = (rc == SQLITE_DONE);
+    if (!success) {
+      print_sqlite_error("upserting config value");
+    }
+  }
+
+  finalize_statement(stmt);
+  return success;
+}
+
+bool AssetDatabase::try_get_config_value(const std::string& key, std::string& out_value) {
+  const std::string sql = "SELECT value FROM config WHERE key = ?";
+
+  sqlite3_stmt* stmt;
+  if (!prepare_statement(sql, &stmt)) {
+    return false;
+  }
+
+  if (sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK) {
+    print_sqlite_error("binding config key");
+    finalize_statement(stmt);
+    return false;
+  }
+
+  bool found = false;
+  int rc = sqlite3_step(stmt);
+  if (rc == SQLITE_ROW) {
+    const unsigned char* value_text = sqlite3_column_text(stmt, 0);
+    if (value_text) {
+      out_value = reinterpret_cast<const char*>(value_text);
+      found = true;
+    }
+  }
+  else if (rc != SQLITE_DONE) {
+    print_sqlite_error("querying config value");
+  }
+
+  finalize_statement(stmt);
+  return found;
 }
 
 // Private helper methods

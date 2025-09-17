@@ -7,6 +7,21 @@
 #include "asset.h"
 
 namespace Config {
+
+    // =============================================================================
+    // DEBUG & DEVELOPMENT
+    // =============================================================================
+
+    // Set to true to force database clearing and reindexing on startup
+    constexpr bool DEBUG_FORCE_DB_CLEAR = false;
+
+    // Set to true to delete all thumbnails on startup
+    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = false;
+
+    // Font settings
+    constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";
+    constexpr float FONT_SIZE = 24.0f;
+    
     // =============================================================================
     // WINDOW & UI LAYOUT
     // =============================================================================
@@ -71,32 +86,14 @@ namespace Config {
     // File watcher settings
     constexpr int FILE_WATCHER_DEBOUNCE_MS = 50; // Time window to coalesce related events from the same files
 
-    // Asset root directory
-#ifdef _WIN32
-    constexpr const char* ASSET_ROOT_DIRECTORY = "D:/GameDev/AssetInventory/assets";
-#else
-    constexpr const char* ASSET_ROOT_DIRECTORY = "/Users/luamct/GameDev/AssetInventory/assets";
-#endif
+    // Asset root directory configuration key
+    inline constexpr const char* CONFIG_KEY_ASSETS_DIRECTORY = "assets_directory";
 
     // Database settings
     constexpr const char* DATABASE_PATH = "db/assets.db";
 
     // Thumbnail settings
     constexpr const char* THUMBNAIL_DIRECTORY = "thumbnails";
-
-    // =============================================================================
-    // DEBUG & DEVELOPMENT
-    // =============================================================================
-
-    // Set to true to force database clearing and reindexing on startup
-    constexpr bool DEBUG_FORCE_DB_CLEAR = false;
-
-    // Set to true to delete all thumbnails on startup
-    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = false;
-
-    // Font settings
-    constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";
-    constexpr float FONT_SIZE = 24.0f;
 
     // =============================================================================
     // CROSS-PLATFORM PATHS

@@ -17,6 +17,7 @@ struct Asset {
   std::string name;          // File name (without path)
   std::string extension;     // File extension (lowercase)
   std::string path;          // Full path to the file (UTF-8 with normalized separators)
+  std::string relative_path; // Path relative to the configured assets root
   uint64_t size;             // File size in bytes
   time_point last_modified;  // Last modification time (system clock - for user display)
   AssetType type;            // Asset type enum
@@ -24,7 +25,6 @@ struct Asset {
   Asset() : id(0), size(0), type(AssetType::Unknown) {}
   
   // Get the thumbnail path for this asset (primarily for 3D models)
-  std::filesystem::path get_thumbnail_path() const;
 };
 
 // Asset type utility functions
@@ -34,4 +34,3 @@ AssetType get_asset_type_from_string(const std::string& type_string);
 
 // Early filtering helper - determines if asset should be skipped based on extension
 bool should_skip_asset(const std::string& extension);
-

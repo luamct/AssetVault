@@ -10,7 +10,8 @@ Asset create_test_asset(
     const std::string& name,
     const std::string& extension,
     AssetType type,
-    const std::string& path = ""
+    const std::string& path = "",
+    const std::string& assets_root = ""
 );
 
 // Helper function to print FileEvents for debugging tests

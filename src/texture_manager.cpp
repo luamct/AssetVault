@@ -165,7 +165,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   }
 
   // Get relative path for logging
-  std::string relative_path = get_relative_asset_path(asset_path);
+  const std::string& relative_path = asset.relative_path;
 
   // Create new cache entry for this asset
   LOG_TRACE("[TextureManager] Cache miss for '{}', creating new entry", relative_path);
@@ -175,7 +175,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
   // Handle 3D models - only load existing thumbnails, no generation
   if (asset.type == AssetType::_3D) {
     // Generate thumbnail path using centralized method
-    std::filesystem::path thumbnail_path = asset.get_thumbnail_path();
+    std::filesystem::path thumbnail_path = get_thumbnail_path(asset.relative_path);
 
     // Check if thumbnail exists and load it
     if (std::filesystem::exists(thumbnail_path)) {
@@ -236,7 +236,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
 
   // Handle SVG files - load pre-generated PNG thumbnail
   if (asset.extension == ".svg") {
-    std::filesystem::path thumbnail_path = asset.get_thumbnail_path();
+    std::filesystem::path thumbnail_path = get_thumbnail_path(asset.relative_path);
     if (std::filesystem::exists(thumbnail_path)) {
       texture_id = load_texture(thumbnail_path.string().c_str(), &width, &height);
       if (texture_id != 0) {
@@ -772,7 +772,7 @@ void TextureManager::queue_texture_cleanup(const std::string& file_path) {
   LOG_TRACE("[TEXTURE] Queued cleanup for: {}", file_path);
 }
 
-void TextureManager::process_cleanup_queue() {
+void TextureManager::process_cleanup_queue(const std::string& assets_root_directory) {
   std::lock_guard<std::mutex> lock(cleanup_mutex_);
 
   while (!cleanup_queue_.empty()) {
@@ -796,18 +796,15 @@ void TextureManager::process_cleanup_queue() {
     }
 
     // Delete thumbnail if present for any asset path
-    {
-      Asset temp_asset;
-      temp_asset.path = file_path;
-      std::filesystem::path thumbnail_path = temp_asset.get_thumbnail_path();
-      if (std::filesystem::exists(thumbnail_path)) {
-        try {
-          std::filesystem::remove(thumbnail_path);
-          LOG_TRACE("[TEXTURE] Deleted thumbnail for removed asset: {}", thumbnail_path.string());
-        }
-        catch (const std::filesystem::filesystem_error& e) {
-          LOG_WARN("[TEXTURE] Failed to delete thumbnail {}: {}", thumbnail_path.string(), e.what());
-        }
+      std::string relative = get_relative_asset_path(file_path, assets_root_directory);
+      std::filesystem::path thumbnail_path = get_thumbnail_path(relative);
+    if (std::filesystem::exists(thumbnail_path)) {
+      try {
+        std::filesystem::remove(thumbnail_path);
+        LOG_TRACE("[TEXTURE] Deleted thumbnail for removed asset: {}", thumbnail_path.string());
+      }
+      catch (const std::filesystem::filesystem_error& e) {
+        LOG_WARN("[TEXTURE] Failed to delete thumbnail {}: {}", thumbnail_path.string(), e.what());
       }
     }
 
@@ -828,7 +825,7 @@ void TextureManager::clear_texture_cache() {
   texture_cache_.clear();
 }
 
-void TextureManager::print_texture_cache() const {
+void TextureManager::print_texture_cache(const std::string& assets_root_directory) const {
   std::lock_guard<std::mutex> lock(cleanup_mutex_);
 
   LOG_INFO("====== TEXTURE CACHE DUMP ======");
@@ -883,7 +880,7 @@ void TextureManager::print_texture_cache() const {
     }
 
     LOG_INFO("{}. {} [{}]", entry_num++, filename, status);
-    LOG_INFO("   Path: {}", get_relative_asset_path(path));
+    LOG_INFO("   Path: {}", get_relative_asset_path(path, assets_root_directory));
     // Show both owned and default texture IDs for debugging
     if (entry.default_texture_id > 0) {
       LOG_INFO("   Using default_texture_id: {}, Size: {}x{}, Retries: {}",

@@ -20,11 +20,12 @@ namespace fs = std::filesystem;
 
 EventProcessor::EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
     std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
-    TextureManager& texture_manager, SearchIndex& search_index, GLFWwindow* thumbnail_context)
+    TextureManager& texture_manager, SearchIndex& search_index,
+    const std::string& assets_root_directory, GLFWwindow* thumbnail_context)
     : database_(database), assets_(assets), assets_mutex_(assets_mutex), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), search_index_(search_index), batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
-    root_path_(Config::ASSET_ROOT_DIRECTORY), thumbnail_context_(thumbnail_context) {
+    thumbnail_context_(thumbnail_context), assets_root_directory_(assets_root_directory) {
 }
 
 EventProcessor::~EventProcessor() {
@@ -190,11 +191,11 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
 
             // Generate thumbnails immediately after processing
             if (file_info.type == AssetType::_3D) {
-                fs::path thumbnail_path = file_info.get_thumbnail_path();
+                fs::path thumbnail_path = get_thumbnail_path(file_info.relative_path);
                 texture_manager_.generate_3d_model_thumbnail(file_info.path, thumbnail_path);
             }
             else if (file_info.type == AssetType::_2D && file_info.extension == ".svg") {
-                fs::path thumbnail_path = file_info.get_thumbnail_path();
+                fs::path thumbnail_path = get_thumbnail_path(file_info.relative_path);
                 TextureManager::generate_svg_thumbnail(file_info.path, thumbnail_path);
             }
 
@@ -289,10 +290,9 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
     Asset asset;
 
     try {
-        fs::path root(root_path_);
-
         // Basic file information (path is already normalized)
         asset.path = full_path;
+        asset.relative_path = get_relative_asset_path(asset.path, assets_root_directory_);
         fs::path path_obj = fs::u8path(full_path);
         asset.name = path_obj.filename().u8string();
         // File-specific information

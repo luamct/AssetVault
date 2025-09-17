@@ -79,7 +79,7 @@ public:
 
   // Texture cache cleanup (thread-safe)
   void queue_texture_cleanup(const std::string& file_path);
-  void process_cleanup_queue();
+  void process_cleanup_queue(const std::string& assets_root_directory);
   void clear_texture_cache(); // Clear all cached textures (for path encoding changes)
 
   // 3D preview system
@@ -99,7 +99,7 @@ public:
   unsigned int get_speaker_icon() const { return speaker_icon_; }
 
   // Debug utilities
-  void print_texture_cache() const;
+  void print_texture_cache(const std::string& assets_root_directory) const;
 
 private:
   // Asset thumbnails and icons

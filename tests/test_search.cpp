@@ -371,12 +371,12 @@ TEST_CASE("parse_search_query path filtering", "[search]") {
 }
 
 TEST_CASE("asset_matches_search path filtering", "[search]") {
-    // Use absolute paths that match the expected ASSET_ROOT_DIRECTORY structure
-    std::string asset_root = Config::ASSET_ROOT_DIRECTORY;
-    Asset texture_in_textures = create_test_asset("monster", ".png", AssetType::_2D, asset_root + "/textures/monster.png");
-    Asset texture_in_ui = create_test_asset("button", ".png", AssetType::_2D, asset_root + "/textures/ui/button.png");
-    Asset model_in_models = create_test_asset("character", ".fbx", AssetType::_3D, asset_root + "/models/character.fbx");
-    Asset sound_in_sounds = create_test_asset("explosion", ".wav", AssetType::Audio, asset_root + "/sounds/explosion.wav");
+    // Use absolute paths relative to a configured asset root
+    std::string asset_root = "/tmp/test_assets_root";
+    Asset texture_in_textures = create_test_asset("monster", ".png", AssetType::_2D, asset_root + "/textures/monster.png", asset_root);
+    Asset texture_in_ui = create_test_asset("button", ".png", AssetType::_2D, asset_root + "/textures/ui/button.png", asset_root);
+    Asset model_in_models = create_test_asset("character", ".fbx", AssetType::_3D, asset_root + "/models/character.fbx", asset_root);
+    Asset sound_in_sounds = create_test_asset("explosion", ".wav", AssetType::Audio, asset_root + "/sounds/explosion.wav", asset_root);
 
     SECTION("Single path filter matches") {
         SearchQuery query;
@@ -428,8 +428,8 @@ TEST_CASE("asset_matches_search path filtering", "[search]") {
     }
 
     SECTION("Path filter with spaces matches correctly") {
-        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/damage.png");
-        
+        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/damage.png", asset_root);
+
         SearchQuery query;
         query.path_filters = { "simple damage/folder" };
 
@@ -438,8 +438,8 @@ TEST_CASE("asset_matches_search path filtering", "[search]") {
     }
 
     SECTION("Path filter with spaces partial match") {
-        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/subfolder/damage.png");
-        
+        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/subfolder/damage.png", asset_root);
+
         SearchQuery query;
         query.path_filters = { "simple damage" };
 
@@ -624,7 +624,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     }
 
     std::mutex test_mutex;
-    SearchState search_state;
+    AppState search_state;
     
     // Create a real SearchIndex for testing (without database dependency)
     SearchIndex search_index(nullptr);  // Pass nullptr for database
@@ -709,6 +709,6 @@ TEST_CASE("filter_assets functionality", "[search]") {
         REQUIRE(search_state.model_preview_row == -1);
         // Should initialize loaded range
         REQUIRE(search_state.loaded_start_index == 0);
-        REQUIRE(search_state.loaded_end_index <= SearchState::LOAD_BATCH_SIZE);
+        REQUIRE(search_state.loaded_end_index <= AppState::LOAD_BATCH_SIZE);
     }
 }

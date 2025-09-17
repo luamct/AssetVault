@@ -23,8 +23,9 @@ class SearchIndex;
 class EventProcessor {
 public:
     EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
-        std::mutex& assets_mutex, std::atomic<bool>& search_update_needed, 
-        TextureManager& texture_manager, SearchIndex& search_index, GLFWwindow* thumbnail_context);
+        std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
+        TextureManager& texture_manager, SearchIndex& search_index,
+        const std::string& assets_root_directory, GLFWwindow* thumbnail_context);
     ~EventProcessor();
 
     // Start/stop the background processing thread
@@ -105,11 +106,11 @@ private:
     std::atomic<size_t> total_events_queued_;
     std::atomic<size_t> total_events_processed_;
 
-    // Root path for asset scanning
-    std::string root_path_;
-    
     // OpenGL context for thumbnail generation
     GLFWwindow* thumbnail_context_;
+
+    // Active assets root directory for relative path calculations
+    std::string assets_root_directory_;
 
     // Process individual file/directory into Asset
     Asset process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);

@@ -44,6 +44,10 @@ public:
   bool delete_assets_batch(const std::vector<std::string>& paths);
   bool clear_all_assets();
 
+  // Configuration operations
+  bool upsert_config_value(const std::string& key, const std::string& value);
+  bool try_get_config_value(const std::string& key, std::string& out_value);
+
 private:
   sqlite3* db_;
   bool is_open_;

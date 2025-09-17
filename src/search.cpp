@@ -314,7 +314,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   // Check path filters (OR condition - asset must match at least one path)
   if (!query.path_filters.empty()) {
     bool path_matches = false;
-    std::string asset_relative_path = to_lowercase(get_relative_asset_path(asset.path));
+    std::string asset_relative_path = to_lowercase(asset.relative_path);
 
     for (const auto& filter_path : query.path_filters) {
       std::string filter_path_lower = to_lowercase(filter_path);
@@ -342,7 +342,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   std::string query_lower = to_lowercase(query.text_query);
   std::string name_lower = to_lowercase(asset.name);
   std::string extension_lower = to_lowercase(asset.extension);
-  std::string path_lower = to_lowercase(get_relative_asset_path(asset.path));
+  std::string path_lower = to_lowercase(asset.relative_path);
 
   // Split search query into terms (space-separated)
   std::vector<std::string> search_terms;
@@ -373,7 +373,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   return true;
 }
 
-void filter_assets(SearchState& search_state, const std::map<std::string, Asset>& assets,
+void filter_assets(AppState& search_state, const std::map<std::string, Asset>& assets,
   std::mutex& assets_mutex, SearchIndex& search_index) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -502,7 +502,7 @@ void filter_assets(SearchState& search_state, const std::map<std::string, Asset>
   search_state.loaded_start_index = 0;
   search_state.loaded_end_index = std::min(
     static_cast<int>(search_state.results.size()),
-    SearchState::LOAD_BATCH_SIZE
+    AppState::LOAD_BATCH_SIZE
   );
 
   // Measure and print search time
@@ -531,7 +531,7 @@ std::vector<std::string> SearchIndex::tokenize_asset(const Asset& asset) const {
   }
 
   // Tokenize path segments
-  std::string path_str = asset.path;
+  const std::string& path_str = asset.relative_path;
   size_t pos = 0;
   while ((pos = path_str.find('/', pos)) != std::string::npos) {
     pos++;
@@ -781,6 +781,9 @@ bool SearchIndex::build_from_database() {
   // Get all assets from database
   LOG_DEBUG("Fetching all assets from database...");
   auto assets = database_->get_all_assets();
+  for (auto& asset : assets) {
+    asset.relative_path = get_relative_asset_path(asset.path, assets_root_directory_);
+  }
   LOG_DEBUG("Retrieved {} assets from database", assets.size());
   if (assets.empty()) {
     LOG_INFO("No assets found in database");

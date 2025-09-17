@@ -16,6 +16,7 @@
 #include <cstring>
 #include <chrono>
 #include <iomanip>
+#include <filesystem>
 
 // Cross-platform file explorer opening
 void open_file_in_explorer(const std::string& file_path) {
@@ -78,9 +79,8 @@ void render_asset_context_menu(const Asset& asset, const std::string& menu_id) {
   ImGui::PopStyleColor(); // Restore original popup background color
 }
 
-void render_clickable_path(const std::string& full_path, SearchState& search_state) {
-  // Get relative path from assets folder
-  std::string relative_path = get_relative_asset_path(full_path);
+void render_clickable_path(const Asset& asset, AppState& search_state) {
+  const std::string& relative_path = asset.relative_path;
 
   // Split path into segments
   std::vector<std::string> segments;
@@ -203,11 +203,11 @@ void render_clickable_path(const std::string& full_path, SearchState& search_sta
 }
 
 // Renders common asset information in standard order: Path, Extension, Type, Size, Modified
-void render_common_asset_info(const Asset& asset, SearchState& search_state) {
+void render_common_asset_info(const Asset& asset, AppState& search_state) {
   // Path
   ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
   ImGui::SameLine();
-  render_clickable_path(asset.path, search_state);
+  render_clickable_path(asset, search_state);
 
   // Extension
   ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
@@ -419,7 +419,7 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
 }
 
 void render_search_panel(
-  SearchState& search_state,
+  AppState& search_state,
   std::map<std::string, Asset>& assets,
   std::mutex& assets_mutex, SearchIndex& search_index,
   float panel_width, float panel_height) {
@@ -546,7 +546,154 @@ void render_search_panel(
   ImGui::EndChild();
 }
 
-void render_progress_panel(EventProcessor* processor, float panel_width, float panel_height) {
+namespace {
+  bool g_request_assets_path_popup = false;
+
+  void render_assets_directory_modal(AppState& search_state) {
+    if (g_request_assets_path_popup) {
+      ImGui::OpenPopup("Select Assets Directory");
+      g_request_assets_path_popup = false;
+      if (search_state.assets_path_browser.empty()) {
+        if (!search_state.assets_path_selected.empty()) {
+          search_state.assets_path_browser = search_state.assets_path_selected;
+        }
+        else {
+          search_state.assets_path_browser = get_home_directory();
+        }
+      }
+    }
+
+    bool popup_style_pushed = false;
+    if (ImGui::IsPopupOpen("Select Assets Directory")) {
+      ImGuiViewport* viewport = ImGui::GetMainViewport();
+      ImVec2 viewport_size = viewport->Size;
+      ImVec2 popup_size(viewport_size.x * 0.40f, viewport_size.y * 0.50f);
+      ImVec2 popup_pos(viewport->Pos.x + viewport_size.x * 0.30f,
+        viewport->Pos.y + viewport_size.y * 0.25f);
+      ImGui::SetNextWindowSize(popup_size);
+      ImGui::SetNextWindowPos(popup_pos);
+      ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.0f, 0.0f, 0.6f));
+      popup_style_pushed = true;
+    }
+
+    if (ImGui::BeginPopupModal("Select Assets Directory", nullptr,
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+      namespace fs = std::filesystem;
+      if (search_state.assets_path_browser.empty()) {
+        if (!search_state.assets_path_selected.empty()) {
+          search_state.assets_path_browser = search_state.assets_path_selected;
+        }
+        else {
+          search_state.assets_path_browser = get_home_directory();
+        }
+      }
+
+      fs::path current_path(search_state.assets_path_browser);
+      std::error_code fs_error;
+      std::string selected_path = !search_state.assets_path_selected.empty()
+        ? search_state.assets_path_selected
+        : get_home_directory();
+
+      ImGui::TextColored(Theme::TEXT_LABEL, "Assets directory:");
+      ImGui::SameLine();
+      ImGui::TextWrapped("%s", selected_path.c_str());
+
+      ImGui::Spacing();
+      ImGui::Separator();
+      ImGui::Spacing();
+
+      if (!fs::exists(current_path, fs_error) || !fs::is_directory(current_path, fs_error)) {
+        ImGui::TextColored(Theme::TEXT_WARNING, "Directory unavailable");
+      }
+      else {
+        std::string display_path = current_path.u8string();
+        ImGui::TextWrapped("%s", display_path.c_str());
+
+        ImGui::Spacing();
+        float list_height = ImGui::GetContentRegionAvail().y - (ImGui::GetFrameHeightWithSpacing() * 2.0f);
+        list_height = std::max(list_height, 160.0f);
+        ImGui::BeginChild("AssetsDirectoryList", ImVec2(0.0f, list_height), true);
+
+        // Navigate to parent directory
+        fs::path parent_path = current_path.parent_path();
+        if (!parent_path.empty()) {
+          if (ImGui::Selectable("..", false)) {
+            search_state.assets_path_browser = parent_path.u8string();
+          }
+        }
+
+        fs::directory_iterator dir_iter(current_path, fs_error);
+        if (fs_error) {
+          ImGui::TextColored(Theme::TEXT_WARNING, "Unable to read directory contents.");
+          fs_error.clear();
+        }
+        else {
+          std::vector<fs::directory_entry> directories;
+          for (const auto& entry : dir_iter) {
+            std::error_code entry_error;
+            if (!entry.is_directory(entry_error)) {
+              continue;
+            }
+
+            std::string folder_name = entry.path().filename().u8string();
+            if (folder_name.empty()) {
+              continue;
+            }
+
+            if (!folder_name.empty() && folder_name[0] == '.') {
+              continue;
+            }
+
+            directories.push_back(entry);
+          }
+
+          std::sort(directories.begin(), directories.end(), [](const fs::directory_entry& a, const fs::directory_entry& b) {
+            return a.path().filename().u8string() < b.path().filename().u8string();
+          });
+
+          for (const auto& entry : directories) {
+            std::string folder_name = entry.path().filename().u8string();
+            if (ImGui::Selectable(folder_name.c_str(), false)) {
+              search_state.assets_path_browser = entry.path().u8string();
+            }
+
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+              search_state.assets_path_selected = entry.path().u8string();
+              LOG_INFO("Assets directory selected: {}", search_state.assets_path_selected);
+              search_state.assets_path_dirty = true;
+              ImGui::CloseCurrentPopup();
+            }
+          }
+        }
+
+        ImGui::EndChild();
+
+        ImGui::Spacing();
+      }
+
+      if (ImGui::Button("Select", ImVec2(160.0f, 0.0f))) {
+        if (!search_state.assets_path_browser.empty()) {
+          search_state.assets_path_selected = search_state.assets_path_browser;
+          LOG_INFO("Assets directory selected: {}", search_state.assets_path_selected);
+          search_state.assets_path_dirty = true;
+        }
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f))) {
+        ImGui::CloseCurrentPopup();
+      }
+
+      ImGui::EndPopup();
+    }
+    if (popup_style_pushed) {
+      ImGui::PopStyleColor();
+    }
+  }
+}
+
+void render_progress_panel(AppState& search_state, EventProcessor* processor,
+  float panel_width, float panel_height) {
   ImGui::BeginChild("ProgressRegion", ImVec2(panel_width, panel_height), true);
 
   // Unified progress bar for all asset processing
@@ -602,10 +749,31 @@ void render_progress_panel(EventProcessor* processor, float panel_width, float p
     ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(Theme::TEXT_DARK), progress_text);
   }
 
+  // Bottom-left assets path button
+  float button_height = ImGui::GetFrameHeight();
+  float bottom_margin = 12.0f;
+  float left_margin = 12.0f;
+  ImVec2 button_pos(left_margin, panel_height - button_height - bottom_margin);
+  button_pos.y = std::max(button_pos.y, ImGui::GetCursorPosY());
+  ImGui::SetCursorPos(button_pos);
+  if (ImGui::Button("Assets Path", ImVec2(150.0f, 0.0f))) {
+    if (search_state.assets_path_browser.empty()) {
+      if (!search_state.assets_path_selected.empty()) {
+        search_state.assets_path_browser = search_state.assets_path_selected;
+      }
+      else {
+        search_state.assets_path_browser = get_home_directory();
+      }
+    }
+    g_request_assets_path_popup = true;
+  }
+
   ImGui::EndChild();
+
+  render_assets_directory_modal(search_state);
 }
 
-void render_asset_grid(SearchState& search_state, TextureManager& texture_manager,
+void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
   std::map<std::string, Asset>& assets, float panel_width, float panel_height) {
   ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), true);
 
@@ -645,11 +813,11 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
     (last_visible_row + 1) * columns);
 
   // Check if we need to load more items (when approaching the end of loaded items)
-  int load_threshold_row = (search_state.loaded_end_index - SearchState::LOAD_BATCH_SIZE / 2) / columns;
+  int load_threshold_row = (search_state.loaded_end_index - AppState::LOAD_BATCH_SIZE / 2) / columns;
   if (last_visible_row >= load_threshold_row && search_state.loaded_end_index < static_cast<int>(search_state.results.size())) {
     // Load more items
     search_state.loaded_end_index = std::min(
-      search_state.loaded_end_index + SearchState::LOAD_BATCH_SIZE,
+      search_state.loaded_end_index + AppState::LOAD_BATCH_SIZE,
       static_cast<int>(search_state.results.size())
     );
   }
@@ -773,7 +941,7 @@ void render_asset_grid(SearchState& search_state, TextureManager& texture_manage
   ImGui::EndChild();
 }
 
-void render_preview_panel(SearchState& search_state, TextureManager& texture_manager,
+void render_preview_panel(AppState& search_state, TextureManager& texture_manager,
   AudioManager& audio_manager, Model& current_model,
   Camera3D& camera, float panel_width, float panel_height) {
   ImGui::BeginChild("AssetPreview", ImVec2(panel_width, panel_height), true);

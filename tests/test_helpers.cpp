@@ -2,12 +2,14 @@
 #include <filesystem>
 #include <chrono>
 #include <iostream>
+#include "utils.h"
 
 Asset create_test_asset(
     const std::string& name,
     const std::string& extension,
     AssetType type,
-    const std::string& path) {
+    const std::string& path,
+    const std::string& assets_root) {
     Asset asset;
     asset.name = name;
     asset.extension = extension;
@@ -15,6 +17,9 @@ Asset create_test_asset(
     asset.path = path.empty() ? (name + extension) : path;
     asset.size = 1024; // Default size
     asset.last_modified = std::chrono::system_clock::now();
+    asset.relative_path = assets_root.empty()
+        ? asset.path
+        : get_relative_asset_path(asset.path, assets_root);
     return asset;
 }
 

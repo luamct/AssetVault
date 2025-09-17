@@ -19,10 +19,10 @@ struct Camera3D;
 // UI helper functions
 
 // Renders a clickable path that allows filtering by directory
-void render_clickable_path(const std::string& full_path, SearchState& search_state);
+void render_clickable_path(const Asset& asset, AppState& search_state);
 
 // Renders common asset information in standard order: Path, Extension, Type, Size, Modified
-void render_common_asset_info(const Asset& asset, SearchState& search_state);
+void render_common_asset_info(const Asset& asset, AppState& search_state);
 
 // Custom audio seek bar widget
 bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f);
@@ -44,16 +44,17 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
     float button_width, float button_height);
 
 // Main UI panel rendering functions
-void render_search_panel(SearchState& search_state,
+void render_search_panel(AppState& search_state,
     std::map<std::string, Asset>& assets,
     std::mutex& assets_mutex, SearchIndex& search_index,
     float panel_width, float panel_height);
 
-void render_progress_panel(EventProcessor* processor, float panel_width, float panel_height);
+void render_progress_panel(AppState& search_state, EventProcessor* processor,
+    float panel_width, float panel_height);
 
-void render_asset_grid(SearchState& search_state, TextureManager& texture_manager,
+void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
     std::map<std::string, Asset>& assets, float panel_width, float panel_height);
 
-void render_preview_panel(SearchState& search_state, TextureManager& texture_manager,
+void render_preview_panel(AppState& search_state, TextureManager& texture_manager,
     AudioManager& audio_manager, Model& current_model,
     Camera3D& camera, float panel_width, float panel_height);

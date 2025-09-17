@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <map>
 #include <vector>
+#include <cstdlib>
 
 namespace fs = std::filesystem;
 
@@ -35,9 +36,9 @@ std::string normalize_path_separators(const std::string& path) {
 }
 
 // Function to get relative path from assets folder for display and search
-std::string get_relative_asset_path(const std::string& full_path) {
-  std::string root_path = normalize_path_separators(Config::ASSET_ROOT_DIRECTORY);
+std::string get_relative_asset_path(const std::string& full_path, const std::string& assets_root_directory) {
   std::string normalized_full_path = normalize_path_separators(full_path);
+  std::string root_path = normalize_path_separators(assets_root_directory);
 
   // Ensure root path ends with slash for proper comparison
   if (!root_path.empty() && root_path.back() != '/') {
@@ -52,14 +53,14 @@ std::string get_relative_asset_path(const std::string& full_path) {
   }
 
   // Fallback: return normalized full path if not under root
-  LOG_WARN("Asset path should contain root path: {}", full_path);
+  LOG_WARN("Asset path should contain configured root path: {}", full_path);
   return normalized_full_path;
 }
 
 // Function to format path for display (remove everything before first / and convert backslashes)
-std::string format_display_path(const std::string& full_path) {
+std::string format_display_path(const std::string& full_path, const std::string& assets_root_directory) {
   // Get relative path from assets folder
-  std::string display_path = get_relative_asset_path(full_path);
+  std::string display_path = get_relative_asset_path(full_path, assets_root_directory);
 
   // Make path wrappable by adding spaces around slashes
   size_t pos = 0;
@@ -90,6 +91,38 @@ std::string format_file_size(uint64_t size_bytes) {
     // Keep as bytes
     return std::to_string(size_bytes) + " bytes";
   }
+}
+
+std::string get_home_directory() {
+#ifdef _WIN32
+  if (const char* user_profile = std::getenv("USERPROFILE")) {
+    if (user_profile[0] != '\0') {
+      return std::filesystem::path(user_profile).u8string();
+    }
+  }
+#endif
+
+  if (const char* home_env = std::getenv("HOME")) {
+    if (home_env[0] != '\0') {
+      return std::filesystem::path(home_env).u8string();
+    }
+  }
+
+#ifdef _WIN32
+  const char* home_drive = std::getenv("HOMEDRIVE");
+  const char* home_path = std::getenv("HOMEPATH");
+  if (home_drive && home_path) {
+    std::filesystem::path combined = std::filesystem::path(home_drive) / home_path;
+    return combined.u8string();
+  }
+#endif
+
+  return std::filesystem::current_path().u8string();
+}
+
+std::filesystem::path get_thumbnail_path(const std::string& relative_path) {
+  return Config::get_thumbnail_directory() /
+    std::filesystem::path(relative_path).replace_extension(".png");
 }
 
 void safe_localtime(std::tm* tm_buf, const std::time_t* time) {
