@@ -373,41 +373,41 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   return true;
 }
 
-void filter_assets(AppState& search_state, const std::map<std::string, Asset>& assets,
+void filter_assets(UIState& ui_state, const std::map<std::string, Asset>& assets,
   std::mutex& assets_mutex, SearchIndex& search_index) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  search_state.results.clear();
-  search_state.results_ids.clear();
+  ui_state.results.clear();
+  ui_state.results_ids.clear();
 
   // Reset model preview state when filtering
-  search_state.model_preview_row = -1;
+  ui_state.model_preview_row = -1;
 
   size_t total_assets = 0;
   size_t filtered_count = 0;
 
   // Build UI type filters from toggle states
   std::vector<AssetType> ui_type_filters;
-  if (search_state.type_filter_2d) ui_type_filters.push_back(AssetType::_2D);
-  if (search_state.type_filter_3d) ui_type_filters.push_back(AssetType::_3D);
-  if (search_state.type_filter_audio) ui_type_filters.push_back(AssetType::Audio);
-  if (search_state.type_filter_shader) ui_type_filters.push_back(AssetType::Shader);
-  if (search_state.type_filter_font) ui_type_filters.push_back(AssetType::Font);
+  if (ui_state.type_filter_2d) ui_type_filters.push_back(AssetType::_2D);
+  if (ui_state.type_filter_3d) ui_type_filters.push_back(AssetType::_3D);
+  if (ui_state.type_filter_audio) ui_type_filters.push_back(AssetType::Audio);
+  if (ui_state.type_filter_shader) ui_type_filters.push_back(AssetType::Shader);
+  if (ui_state.type_filter_font) ui_type_filters.push_back(AssetType::Font);
 
   // Parse the search query once before the loop, passing UI filters
   // Only include path filters if the path filter toggle is active
   std::vector<std::string> active_path_filters;
-  if (search_state.path_filter_active && !search_state.path_filters.empty()) {
-    active_path_filters = search_state.path_filters;
+  if (ui_state.path_filter_active && !ui_state.path_filters.empty()) {
+    active_path_filters = ui_state.path_filters;
   }
-  SearchQuery query = parse_search_query(search_state.buffer, ui_type_filters, active_path_filters);
+  SearchQuery query = parse_search_query(ui_state.buffer, ui_type_filters, active_path_filters);
 
   // Lock assets during filtering to prevent race conditions
   std::lock_guard<std::mutex> lock(assets_mutex);
 
   total_assets = assets.size();
   LOG_TRACE("Using SearchIndex for {} assets with query: '{}', type filters count: {}, path filters count: {}",
-    total_assets, search_state.buffer, query.type_filters.size(), query.path_filters.size());
+    total_assets, ui_state.buffer, query.type_filters.size(), query.path_filters.size());
 
   // Use SearchIndex cache for efficient asset lookup (eliminates O(n) rebuild)
 
@@ -491,18 +491,18 @@ void filter_assets(AppState& search_state, const std::map<std::string, Asset>& a
     }
 
     // Asset passed all filters
-    search_state.results.push_back(asset);
+    ui_state.results.push_back(asset);
     if (asset.id > 0) {
-      search_state.results_ids.insert(asset.id);
+      ui_state.results_ids.insert(asset.id);
     }
     filtered_count++;
   }
 
   // Initialize loaded range for infinite scroll
-  search_state.loaded_start_index = 0;
-  search_state.loaded_end_index = std::min(
-    static_cast<int>(search_state.results.size()),
-    AppState::LOAD_BATCH_SIZE
+  ui_state.loaded_start_index = 0;
+  ui_state.loaded_end_index = std::min(
+    static_cast<int>(ui_state.results.size()),
+    UIState::LOAD_BATCH_SIZE
   );
 
   // Measure and print search time
@@ -510,7 +510,7 @@ void filter_assets(AppState& search_state, const std::map<std::string, Asset>& a
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
 
   LOG_INFO("Search for \"{}\" completed in {:.1f} ms. Filtered {}/{} assets ({} candidates)",
-    search_state.buffer, duration.count() / 1000.0, filtered_count, total_assets, candidate_ids.size());
+    ui_state.buffer, duration.count() / 1000.0, filtered_count, total_assets, candidate_ids.size());
 }
 
 // SearchIndex Implementation

@@ -18,6 +18,19 @@
 #include <iomanip>
 #include <filesystem>
 
+// Clear all search and UI state when changing directories
+void clear_ui_state(UIState& ui_state) {
+  ui_state.results.clear();
+  ui_state.results_ids.clear();
+  ui_state.loaded_end_index = 0;
+  ui_state.selected_asset.reset();
+  ui_state.selected_asset_index = -1;
+  ui_state.model_preview_row = -1;
+  ui_state.pending_search = false;
+  ui_state.update_needed = true;
+}
+
+// TODO: move to utils.cpp
 // Cross-platform file explorer opening
 void open_file_in_explorer(const std::string& file_path) {
   // Extract directory path from full path (using forward slashes only)
@@ -79,7 +92,7 @@ void render_asset_context_menu(const Asset& asset, const std::string& menu_id) {
   ImGui::PopStyleColor(); // Restore original popup background color
 }
 
-void render_clickable_path(const Asset& asset, AppState& search_state) {
+void render_clickable_path(const Asset& asset, UIState& ui_state) {
   const std::string& relative_path = asset.relative_path;
 
   // Split path into segments
@@ -146,9 +159,9 @@ void render_clickable_path(const Asset& asset, AppState& search_state) {
 
     if (is_clickable) {
       // Check if this path is already in the filter
-      bool is_active = std::find(search_state.path_filters.begin(),
-        search_state.path_filters.end(),
-        path_to_segment) != search_state.path_filters.end();
+      bool is_active = std::find(ui_state.path_filters.begin(),
+        ui_state.path_filters.end(),
+        path_to_segment) != ui_state.path_filters.end();
 
       // Choose color based on active state
       ImVec4 link_color = is_active ? Theme::ACCENT_BLUE_2 : Theme::ACCENT_BLUE_1;
@@ -181,18 +194,18 @@ void render_clickable_path(const Asset& asset, AppState& search_state) {
         // Single path filter mode - only one can be active at a time
         if (is_active) {
           // If this path is already active, deactivate it (clear all filters)
-          search_state.path_filters.clear();
-          search_state.path_filter_active = false;
+          ui_state.path_filters.clear();
+          ui_state.path_filter_active = false;
         }
         else {
           // Clear all existing filters and add this one
-          search_state.path_filters.clear();
-          search_state.path_filters.push_back(path_to_segment);
-          search_state.path_filter_active = true;
+          ui_state.path_filters.clear();
+          ui_state.path_filters.push_back(path_to_segment);
+          ui_state.path_filter_active = true;
         }
 
         // Trigger search update
-        search_state.update_needed = true;
+        ui_state.update_needed = true;
       }
     }
     else {
@@ -203,11 +216,11 @@ void render_clickable_path(const Asset& asset, AppState& search_state) {
 }
 
 // Renders common asset information in standard order: Path, Extension, Type, Size, Modified
-void render_common_asset_info(const Asset& asset, AppState& search_state) {
+void render_common_asset_info(const Asset& asset, UIState& ui_state) {
   // Path
   ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
   ImGui::SameLine();
-  render_clickable_path(asset, search_state);
+  render_clickable_path(asset, ui_state);
 
   // Extension
   ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
@@ -419,7 +432,7 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
 }
 
 void render_search_panel(
-  AppState& search_state,
+  UIState& ui_state,
   std::map<std::string, Asset>& assets,
   std::mutex& assets_mutex, SearchIndex& search_index,
   float panel_width, float panel_height) {
@@ -437,25 +450,25 @@ void render_search_panel(
 
   // Position and draw the fancy search text input
   ImGui::SetCursorPos(ImVec2(content_search_x, content_search_y));
-  bool enter_pressed = fancy_text_input("##Search", search_state.buffer, sizeof(search_state.buffer),
+  bool enter_pressed = fancy_text_input("##Search", ui_state.buffer, sizeof(ui_state.buffer),
     Config::SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f,
     ImGuiInputTextFlags_EnterReturnsTrue);
 
   // Handle search input
-  std::string current_input(search_state.buffer);
+  std::string current_input(ui_state.buffer);
 
   if (enter_pressed) {
     // Immediate search on Enter key
-    filter_assets(search_state, assets, assets_mutex, search_index);
-    search_state.last_buffer = current_input;
-    search_state.input_tracking = current_input;
-    search_state.pending_search = false;
+    filter_assets(ui_state, assets, assets_mutex, search_index);
+    ui_state.last_buffer = current_input;
+    ui_state.input_tracking = current_input;
+    ui_state.pending_search = false;
   }
-  else if (current_input != search_state.input_tracking) {
+  else if (current_input != ui_state.input_tracking) {
     // Debounced search: only mark as pending if input actually changed
-    search_state.input_tracking = current_input;
-    search_state.last_keypress_time = std::chrono::steady_clock::now();
-    search_state.pending_search = true;
+    ui_state.input_tracking = current_input;
+    ui_state.last_keypress_time = std::chrono::steady_clock::now();
+    ui_state.pending_search = true;
   }
 
   // ============ TYPE FILTER TOGGLE BUTTONS ============
@@ -478,7 +491,7 @@ void render_search_panel(
     button_width_shader + button_width_font + (toggle_spacing * 4);
 
   // Add path button width if there's an active path filter
-  if (!search_state.path_filters.empty()) {
+  if (!ui_state.path_filters.empty()) {
     total_toggle_width += button_width_path + toggle_spacing;
   }
 
@@ -488,35 +501,35 @@ void render_search_panel(
   bool any_toggle_changed = false;
   float current_x = toggles_start_x;
 
-  any_toggle_changed |= draw_type_toggle_button("2D", search_state.type_filter_2d,
+  any_toggle_changed |= draw_type_toggle_button("2D", ui_state.type_filter_2d,
     content_start.x + current_x, content_start.y + toggles_y,
     button_width_2d, toggle_button_height);
   current_x += button_width_2d + toggle_spacing;
 
-  any_toggle_changed |= draw_type_toggle_button("3D", search_state.type_filter_3d,
+  any_toggle_changed |= draw_type_toggle_button("3D", ui_state.type_filter_3d,
     content_start.x + current_x, content_start.y + toggles_y,
     button_width_3d, toggle_button_height);
   current_x += button_width_3d + toggle_spacing;
 
-  any_toggle_changed |= draw_type_toggle_button("Audio", search_state.type_filter_audio,
+  any_toggle_changed |= draw_type_toggle_button("Audio", ui_state.type_filter_audio,
     content_start.x + current_x, content_start.y + toggles_y,
     button_width_audio, toggle_button_height);
   current_x += button_width_audio + toggle_spacing;
 
-  any_toggle_changed |= draw_type_toggle_button("Shader", search_state.type_filter_shader,
+  any_toggle_changed |= draw_type_toggle_button("Shader", ui_state.type_filter_shader,
     content_start.x + current_x, content_start.y + toggles_y,
     button_width_shader, toggle_button_height);
   current_x += button_width_shader + toggle_spacing;
 
-  any_toggle_changed |= draw_type_toggle_button("Font", search_state.type_filter_font,
+  any_toggle_changed |= draw_type_toggle_button("Font", ui_state.type_filter_font,
     content_start.x + current_x, content_start.y + toggles_y,
     button_width_font, toggle_button_height);
   current_x += button_width_font + toggle_spacing;
 
   // Draw Path filter button if there's a path filter set
-  if (!search_state.path_filters.empty()) {
+  if (!ui_state.path_filters.empty()) {
     // Draw the Path button
-    bool path_clicked = draw_type_toggle_button("Path", search_state.path_filter_active,
+    bool path_clicked = draw_type_toggle_button("Path", ui_state.path_filter_active,
       content_start.x + current_x, content_start.y + toggles_y,
       button_width_path, toggle_button_height);
 
@@ -527,8 +540,8 @@ void render_search_panel(
     bool is_hovered = (mouse_pos.x >= button_min.x && mouse_pos.x <= button_max.x &&
       mouse_pos.y >= button_min.y && mouse_pos.y <= button_max.y);
 
-    if (is_hovered && !search_state.path_filters.empty()) {
-      ImGui::SetTooltip("%s", search_state.path_filters[0].c_str());
+    if (is_hovered && !ui_state.path_filters.empty()) {
+      ImGui::SetTooltip("%s", ui_state.path_filters[0].c_str());
     }
 
     // Handle path filter toggle
@@ -539,8 +552,8 @@ void render_search_panel(
 
   // If any toggle changed, trigger immediate search
   if (any_toggle_changed) {
-    filter_assets(search_state, assets, assets_mutex, search_index);
-    search_state.pending_search = false;
+    filter_assets(ui_state, assets, assets_mutex, search_index);
+    ui_state.pending_search = false;
   }
 
   ImGui::EndChild();
@@ -549,16 +562,18 @@ void render_search_panel(
 namespace {
   bool g_request_assets_path_popup = false;
 
-  void render_assets_directory_modal(AppState& search_state) {
+  void render_assets_directory_modal(UIState& ui_state) {
     if (g_request_assets_path_popup) {
       ImGui::OpenPopup("Select Assets Directory");
       g_request_assets_path_popup = false;
-      if (search_state.assets_path_browser.empty()) {
-        if (!search_state.assets_path_selected.empty()) {
-          search_state.assets_path_browser = search_state.assets_path_selected;
+
+      // Initialize selected path if not already set
+      if (ui_state.assets_path_selected.empty()) {
+        if (!ui_state.assets_root_directory.empty()) {
+          ui_state.assets_path_selected = ui_state.assets_root_directory;
         }
         else {
-          search_state.assets_path_browser = get_home_directory();
+          ui_state.assets_path_selected = get_home_directory();
         }
       }
     }
@@ -579,19 +594,14 @@ namespace {
     if (ImGui::BeginPopupModal("Select Assets Directory", nullptr,
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
       namespace fs = std::filesystem;
-      if (search_state.assets_path_browser.empty()) {
-        if (!search_state.assets_path_selected.empty()) {
-          search_state.assets_path_browser = search_state.assets_path_selected;
-        }
-        else {
-          search_state.assets_path_browser = get_home_directory();
-        }
+      if (ui_state.assets_path_selected.empty()) {
+        ui_state.assets_path_selected = get_home_directory();
       }
 
-      fs::path current_path(search_state.assets_path_browser);
+      fs::path current_path(ui_state.assets_path_selected);
       std::error_code fs_error;
-      std::string selected_path = !search_state.assets_path_selected.empty()
-        ? search_state.assets_path_selected
+      std::string selected_path = !ui_state.assets_path_selected.empty()
+        ? ui_state.assets_path_selected
         : get_home_directory();
 
       ImGui::TextColored(Theme::TEXT_LABEL, "Assets directory:");
@@ -618,7 +628,7 @@ namespace {
         fs::path parent_path = current_path.parent_path();
         if (!parent_path.empty()) {
           if (ImGui::Selectable("..", false)) {
-            search_state.assets_path_browser = parent_path.u8string();
+            ui_state.assets_path_selected = parent_path.generic_u8string();
           }
         }
 
@@ -654,13 +664,13 @@ namespace {
           for (const auto& entry : directories) {
             std::string folder_name = entry.path().filename().u8string();
             if (ImGui::Selectable(folder_name.c_str(), false)) {
-              search_state.assets_path_browser = entry.path().u8string();
+              ui_state.assets_path_selected = entry.path().generic_u8string();
             }
 
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-              search_state.assets_path_selected = entry.path().u8string();
-              LOG_INFO("Assets directory selected: {}", search_state.assets_path_selected);
-              search_state.assets_path_dirty = true;
+              ui_state.assets_path_selected = entry.path().generic_u8string();
+              LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
+              ui_state.assets_directory_changed = true;
               ImGui::CloseCurrentPopup();
             }
           }
@@ -672,10 +682,9 @@ namespace {
       }
 
       if (ImGui::Button("Select", ImVec2(160.0f, 0.0f))) {
-        if (!search_state.assets_path_browser.empty()) {
-          search_state.assets_path_selected = search_state.assets_path_browser;
-          LOG_INFO("Assets directory selected: {}", search_state.assets_path_selected);
-          search_state.assets_path_dirty = true;
+        if (!ui_state.assets_path_selected.empty()) {
+          LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
+          ui_state.assets_directory_changed = true;
         }
         ImGui::CloseCurrentPopup();
       }
@@ -692,7 +701,7 @@ namespace {
   }
 }
 
-void render_progress_panel(AppState& search_state, EventProcessor* processor,
+void render_progress_panel(UIState& ui_state, EventProcessor* processor,
   float panel_width, float panel_height) {
   ImGui::BeginChild("ProgressRegion", ImVec2(panel_width, panel_height), true);
 
@@ -757,29 +766,24 @@ void render_progress_panel(AppState& search_state, EventProcessor* processor,
   button_pos.y = std::max(button_pos.y, ImGui::GetCursorPosY());
   ImGui::SetCursorPos(button_pos);
   if (ImGui::Button("Assets Path", ImVec2(150.0f, 0.0f))) {
-    if (search_state.assets_path_browser.empty()) {
-      if (!search_state.assets_path_selected.empty()) {
-        search_state.assets_path_browser = search_state.assets_path_selected;
-      }
-      else {
-        search_state.assets_path_browser = get_home_directory();
-      }
+    if (ui_state.assets_path_selected.empty()) {
+      ui_state.assets_path_selected = get_home_directory();
     }
     g_request_assets_path_popup = true;
   }
 
   ImGui::EndChild();
 
-  render_assets_directory_modal(search_state);
+  render_assets_directory_modal(ui_state);
 }
 
-void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
+void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   std::map<std::string, Asset>& assets, float panel_width, float panel_height) {
   ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), true);
 
   // Show total results count if we have results
-  if (!search_state.results.empty()) {
-    ImGui::Text("Showing %d of %zu results", search_state.loaded_end_index, search_state.results.size());
+  if (!ui_state.results.empty()) {
+    ImGui::Text("Showing %d of %zu results", ui_state.loaded_end_index, ui_state.results.size());
     ImGui::Separator();
   }
 
@@ -809,21 +813,21 @@ void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
   last_visible_row = last_visible_row + 1;
 
   int first_visible_item = first_visible_row * columns;
-  int last_visible_item = std::min(search_state.loaded_end_index,
+  int last_visible_item = std::min(ui_state.loaded_end_index,
     (last_visible_row + 1) * columns);
 
   // Check if we need to load more items (when approaching the end of loaded items)
-  int load_threshold_row = (search_state.loaded_end_index - AppState::LOAD_BATCH_SIZE / 2) / columns;
-  if (last_visible_row >= load_threshold_row && search_state.loaded_end_index < static_cast<int>(search_state.results.size())) {
+  int load_threshold_row = (ui_state.loaded_end_index - UIState::LOAD_BATCH_SIZE / 2) / columns;
+  if (last_visible_row >= load_threshold_row && ui_state.loaded_end_index < static_cast<int>(ui_state.results.size())) {
     // Load more items
-    search_state.loaded_end_index = std::min(
-      search_state.loaded_end_index + AppState::LOAD_BATCH_SIZE,
-      static_cast<int>(search_state.results.size())
+    ui_state.loaded_end_index = std::min(
+      ui_state.loaded_end_index + UIState::LOAD_BATCH_SIZE,
+      static_cast<int>(ui_state.results.size())
     );
   }
 
   // Reserve space for all loaded items to enable proper scrolling
-  int total_loaded_rows = (search_state.loaded_end_index + columns - 1) / columns;
+  int total_loaded_rows = (ui_state.loaded_end_index + columns - 1) / columns;
   float total_content_height = total_loaded_rows * row_height;
 
   // Save current cursor position
@@ -833,7 +837,7 @@ void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
   ImGui::Dummy(ImVec2(0, total_content_height));
 
   // Display filtered assets in a proper grid - only process visible items within loaded range
-  for (int i = first_visible_item; i < last_visible_item && i < search_state.loaded_end_index; i++) {
+  for (int i = first_visible_item; i < last_visible_item && i < ui_state.loaded_end_index; i++) {
     // Calculate grid position
     int row = static_cast<int>(i) / columns;
     int col = static_cast<int>(i) % columns;
@@ -848,14 +852,14 @@ void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
     ImGui::BeginGroup();
 
     // Load texture (all items in loop are visible now)
-    TextureCacheEntry texture_entry = texture_manager.get_asset_texture(search_state.results[i]);
+    TextureCacheEntry texture_entry = texture_manager.get_asset_texture(ui_state.results[i]);
 
     // Calculate display size based on asset type
     ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
 
     // Check if this asset has actual thumbnail dimensions (textures or 3D model thumbnails)
     bool has_thumbnail_dimensions = false;
-    if (search_state.results[i].type == AssetType::_2D || search_state.results[i].type == AssetType::_3D) {
+    if (ui_state.results[i].type == AssetType::_2D || ui_state.results[i].type == AssetType::_3D) {
       // TextureCacheEntry already contains the dimensions, no need for separate call
       has_thumbnail_dimensions = (texture_entry.width > 0 && texture_entry.height > 0);
     }
@@ -895,20 +899,20 @@ void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
     ImGui::SetCursorScreenPos(image_pos);
     if (ImGui::ImageButton(
       ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.get_texture_id(), display_size)) {
-      search_state.selected_asset_index = static_cast<int>(i);
-      search_state.selected_asset = search_state.results[i];
-      LOG_DEBUG("Selected: {}", search_state.results[i].name);
+      ui_state.selected_asset_index = static_cast<int>(i);
+      ui_state.selected_asset = ui_state.results[i];
+      LOG_DEBUG("Selected: {}", ui_state.results[i].name);
     }
 
     // Handle right-click context menu
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-      search_state.selected_asset_index = static_cast<int>(i);
-      search_state.selected_asset = search_state.results[i];
+      ui_state.selected_asset_index = static_cast<int>(i);
+      ui_state.selected_asset = ui_state.results[i];
       ImGui::OpenPopup(("AssetContextMenu##" + std::to_string(i)).c_str());
     }
 
     // Render context menu using dedicated method
-    render_asset_context_menu(search_state.results[i], "AssetContextMenu##" + std::to_string(i));
+    render_asset_context_menu(ui_state.results[i], "AssetContextMenu##" + std::to_string(i));
 
     ImGui::PopStyleColor(3);
 
@@ -916,7 +920,7 @@ void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
     ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN));
 
     // Asset name below thumbnail
-    std::string truncated_name = truncate_filename(search_state.results[i].name);
+    std::string truncated_name = truncate_filename(ui_state.results[i].name);
     ImGui::SetCursorPosX(
       ImGui::GetCursorPosX() + (Config::THUMBNAIL_SIZE - ImGui::CalcTextSize(truncated_name.c_str()).x) * 0.5f);
     ImGui::TextWrapped("%s", truncated_name.c_str());
@@ -925,7 +929,7 @@ void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
   }
 
   // Show message if no assets found
-  if (search_state.results.empty()) {
+  if (ui_state.results.empty()) {
     if (assets.empty()) {
       ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets found. Add files to the 'assets' directory.");
     }
@@ -941,7 +945,7 @@ void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
   ImGui::EndChild();
 }
 
-void render_preview_panel(AppState& search_state, TextureManager& texture_manager,
+void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   AudioManager& audio_manager, Model& current_model,
   Camera3D& camera, float panel_width, float panel_height) {
   ImGui::BeginChild("AssetPreview", ImVec2(panel_width, panel_height), true);
@@ -955,31 +959,31 @@ void render_preview_panel(AppState& search_state, TextureManager& texture_manage
   static AssetType prev_selected_type = AssetType::Unknown;
 
   // Handle asset selection changes (by id)
-  if ((search_state.selected_asset ? search_state.selected_asset->id : 0) != prev_selected_id) {
+  if ((ui_state.selected_asset ? ui_state.selected_asset->id : 0) != prev_selected_id) {
     if (prev_selected_type == AssetType::Audio && audio_manager.has_audio_loaded()) {
       audio_manager.unload_audio();
     }
-    prev_selected_id = search_state.selected_asset ? search_state.selected_asset->id : 0;
-    prev_selected_type = (search_state.selected_asset.has_value()) ? search_state.selected_asset->type : AssetType::Unknown;
+    prev_selected_id = ui_state.selected_asset ? ui_state.selected_asset->id : 0;
+    prev_selected_type = (ui_state.selected_asset.has_value()) ? ui_state.selected_asset->type : AssetType::Unknown;
   }
 
   // Validate current selection against filtered results (no disk access)
-  if (search_state.selected_asset_index >= 0) {
+  if (ui_state.selected_asset_index >= 0) {
     // Bounds check for highlight index only
-    if (search_state.selected_asset_index >= static_cast<int>(search_state.results.size())) {
-      search_state.selected_asset_index = -1;
+    if (ui_state.selected_asset_index >= static_cast<int>(ui_state.results.size())) {
+      ui_state.selected_asset_index = -1;
     }
   }
 
   // If selected id is no longer present, clear selection entirely
-  if (search_state.selected_asset &&
-      search_state.results_ids.find(search_state.selected_asset->id) == search_state.results_ids.end()) {
-    search_state.selected_asset_index = -1;
-    search_state.selected_asset.reset();
+  if (ui_state.selected_asset &&
+      ui_state.results_ids.find(ui_state.selected_asset->id) == ui_state.results_ids.end()) {
+    ui_state.selected_asset_index = -1;
+    ui_state.selected_asset.reset();
   }
 
-  if (search_state.selected_asset.has_value()) {
-    const Asset& selected_asset = *search_state.selected_asset;
+  if (ui_state.selected_asset.has_value()) {
+    const Asset& selected_asset = *ui_state.selected_asset;
 
     // Check if selected asset is a model
     if (selected_asset.type == AssetType::_3D && texture_manager.is_preview_initialized()) {
@@ -1094,7 +1098,7 @@ void render_preview_panel(AppState& search_state, TextureManager& texture_manage
       ImGui::Spacing();
 
       // Common asset information
-      render_common_asset_info(selected_asset, search_state);
+      render_common_asset_info(selected_asset, ui_state);
 
       // 3D-specific information
       if (current_model_ref.loaded) {
@@ -1125,7 +1129,7 @@ void render_preview_panel(AppState& search_state, TextureManager& texture_manage
           // Set initial volume to match our slider default
           audio_manager.set_volume(0.5f);
           // Auto-play if enabled
-          if (search_state.auto_play_audio) {
+          if (ui_state.auto_play_audio) {
             audio_manager.play();
           }
         }
@@ -1268,7 +1272,7 @@ void render_preview_panel(AppState& search_state, TextureManager& texture_manage
 
         // Auto-play checkbox below the player
         ImGui::Spacing();
-        ImGui::Checkbox("Auto-play", &search_state.auto_play_audio);
+        ImGui::Checkbox("Auto-play", &ui_state.auto_play_audio);
       }
 
       ImGui::Spacing();
@@ -1276,7 +1280,7 @@ void render_preview_panel(AppState& search_state, TextureManager& texture_manage
       ImGui::Spacing();
 
       // Common asset information
-      render_common_asset_info(selected_asset, search_state);
+      render_common_asset_info(selected_asset, ui_state);
     }
     else {
       // 2D Preview for non-model assets
@@ -1320,7 +1324,7 @@ void render_preview_panel(AppState& search_state, TextureManager& texture_manage
       ImGui::Spacing();
 
       // Common asset information
-      render_common_asset_info(selected_asset, search_state);
+      render_common_asset_info(selected_asset, ui_state);
 
       // 2D-specific information
       if (selected_asset.type == AssetType::_2D) {

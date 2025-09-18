@@ -63,6 +63,9 @@ public:
     // Check if asset exists at path (thread-safe)
     bool has_asset_at_path(const std::string& path);
 
+    // Update the assets root directory (only call when stopped)
+    void set_assets_root_directory(const std::string& dir) { assets_root_directory_ = dir; }
+
 private:
     // Background thread function
     void process_events();

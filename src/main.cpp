@@ -147,7 +147,6 @@ void scan_for_changes(const std::string& root_path, AssetDatabase& database, std
     LOG_INFO("Loaded {} existing assets from database", assets.size());
   }
 
-
   // Then queue any detected changes to update from that baseline
   if (!events_to_queue.empty()) {
     auto queue_start = std::chrono::high_resolution_clock::now();
@@ -184,7 +183,7 @@ int main() {
   FileWatcher file_watcher;
   TextureManager texture_manager;
   AudioManager audio_manager;
-  AppState search_state;
+  UIState ui_state;
   Model current_model;  // 3D model preview state
   Camera3D camera;      // 3D camera state for preview controls
   SearchIndex search_index(&database);  // Search index for fast lookups
@@ -198,19 +197,11 @@ int main() {
   std::string stored_assets_directory;
   if (database.try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, stored_assets_directory) &&
     !stored_assets_directory.empty()) {
-    search_state.assets_root_directory = std::filesystem::path(stored_assets_directory).generic_u8string();
-    search_state.assets_path_browser = search_state.assets_root_directory;
-    search_state.assets_path_selected = search_state.assets_root_directory;
-    LOG_INFO("Loaded assets directory from config: {}", search_state.assets_root_directory);
-  }
-  else {
-    search_state.assets_root_directory.clear();
-    search_state.assets_path_browser.clear();
-    search_state.assets_path_selected.clear();
-    LOG_INFO("No assets directory configured; running without asset scanning");
+    ui_state.assets_root_directory = std::filesystem::path(stored_assets_directory).generic_u8string();
+    LOG_INFO("Loaded assets directory from config: {}", ui_state.assets_root_directory);
   }
 
-  search_index.set_assets_root_directory(search_state.assets_root_directory);
+  search_index.set_assets_root_directory(ui_state.assets_root_directory);
 
   // Debug: Force clear database if flag is set
   if (Config::DEBUG_FORCE_DB_CLEAR) {
@@ -327,26 +318,11 @@ int main() {
     return -1;
   }
 
-  auto recreate_event_processor = [&]() -> bool {
-    if (g_event_processor) {
-      g_event_processor->stop();
-      delete g_event_processor;
-      g_event_processor = nullptr;
-    }
-
-    g_event_processor = new EventProcessor(database, assets, assets_mutex,
-      search_state.update_needed, texture_manager, search_index,
-      search_state.assets_root_directory, thumbnail_context);
-    if (!g_event_processor->start()) {
-      LOG_ERROR("Failed to start EventProcessor");
-      delete g_event_processor;
-      g_event_processor = nullptr;
-      return false;
-    }
-    return true;
-  };
-
-  if (!recreate_event_processor()) {
+  g_event_processor = new EventProcessor(database, assets, assets_mutex,
+    ui_state.update_needed, texture_manager, search_index,
+    ui_state.assets_root_directory, thumbnail_context);
+  if (!g_event_processor->start()) {
+    LOG_ERROR("Failed to start EventProcessor");
     return -1;
   }
 
@@ -362,23 +338,13 @@ int main() {
     // Not critical - continue without audio support
   }
 
-  auto initialize_assets_with_path = [&](const std::string& path) {
-    if (path.empty()) {
-      LOG_INFO("No assets directory configured; skipping initial scan and file watcher setup");
-      return;
+  if (!ui_state.assets_root_directory.empty()) {
+    scan_for_changes(ui_state.assets_root_directory, database, assets, assets_mutex, g_event_processor);
+
+    if (!file_watcher.start_watching(ui_state.assets_root_directory, on_file_event, &assets, &assets_mutex)) {
+      LOG_ERROR("Failed to start file watcher");
+      return -1;
     }
-
-    scan_for_changes(path, database, assets, assets_mutex, g_event_processor);
-
-    LOG_INFO("Starting file watcher...");
-
-    if (!file_watcher.start_watching(path, on_file_event, &assets, &assets_mutex)) {
-      LOG_ERROR("Failed to start file watcher for path: {}", path);
-    }
-  };
-
-  if (!search_state.assets_root_directory.empty()) {
-    initialize_assets_with_path(search_state.assets_root_directory);
   }
 
   // Main loop
@@ -391,12 +357,15 @@ int main() {
 
     glfwPollEvents();
 
-    if (search_state.assets_path_dirty) {
-      search_state.assets_path_dirty = false;
-      const std::string new_path = search_state.assets_path_selected;
+    if (ui_state.assets_directory_changed) {
+      ui_state.assets_directory_changed = false;
+      const std::string new_path = ui_state.assets_path_selected;
 
+      // Stop file watcher and event processor first to prevent new assets from being added
       file_watcher.stop_watching();
+      g_event_processor->stop();
 
+      // Now safe to clear assets from memory and database
       {
         std::lock_guard<std::mutex> lock(assets_mutex);
         assets.clear();
@@ -407,42 +376,24 @@ int main() {
       }
 
       search_index.clear();
+      clear_ui_state(ui_state);
 
-      search_state.results.clear();
-      search_state.results_ids.clear();
-      search_state.loaded_end_index = 0;
-      search_state.selected_asset.reset();
-      search_state.selected_asset_index = -1;
-      search_state.model_preview_row = -1;
-      search_state.pending_search = false;
-      search_state.update_needed = true;
-
-      if (!new_path.empty()) {
-        std::string normalized_path = std::filesystem::path(new_path).generic_u8string();
-        search_state.assets_path_selected = normalized_path;
-        search_state.assets_path_browser = normalized_path;
-        search_state.assets_root_directory = normalized_path;
-        search_index.set_assets_root_directory(normalized_path);
-        if (!database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, normalized_path)) {
-          LOG_WARN("Failed to persist assets directory configuration: {}", normalized_path);
-        }
-      }
-      else {
-        search_state.assets_root_directory.clear();
-        search_index.set_assets_root_directory("");
-        if (!database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, "")) {
-          LOG_WARN("Failed to clear assets directory configuration");
-        }
+      ui_state.assets_root_directory = new_path;
+      search_index.set_assets_root_directory(new_path);
+      if (!database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, new_path)) {
+        LOG_WARN("Failed to persist assets directory configuration: {}", new_path);
       }
 
-      if (!recreate_event_processor()) {
+      // Update event processor directory and restart
+      g_event_processor->set_assets_root_directory(ui_state.assets_root_directory);
+      if (!g_event_processor->start()) {
         LOG_ERROR("Failed to restart event processor after assets directory change");
       }
-      else if (!search_state.assets_root_directory.empty()) {
-        initialize_assets_with_path(search_state.assets_root_directory);
-      }
-      else {
-        LOG_INFO("Assets directory cleared; file watcher remains inactive");
+
+      scan_for_changes(ui_state.assets_root_directory, database, assets, assets_mutex, g_event_processor);
+
+      if (!file_watcher.start_watching(ui_state.assets_root_directory, on_file_event, &assets, &assets_mutex)) {
+        LOG_ERROR("Failed to start file watcher for path: {}", ui_state.assets_root_directory);
       }
     }
 
@@ -451,26 +402,26 @@ int main() {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
 
-    // Check if search needs to be updated due to asset changes FIRST
-    if (search_state.update_needed.exchange(false)) {
+    // Check if search needs to be updated due to asset changes
+    if (ui_state.update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
-      filter_assets(search_state, assets, assets_mutex, search_index);
+      filter_assets(ui_state, assets, assets_mutex, search_index);
 
       // Removes texture cache entries and thumbnails for deleted assets
-      texture_manager.process_cleanup_queue(search_state.assets_root_directory);
+      texture_manager.process_cleanup_queue(ui_state.assets_root_directory);
     }
 
     // Process pending debounced search
-    if (search_state.pending_search) {
+    if (ui_state.pending_search) {
       auto now = std::chrono::steady_clock::now();
       auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - search_state.last_keypress_time).count();
+        now - ui_state.last_keypress_time).count();
 
       if (elapsed >= Config::SEARCH_DEBOUNCE_MS) {
         // Execute the search
-        filter_assets(search_state, assets, assets_mutex, search_index);
-        search_state.last_buffer = search_state.buffer;
-        search_state.pending_search = false;
+        filter_assets(ui_state, assets, assets_mutex, search_index);
+        ui_state.last_buffer = ui_state.buffer;
+        ui_state.pending_search = false;
       }
     }
 
@@ -484,8 +435,8 @@ int main() {
 
     // Spacebar pause/unpause for audio assets
     if (ImGui::IsKeyPressed(ImGuiKey_Space) && !io.WantTextInput) {
-      if (search_state.selected_asset.has_value()) {
-        const Asset& sel = *search_state.selected_asset;
+      if (ui_state.selected_asset.has_value()) {
+        const Asset& sel = *ui_state.selected_asset;
         if (sel.type == AssetType::Audio && audio_manager.has_audio_loaded()) {
           if (audio_manager.is_playing()) {
             audio_manager.pause();
@@ -498,7 +449,7 @@ int main() {
 
     // P key to print texture cache
     if (ImGui::IsKeyPressed(ImGuiKey_P) && !io.WantTextInput) {
-      texture_manager.print_texture_cache(search_state.assets_root_directory);
+      texture_manager.print_texture_cache(ui_state.assets_root_directory);
     }
 
     // Create main window that fits perfectly to viewport
@@ -525,18 +476,18 @@ int main() {
     float bottom_height = window_height * 0.80f - WINDOW_MARGIN;
 
     // ============ TOP LEFT: Search Box ============
-    render_search_panel(search_state, assets, assets_mutex, search_index, left_width, top_height);
+    render_search_panel(ui_state, assets, assets_mutex, search_index, left_width, top_height);
 
     // ============ TOP RIGHT: Progress and Messages ============
     ImGui::SameLine();
-    render_progress_panel(search_state, g_event_processor, right_width, top_height);
+    render_progress_panel(ui_state, g_event_processor, right_width, top_height);
 
     // ============ BOTTOM LEFT: Search Results ============
-    render_asset_grid(search_state, texture_manager, assets, left_width, bottom_height);
+    render_asset_grid(ui_state, texture_manager, assets, left_width, bottom_height);
 
     // ============ BOTTOM RIGHT: Preview Panel ============
     ImGui::SameLine();
-    render_preview_panel(search_state, texture_manager, audio_manager, current_model, camera, right_width, bottom_height);
+    render_preview_panel(ui_state, texture_manager, audio_manager, current_model, camera, right_width, bottom_height);
 
     ImGui::End();
 

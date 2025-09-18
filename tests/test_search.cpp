@@ -624,7 +624,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     }
 
     std::mutex test_mutex;
-    AppState search_state;
+    UIState search_state;
     
     // Create a real SearchIndex for testing (without database dependency)
     SearchIndex search_index(nullptr);  // Pass nullptr for database
@@ -709,6 +709,6 @@ TEST_CASE("filter_assets functionality", "[search]") {
         REQUIRE(search_state.model_preview_row == -1);
         // Should initialize loaded range
         REQUIRE(search_state.loaded_start_index == 0);
-        REQUIRE(search_state.loaded_end_index <= AppState::LOAD_BATCH_SIZE);
+        REQUIRE(search_state.loaded_end_index <= UIState::LOAD_BATCH_SIZE);
     }
 }

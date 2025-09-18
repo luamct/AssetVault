@@ -1,8 +1,8 @@
 #pragma once
 
 #include "imgui.h"
-#include "search.h"
 #include "config.h"
+#include "ui_state.h"
 #include <string>
 #include <map>
 #include <mutex>
@@ -18,11 +18,14 @@ struct Camera3D;
 
 // UI helper functions
 
+// Clear all search and UI state when changing directories
+void clear_ui_state(UIState& ui_state);
+
 // Renders a clickable path that allows filtering by directory
-void render_clickable_path(const Asset& asset, AppState& search_state);
+void render_clickable_path(const Asset& asset, UIState& ui_state);
 
 // Renders common asset information in standard order: Path, Extension, Type, Size, Modified
-void render_common_asset_info(const Asset& asset, AppState& search_state);
+void render_common_asset_info(const Asset& asset, UIState& ui_state);
 
 // Custom audio seek bar widget
 bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f);
@@ -44,17 +47,17 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
     float button_width, float button_height);
 
 // Main UI panel rendering functions
-void render_search_panel(AppState& search_state,
+void render_search_panel(UIState& ui_state,
     std::map<std::string, Asset>& assets,
     std::mutex& assets_mutex, SearchIndex& search_index,
     float panel_width, float panel_height);
 
-void render_progress_panel(AppState& search_state, EventProcessor* processor,
+void render_progress_panel(UIState& ui_state, EventProcessor* processor,
     float panel_width, float panel_height);
 
-void render_asset_grid(AppState& search_state, TextureManager& texture_manager,
+void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     std::map<std::string, Asset>& assets, float panel_width, float panel_height);
 
-void render_preview_panel(AppState& search_state, TextureManager& texture_manager,
+void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
     AudioManager& audio_manager, Model& current_model,
     Camera3D& camera, float panel_width, float panel_height);
