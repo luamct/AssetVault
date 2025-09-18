@@ -21,11 +21,11 @@ namespace fs = std::filesystem;
 EventProcessor::EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
     std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
     TextureManager& texture_manager, SearchIndex& search_index,
-    const std::string& assets_root_directory, GLFWwindow* thumbnail_context)
+    const std::string& assets_directory, GLFWwindow* thumbnail_context)
     : database_(database), assets_(assets), assets_mutex_(assets_mutex), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), search_index_(search_index), batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
-    thumbnail_context_(thumbnail_context), assets_root_directory_(assets_root_directory) {
+    thumbnail_context_(thumbnail_context), assets_directory_(assets_directory) {
 }
 
 EventProcessor::~EventProcessor() {
@@ -87,6 +87,17 @@ void EventProcessor::queue_events(const std::vector<FileEvent>& events) {
 size_t EventProcessor::get_queue_size() const {
     std::lock_guard<std::mutex> lock(queue_mutex_);
     return event_queue_.size();
+}
+
+void EventProcessor::clear_queue() {
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    // Clear the queue by creating a new empty queue
+    std::queue<FileEvent> empty_queue;
+    event_queue_.swap(empty_queue);
+
+    // Reset progress counters to avoid stale progress display
+    total_events_queued_.store(0);
+    total_events_processed_.store(0);
 }
 
 void EventProcessor::process_events() {
@@ -292,7 +303,7 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
     try {
         // Basic file information (path is already normalized)
         asset.path = full_path;
-        asset.relative_path = get_relative_asset_path(asset.path, assets_root_directory_);
+        asset.relative_path = get_relative_asset_path(asset.path, assets_directory_);
         fs::path path_obj = fs::u8path(full_path);
         asset.name = path_obj.filename().u8string();
         // File-specific information

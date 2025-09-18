@@ -782,7 +782,7 @@ bool SearchIndex::build_from_database() {
   LOG_DEBUG("Fetching all assets from database...");
   auto assets = database_->get_all_assets();
   for (auto& asset : assets) {
-    asset.relative_path = get_relative_asset_path(asset.path, assets_root_directory_);
+    asset.relative_path = get_relative_asset_path(asset.path, assets_directory_);
   }
   LOG_DEBUG("Retrieved {} assets from database", assets.size());
   if (assets.empty()) {

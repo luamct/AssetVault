@@ -326,7 +326,7 @@ bool audio_seek_bar(const char* id, float* value, float min_value, float max_val
 }
 
 // Function to calculate aspect-ratio-preserving dimensions with upscaling limit
-ImVec2 calculate_thumbnail_size(
+static ImVec2 calculate_thumbnail_size(
   int original_width, int original_height, float max_width, float max_height, float max_upscale_factor) {
   float aspect_ratio = static_cast<float>(original_width) / static_cast<float>(original_height);
 
@@ -351,7 +351,7 @@ ImVec2 calculate_thumbnail_size(
 
 // Fancy text input box with rounded corners and shadow
 bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float width,
-  float padding_x, float padding_y, float corner_radius, ImGuiInputTextFlags flags) {
+  float padding_x, float padding_y, float corner_radius) {
 
   ImGui::PushItemWidth(width);
 
@@ -378,7 +378,7 @@ bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float
     corner_radius
   );
 
-  bool result = ImGui::InputText(label, buffer, buffer_size, flags);
+  bool result = ImGui::InputText(label, buffer, buffer_size, ImGuiInputTextFlags_EnterReturnsTrue);
 
   ImGui::PopStyleColor(3);
   ImGui::PopStyleVar(2);
@@ -451,8 +451,7 @@ void render_search_panel(
   // Position and draw the fancy search text input
   ImGui::SetCursorPos(ImVec2(content_search_x, content_search_y));
   bool enter_pressed = fancy_text_input("##Search", ui_state.buffer, sizeof(ui_state.buffer),
-    Config::SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f,
-    ImGuiInputTextFlags_EnterReturnsTrue);
+    Config::SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f);
 
   // Handle search input
   std::string current_input(ui_state.buffer);
@@ -569,8 +568,8 @@ namespace {
 
       // Initialize selected path if not already set
       if (ui_state.assets_path_selected.empty()) {
-        if (!ui_state.assets_root_directory.empty()) {
-          ui_state.assets_path_selected = ui_state.assets_root_directory;
+        if (!ui_state.assets_directory.empty()) {
+          ui_state.assets_path_selected = ui_state.assets_directory;
         }
         else {
           ui_state.assets_path_selected = get_home_directory();

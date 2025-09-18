@@ -1,11 +1,14 @@
 #pragma once
 
-#include "imgui.h"
 #include "config.h"
-#include "ui_state.h"
 #include <string>
+#include <vector>
 #include <map>
 #include <mutex>
+#include <atomic>
+#include <chrono>
+#include <optional>
+#include <unordered_set>
 
 // Forward declarations
 class TextureManager;
@@ -15,6 +18,56 @@ class SearchIndex;
 struct Asset;
 struct Model;
 struct Camera3D;
+
+// UI state structure
+struct UIState {
+  std::atomic<bool> update_needed{ true };
+
+  char buffer[256] = "";
+  std::string last_buffer = "";
+  std::string input_tracking = ""; // Track input to detect real changes
+
+  // Debouncing state
+  std::chrono::steady_clock::time_point last_keypress_time;
+  bool pending_search = false;
+
+  // UI state
+  std::vector<Asset> results;
+  int selected_asset_index = -1; // -1 means no selection
+  std::optional<Asset> selected_asset; // Copy used for stable preview/audio
+
+  // Asset path state
+  std::string assets_path_selected;
+  bool assets_directory_changed = false;
+  std::string assets_directory;
+
+  // Fast membership check for current results (IDs only)
+  std::unordered_set<uint32_t> results_ids;
+
+  // Infinite scroll state
+  static constexpr int LOAD_BATCH_SIZE = 50;
+  int loaded_start_index = 0;    // Always 0, never changes
+  int loaded_end_index = 0;      // Grows as user scrolls down
+
+  // Model preview state
+  int model_preview_row = -1;    // Which row has the expanded preview
+
+  // Audio playback settings
+  bool auto_play_audio = true;
+
+  // Type filter toggle states
+  bool type_filter_2d = false;
+  bool type_filter_3d = false;
+  bool type_filter_audio = false;
+  bool type_filter_shader = false;
+  bool type_filter_font = false;
+
+  // Path filter toggle state
+  bool path_filter_active = false;
+
+  // Path filters (set by clicking on path segments)
+  std::vector<std::string> path_filters;
+};
 
 // UI helper functions
 
@@ -30,17 +83,10 @@ void render_common_asset_info(const Asset& asset, UIState& ui_state);
 // Custom audio seek bar widget
 bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f);
 
-// Calculate thumbnail size based on asset dimensions
-ImVec2 calculate_thumbnail_size(
-    int original_width, int original_height,
-    float max_width, float max_height,
-    float max_upscale_factor
-);
 
 // Fancy styled text input with shadow effect
 bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float width,
-    float padding_x = 20.0f, float padding_y = 16.0f,
-    float corner_radius = 25.0f, ImGuiInputTextFlags flags = 0);
+    float padding_x = 20.0f, float padding_y = 16.0f, float corner_radius = 25.0f);
 
 // Draw type filter toggle button
 bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,

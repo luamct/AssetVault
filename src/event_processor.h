@@ -25,7 +25,7 @@ public:
     EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
         std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
         TextureManager& texture_manager, SearchIndex& search_index,
-        const std::string& assets_root_directory, GLFWwindow* thumbnail_context);
+        const std::string& assets_directory, GLFWwindow* thumbnail_context);
     ~EventProcessor();
 
     // Start/stop the background processing thread
@@ -59,12 +59,14 @@ public:
         }
     }
 
-    
     // Check if asset exists at path (thread-safe)
     bool has_asset_at_path(const std::string& path);
 
     // Update the assets root directory (only call when stopped)
-    void set_assets_root_directory(const std::string& dir) { assets_root_directory_ = dir; }
+    void set_assets_directory(const std::string& dir) { assets_directory_ = dir; }
+
+    // Clear all pending events from the queue (only call when stopped)
+    void clear_queue();
 
 private:
     // Background thread function
@@ -113,7 +115,7 @@ private:
     GLFWwindow* thumbnail_context_;
 
     // Active assets root directory for relative path calculations
-    std::string assets_root_directory_;
+    std::string assets_directory_;
 
     // Process individual file/directory into Asset
     Asset process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp);

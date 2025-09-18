@@ -194,14 +194,11 @@ int main() {
     return -1;
   }
 
-  std::string stored_assets_directory;
-  if (database.try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, stored_assets_directory) &&
-    !stored_assets_directory.empty()) {
-    ui_state.assets_root_directory = std::filesystem::path(stored_assets_directory).generic_u8string();
-    LOG_INFO("Loaded assets directory from config: {}", ui_state.assets_root_directory);
+  if (database.try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, ui_state.assets_directory)) {
+    LOG_INFO("Loaded assets directory from config: {}", ui_state.assets_directory);
   }
 
-  search_index.set_assets_root_directory(ui_state.assets_root_directory);
+  search_index.set_assets_directory(ui_state.assets_directory);
 
   // Debug: Force clear database if flag is set
   if (Config::DEBUG_FORCE_DB_CLEAR) {
@@ -320,7 +317,7 @@ int main() {
 
   g_event_processor = new EventProcessor(database, assets, assets_mutex,
     ui_state.update_needed, texture_manager, search_index,
-    ui_state.assets_root_directory, thumbnail_context);
+    ui_state.assets_directory, thumbnail_context);
   if (!g_event_processor->start()) {
     LOG_ERROR("Failed to start EventProcessor");
     return -1;
@@ -338,10 +335,10 @@ int main() {
     // Not critical - continue without audio support
   }
 
-  if (!ui_state.assets_root_directory.empty()) {
-    scan_for_changes(ui_state.assets_root_directory, database, assets, assets_mutex, g_event_processor);
+  if (!ui_state.assets_directory.empty()) {
+    scan_for_changes(ui_state.assets_directory, database, assets, assets_mutex, g_event_processor);
 
-    if (!file_watcher.start_watching(ui_state.assets_root_directory, on_file_event, &assets, &assets_mutex)) {
+    if (!file_watcher.start_watching(ui_state.assets_directory, on_file_event, &assets, &assets_mutex)) {
       LOG_ERROR("Failed to start file watcher");
       return -1;
     }
@@ -360,12 +357,14 @@ int main() {
     if (ui_state.assets_directory_changed) {
       ui_state.assets_directory_changed = false;
       const std::string new_path = ui_state.assets_path_selected;
-
-      // Stop file watcher and event processor first to prevent new assets from being added
+      ui_state.assets_directory = new_path;
+      
+      // Stop file watcher, event processor and clear pending events
       file_watcher.stop_watching();
       g_event_processor->stop();
+      g_event_processor->clear_queue();
 
-      // Now safe to clear assets from memory and database
+      // Clear assets from memory and database
       {
         std::lock_guard<std::mutex> lock(assets_mutex);
         assets.clear();
@@ -378,22 +377,21 @@ int main() {
       search_index.clear();
       clear_ui_state(ui_state);
 
-      ui_state.assets_root_directory = new_path;
-      search_index.set_assets_root_directory(new_path);
+      search_index.set_assets_directory(new_path);
       if (!database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, new_path)) {
         LOG_WARN("Failed to persist assets directory configuration: {}", new_path);
       }
 
       // Update event processor directory and restart
-      g_event_processor->set_assets_root_directory(ui_state.assets_root_directory);
+      g_event_processor->set_assets_directory(ui_state.assets_directory);
       if (!g_event_processor->start()) {
         LOG_ERROR("Failed to restart event processor after assets directory change");
       }
 
-      scan_for_changes(ui_state.assets_root_directory, database, assets, assets_mutex, g_event_processor);
+      scan_for_changes(ui_state.assets_directory, database, assets, assets_mutex, g_event_processor);
 
-      if (!file_watcher.start_watching(ui_state.assets_root_directory, on_file_event, &assets, &assets_mutex)) {
-        LOG_ERROR("Failed to start file watcher for path: {}", ui_state.assets_root_directory);
+      if (!file_watcher.start_watching(ui_state.assets_directory, on_file_event, &assets, &assets_mutex)) {
+        LOG_ERROR("Failed to start file watcher for path: {}", ui_state.assets_directory);
       }
     }
 
@@ -408,7 +406,7 @@ int main() {
       filter_assets(ui_state, assets, assets_mutex, search_index);
 
       // Removes texture cache entries and thumbnails for deleted assets
-      texture_manager.process_cleanup_queue(ui_state.assets_root_directory);
+      texture_manager.process_cleanup_queue(ui_state.assets_directory);
     }
 
     // Process pending debounced search
@@ -449,7 +447,7 @@ int main() {
 
     // P key to print texture cache
     if (ImGui::IsKeyPressed(ImGuiKey_P) && !io.WantTextInput) {
-      texture_manager.print_texture_cache(ui_state.assets_root_directory);
+      texture_manager.print_texture_cache(ui_state.assets_directory);
     }
 
     // Create main window that fits perfectly to viewport

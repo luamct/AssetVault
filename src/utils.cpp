@@ -36,9 +36,10 @@ std::string normalize_path_separators(const std::string& path) {
 }
 
 // Function to get relative path from assets folder for display and search
-std::string get_relative_asset_path(const std::string& full_path, const std::string& assets_root_directory) {
+// TODO: Remove normalize_path_separators calls
+std::string get_relative_asset_path(const std::string& full_path, const std::string& assets_directory) {
   std::string normalized_full_path = normalize_path_separators(full_path);
-  std::string root_path = normalize_path_separators(assets_root_directory);
+  std::string root_path = normalize_path_separators(assets_directory);
 
   // Ensure root path ends with slash for proper comparison
   if (!root_path.empty() && root_path.back() != '/') {
@@ -55,21 +56,6 @@ std::string get_relative_asset_path(const std::string& full_path, const std::str
   // Fallback: return normalized full path if not under root
   LOG_WARN("Asset path should contain configured root path: {}", full_path);
   return normalized_full_path;
-}
-
-// Function to format path for display (remove everything before first / and convert backslashes)
-std::string format_display_path(const std::string& full_path, const std::string& assets_root_directory) {
-  // Get relative path from assets folder
-  std::string display_path = get_relative_asset_path(full_path, assets_root_directory);
-
-  // Make path wrappable by adding spaces around slashes
-  size_t pos = 0;
-  while ((pos = display_path.find('/', pos)) != std::string::npos) {
-    display_path.replace(pos, 1, " / ");
-    pos += 3; // Move past the " / "
-  }
-
-  return display_path;
 }
 
 std::string format_file_size(uint64_t size_bytes) {

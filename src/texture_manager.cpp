@@ -448,7 +448,6 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
 }
 
 bool TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path) {
-  LOG_DEBUG("[SVG] Rendering with lunasvg");
   const std::string svg_path_str = svg_path.u8string();
 
   // Load SVG with lunasvg (supports CSS classes, gradients, styles)
