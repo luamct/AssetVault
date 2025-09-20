@@ -34,8 +34,10 @@ if(MSVC)
         set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG")
     endif()
 elseif(APPLE)
-    # macOS specific flags
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-unused-parameter")
+    # macOS specific flags - strict warnings to catch all issues in our code
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wno-unused-parameter -Wunused-variable -Wunused")
+    # Enable shadow warnings but only for our code, not external libraries
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow")
     # Enable C++17 filesystem support
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 elseif(UNIX AND NOT APPLE)
@@ -122,6 +124,16 @@ add_executable(AssetInventory
     src/ui.cpp
     ${FILE_WATCHER_SOURCES}
 )
+
+# Disable warnings for external library files
+if(APPLE OR (UNIX AND NOT APPLE))
+    set_source_files_properties(src/stb_vorbis_impl.cpp PROPERTIES
+        COMPILE_FLAGS "-Wno-shadow"
+    )
+    set_source_files_properties(src/texture_manager.cpp PROPERTIES
+        COMPILE_FLAGS "-Wno-deprecated-declarations"
+    )
+endif()
 
 # Configure for app bundle on macOS
 if(PLATFORM_MACOS)

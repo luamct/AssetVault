@@ -57,6 +57,7 @@ bool AssetDatabase::create_tables() {
             name TEXT NOT NULL,
             extension TEXT,
             full_path TEXT UNIQUE NOT NULL,
+            relative_path TEXT NOT NULL,
             size INTEGER NOT NULL,
             last_modified TEXT NOT NULL,
             asset_type TEXT NOT NULL,
@@ -109,8 +110,8 @@ bool AssetDatabase::drop_tables() {
 bool AssetDatabase::insert_asset(Asset& file) {
   const std::string sql = R"(
         INSERT OR REPLACE INTO assets
-        (name, extension, full_path, size, last_modified, asset_type, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (name, extension, full_path, relative_path, size, last_modified, asset_type, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     )";
 
   sqlite3_stmt* stmt;
@@ -138,7 +139,7 @@ bool AssetDatabase::insert_asset(Asset& file) {
 bool AssetDatabase::update_asset(const Asset& file) {
   const std::string sql = R"(
         UPDATE assets SET
-        name = ?, extension = ?, size = ?,
+        name = ?, extension = ?, relative_path = ?, size = ?,
         last_modified = ?, asset_type = ?, updated_at = CURRENT_TIMESTAMP
         WHERE full_path = ?
     )";
@@ -167,10 +168,11 @@ bool AssetDatabase::update_asset(const Asset& file) {
   bool success =
     (sqlite3_bind_text(stmt, 1, file.name.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
       sqlite3_bind_text(stmt, 2, file.extension.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_int64(stmt, 3, file.size) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 4, time_str.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 5, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-      sqlite3_bind_text(stmt, 6, full_path_utf8.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
+      sqlite3_bind_text(stmt, 3, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_int64(stmt, 4, file.size) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 5, time_str.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 6, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+      sqlite3_bind_text(stmt, 7, full_path_utf8.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK);
 
   if (!success) {
     print_sqlite_error("binding parameters for update");
@@ -606,6 +608,7 @@ bool AssetDatabase::bind_file_info_to_statement(sqlite3_stmt* stmt, const Asset&
   if (sqlite3_bind_text(stmt, param++, file.name.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
     sqlite3_bind_text(stmt, param++, file.extension.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
     sqlite3_bind_text(stmt, param++, full_path_utf8.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+    sqlite3_bind_text(stmt, param++, file.relative_path.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
     sqlite3_bind_int64(stmt, param++, file.size) != SQLITE_OK ||
     sqlite3_bind_text(stmt, param++, time_str.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
     sqlite3_bind_text(stmt, param++, get_asset_type_string(file.type).c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK) {
@@ -626,16 +629,18 @@ Asset AssetDatabase::create_file_info_from_statement(sqlite3_stmt* stmt) {
   // Store UTF-8 string from database directly
   const char* path_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
   file.path = path_str;
-  file.size = sqlite3_column_int64(stmt, 4);
+  const char* relative_path_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+  file.relative_path = relative_path_str;
+  file.size = sqlite3_column_int64(stmt, 5);
 
   // Parse time string back to time_point
-  std::string time_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+  std::string time_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
   std::tm tm = {};
   std::istringstream ss(time_str);
   ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
   file.last_modified = std::chrono::system_clock::from_time_t(std::mktime(&tm));
 
-  std::string type_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+  std::string type_str = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
 
   // Use centralized conversion function
   file.type = get_asset_type_from_string(type_str);

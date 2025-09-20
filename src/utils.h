@@ -16,7 +16,7 @@ std::string to_lowercase(const std::string& str);
 
 // Path utility functions
 std::string normalize_path_separators(const std::string& path);
-std::string get_relative_asset_path(const std::string& full_path, const std::string& assets_directory);
+std::string relative_path(const std::string& full_path, const std::string& assets_directory);
 std::string format_display_path(const std::string& full_path, const std::string& assets_directory);
 std::string format_file_size(uint64_t size_bytes);
 std::filesystem::path get_thumbnail_path(const std::string& relative_path);

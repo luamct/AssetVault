@@ -795,7 +795,7 @@ void TextureManager::process_cleanup_queue(const std::string& assets_root_direct
     }
 
     // Delete thumbnail if present for any asset path
-      std::string relative = get_relative_asset_path(file_path, assets_root_directory);
+      std::string relative = relative_path(file_path, assets_root_directory);
       std::filesystem::path thumbnail_path = get_thumbnail_path(relative);
     if (std::filesystem::exists(thumbnail_path)) {
       try {
@@ -879,7 +879,7 @@ void TextureManager::print_texture_cache(const std::string& assets_root_director
     }
 
     LOG_INFO("{}. {} [{}]", entry_num++, filename, status);
-    LOG_INFO("   Path: {}", get_relative_asset_path(path, assets_root_directory));
+    LOG_INFO("   Path: {}", relative_path(path, assets_root_directory));
     // Show both owned and default texture IDs for debugging
     if (entry.default_texture_id > 0) {
       LOG_INFO("   Using default_texture_id: {}, Size: {}x{}, Retries: {}",

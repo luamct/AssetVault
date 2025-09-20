@@ -227,9 +227,6 @@ int main() {
   // Get all assets from database for both search index and initial scan
   LOG_INFO("Loading assets from database...");
   auto db_assets = database.get_all_assets();
-  for (auto& asset : db_assets) {
-    asset.relative_path = get_relative_asset_path(asset.path, ui_state.assets_directory);
-  }
   LOG_INFO("Loaded {} assets from database", db_assets.size());
 
   // Initialize search index from assets
@@ -433,10 +430,10 @@ int main() {
     ImGui::NewFrame();
 
     // Handle keyboard input
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO& input_io = ImGui::GetIO();
 
     // Spacebar pause/unpause for audio assets
-    if (ImGui::IsKeyPressed(ImGuiKey_Space) && !io.WantTextInput) {
+    if (ImGui::IsKeyPressed(ImGuiKey_Space) && !input_io.WantTextInput) {
       if (ui_state.selected_asset.has_value()) {
         const Asset& sel = *ui_state.selected_asset;
         if (sel.type == AssetType::Audio && audio_manager.has_audio_loaded()) {

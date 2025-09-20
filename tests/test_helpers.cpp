@@ -19,7 +19,7 @@ Asset create_test_asset(
     asset.last_modified = std::chrono::system_clock::now();
     asset.relative_path = assets_root.empty()
         ? asset.path
-        : get_relative_asset_path(asset.path, assets_root);
+        : relative_path(asset.path, assets_root);
     return asset;
 }
 
