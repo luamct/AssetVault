@@ -448,9 +448,8 @@ TEST_CASE("asset_matches_search path filtering", "[search]") {
 }
 
 TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
-    // Create a mock database - we don't need actual database functionality
-    AssetDatabase* mock_db = nullptr;
-    SearchIndex index(mock_db);
+    // Create a search index - no database needed anymore
+    SearchIndex index;
 
     SECTION("Tokenization works correctly") {
         Asset asset;
@@ -458,12 +457,14 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset.name = "MyTexture_diffuse.png";
         asset.extension = "png";
         asset.path = "/assets/textures/MyTexture_diffuse.png";
+        asset.relative_path = "textures/MyTexture_diffuse.png";  // Set relative path for tokenization
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::_2D;
 
-        // Add asset to index
-        index.add_asset(asset.id, asset);
+        // Build index from assets
+        std::vector<Asset> assets = {asset};
+        REQUIRE(index.build_from_assets(assets));
 
         // Test searches for different tokens
         auto results = index.search_prefix("mytexture");
@@ -478,7 +479,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         REQUIRE(!results.empty());
         REQUIRE(results[0] == asset.id);
 
-        results = index.search_prefix("texture");  // Part of "textures" directory
+        results = index.search_prefix("texture");  // Should match "textures" directory
         REQUIRE(!results.empty());
         REQUIRE(results[0] == asset.id);
 
@@ -494,30 +495,34 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset1.name = "grass_texture.png";
         asset1.extension = "png";
         asset1.path = "/assets/nature/grass_texture.png";
+        asset1.relative_path = "nature/grass_texture.png";
         asset1.size = 1024;
         asset1.last_modified = std::chrono::system_clock::now();
         asset1.type = AssetType::_2D;
-        index.add_asset(asset1.id, asset1);
 
         Asset asset2;
         asset2.id = 2;
         asset2.name = "rock_texture.jpg";
         asset2.extension = "jpg";
         asset2.path = "/assets/nature/rock_texture.jpg";
+        asset2.relative_path = "nature/rock_texture.jpg";
         asset2.size = 2048;
         asset2.last_modified = std::chrono::system_clock::now();
         asset2.type = AssetType::_2D;
-        index.add_asset(asset2.id, asset2);
 
         Asset asset3;
         asset3.id = 3;
         asset3.name = "player_model.fbx";
         asset3.extension = "fbx";
         asset3.path = "/assets/models/player_model.fbx";
+        asset3.relative_path = "models/player_model.fbx";
         asset3.size = 5120;
         asset3.last_modified = std::chrono::system_clock::now();
         asset3.type = AssetType::_3D;
-        index.add_asset(asset3.id, asset3);
+
+        // Build index from all assets
+        std::vector<Asset> assets = {asset1, asset2, asset3};
+        REQUIRE(index.build_from_assets(assets));
 
         // Test single term searches
         auto results = index.search_prefix("texture");
@@ -532,7 +537,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         // Test multi-term searches (AND logic)
         std::vector<std::string> terms = { "texture", "nature" };
         results = index.search_terms(terms);
-        REQUIRE(results.size() == 2);  // Both nature textures
+        REQUIRE(results.size() == 2);  // Both nature textures have both terms
 
         terms = { "grass", "texture" };
         results = index.search_terms(terms);
@@ -549,6 +554,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset.name = "awesome_background.png";
         asset.extension = "png";
         asset.path = "/assets/ui/awesome_background.png";
+        asset.relative_path = "ui/awesome_background.png";
         asset.size = 1024;
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::_2D;
@@ -579,6 +585,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset1.name = "test1.png";
         asset1.extension = "png";
         asset1.path = "/assets/test1.png";
+        asset1.relative_path = "test1.png";
         asset1.size = 1024;
         asset1.last_modified = std::chrono::system_clock::now();
         asset1.type = AssetType::_2D;
@@ -589,6 +596,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         asset2.name = "test2.jpg";
         asset2.extension = "jpg";
         asset2.path = "/assets/images/test2.jpg";
+        asset2.relative_path = "images/test2.jpg";
         asset2.size = 2048;
         asset2.last_modified = std::chrono::system_clock::now();
         asset2.type = AssetType::_2D;
@@ -626,8 +634,8 @@ TEST_CASE("filter_assets functionality", "[search]") {
     std::mutex test_mutex;
     UIState search_state;
     
-    // Create a real SearchIndex for testing (without database dependency)
-    SearchIndex search_index(nullptr);  // Pass nullptr for database
+    // Create a real SearchIndex for testing (no database dependency)
+    SearchIndex search_index;
     
     // Manually populate the search index for testing
     for (const auto& [key, asset] : test_assets) {

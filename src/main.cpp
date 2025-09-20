@@ -36,6 +36,8 @@
 #include "logger.h"
 #include "ui.h"
 
+namespace fs = std::filesystem;
+
 // Global callback state (needed for callback functions)
 EventProcessor* g_event_processor = nullptr;
 
@@ -47,22 +49,16 @@ void on_file_event(const FileEvent& event) {
 }
 
 // Perform initial scan and generate events for EventProcessor
-void scan_for_changes(const std::string& root_path, AssetDatabase& database, std::map<std::string, Asset>& assets,
+void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db_assets, std::map<std::string, Asset>& assets,
   std::mutex& assets_mutex, EventProcessor* event_processor) {
   if (root_path.empty()) {
     LOG_WARN("scan_for_changes called with empty root path; skipping");
     return;
   }
-  namespace fs = std::filesystem;
   auto scan_start = std::chrono::high_resolution_clock::now();
 
   LOG_INFO("Starting scan for changes...");
 
-  // Get current database state
-  std::vector<Asset> db_assets = database.get_all_assets();
-  for (auto& asset : db_assets) {
-    asset.relative_path = get_relative_asset_path(asset.path, root_path);
-  }
   LOG_INFO("Database contains {} assets", db_assets.size());
   std::unordered_map<std::string, Asset> db_map;
   for (const auto& asset : db_assets) {
@@ -186,7 +182,7 @@ int main() {
   UIState ui_state;
   Model current_model;  // 3D model preview state
   Camera3D camera;      // 3D camera state for preview controls
-  SearchIndex search_index(&database);  // Search index for fast lookups
+  SearchIndex search_index;  // Search index for fast lookups
 
   // Initialize database
   if (!database.initialize(Config::DATABASE_PATH)) {
@@ -211,26 +207,34 @@ int main() {
     LOG_WARN("DEBUG_FORCE_THUMBNAIL_CLEAR is enabled - deleting all thumbnails for debugging...");
 
     // Use proper cross-platform thumbnail directory
-    std::filesystem::path thumbnail_dir = Config::get_thumbnail_directory();
+    fs::path thumbnail_dir = Config::get_thumbnail_directory();
     LOG_INFO("Using thumbnail directory: {}", thumbnail_dir.string());
 
     try {
-      if (std::filesystem::exists(thumbnail_dir)) {
-        std::filesystem::remove_all(thumbnail_dir);
+      if (fs::exists(thumbnail_dir)) {
+        fs::remove_all(thumbnail_dir);
         LOG_INFO("All thumbnails deleted successfully from: {}", thumbnail_dir.string());
       }
       else {
         LOG_INFO("Thumbnails directory does not exist yet: {}", thumbnail_dir.string());
       }
     }
-    catch (const std::filesystem::filesystem_error& e) {
+    catch (const fs::filesystem_error& e) {
       LOG_ERROR("Failed to delete thumbnails: {}", e.what());
     }
   }
 
-  // Initialize search index from database
+  // Get all assets from database for both search index and initial scan
+  LOG_INFO("Loading assets from database...");
+  auto db_assets = database.get_all_assets();
+  for (auto& asset : db_assets) {
+    asset.relative_path = get_relative_asset_path(asset.path, ui_state.assets_directory);
+  }
+  LOG_INFO("Loaded {} assets from database", db_assets.size());
+
+  // Initialize search index from assets
   LOG_INFO("Initializing search index...");
-  if (!search_index.load_from_database()) {
+  if (!search_index.build_from_assets(db_assets)) {
     LOG_ERROR("Failed to initialize search index");
     return -1;
   }
@@ -336,7 +340,7 @@ int main() {
   }
 
   if (!ui_state.assets_directory.empty()) {
-    scan_for_changes(ui_state.assets_directory, database, assets, assets_mutex, g_event_processor);
+    scan_for_changes(ui_state.assets_directory, db_assets, assets, assets_mutex, g_event_processor);
 
     if (!file_watcher.start_watching(ui_state.assets_directory, on_file_event, &assets, &assets_mutex)) {
       LOG_ERROR("Failed to start file watcher");
@@ -388,7 +392,7 @@ int main() {
         LOG_ERROR("Failed to restart event processor after assets directory change");
       }
 
-      scan_for_changes(ui_state.assets_directory, database, assets, assets_mutex, g_event_processor);
+      scan_for_changes(ui_state.assets_directory, std::vector<Asset>(), assets, assets_mutex, g_event_processor);
 
       if (!file_watcher.start_watching(ui_state.assets_directory, on_file_event, &assets, &assets_mutex)) {
         LOG_ERROR("Failed to start file watcher for path: {}", ui_state.assets_directory);

@@ -515,57 +515,13 @@ void filter_assets(UIState& ui_state, const std::map<std::string, Asset>& assets
 
 // SearchIndex Implementation
 
-SearchIndex::SearchIndex(AssetDatabase* database) : database_(database) {
+SearchIndex::SearchIndex() {
 }
 
-std::vector<std::string> SearchIndex::tokenize_asset(const Asset& asset) const {
-  std::vector<std::string> tokens;
-
-  // Tokenize filename (without extension)
-  auto name_tokens = tokenize_string(asset.name);
-  tokens.insert(tokens.end(), name_tokens.begin(), name_tokens.end());
-
-  // Add extension as a token
-  if (!asset.extension.empty()) {
-    tokens.push_back(to_lowercase(asset.extension));
-  }
-
-  // Tokenize path segments
-  const std::string& path_str = asset.relative_path;
-  size_t pos = 0;
-  while ((pos = path_str.find('/', pos)) != std::string::npos) {
-    pos++;
-    size_t next_pos = path_str.find('/', pos);
-    if (next_pos == std::string::npos) next_pos = path_str.length();
-
-    if (next_pos > pos) {
-      std::string segment = path_str.substr(pos, next_pos - pos);
-      if (segment != asset.name) {  // Don't duplicate filename
-        auto segment_tokens = tokenize_string(segment);
-        tokens.insert(tokens.end(), segment_tokens.begin(), segment_tokens.end());
-      }
-    }
-    pos = next_pos;
-  }
-
-  // Remove duplicates and invalid tokens
-  std::unordered_set<std::string> unique_tokens;
-  std::vector<std::string> result;
-
-  for (const auto& token : tokens) {
-    if (is_valid_token(token) && unique_tokens.find(token) == unique_tokens.end()) {
-      unique_tokens.insert(token);
-      result.push_back(token);
-    }
-  }
-
-  return result;
-}
-
-std::vector<std::string> SearchIndex::tokenize_string(const std::string& text) const {
-  std::vector<std::string> tokens;
+std::unordered_set<std::string> SearchIndex::tokenize_asset(const Asset& asset) const {
+  std::unordered_set<std::string> token_set;
   std::string current_token;
-  std::string lower_text = to_lowercase(text);
+  std::string lower_text = to_lowercase(asset.relative_path);
 
   for (char c : lower_text) {
     if (std::isalnum(static_cast<unsigned char>(c))) {
@@ -574,22 +530,18 @@ std::vector<std::string> SearchIndex::tokenize_string(const std::string& text) c
     else if (!current_token.empty()) {
       // Split on non-alphanumeric characters
       if (is_valid_token(current_token)) {
-        tokens.push_back(current_token);
+        token_set.insert(current_token);
       }
       current_token.clear();
     }
-
-    // Also handle camelCase by splitting on uppercase letters
-    // This is done in the lowercase string, so we need a different approach
-    // For now, we'll rely on the above splitting on non-alphanumeric
   }
 
   // Add final token if any
   if (!current_token.empty() && is_valid_token(current_token)) {
-    tokens.push_back(current_token);
+    token_set.insert(current_token);
   }
 
-  return tokens;
+  return token_set;
 }
 
 bool SearchIndex::is_valid_token(const std::string& token) const {
@@ -771,20 +723,12 @@ void SearchIndex::update_asset(uint32_t asset_id, const Asset& asset) {
   add_asset(asset_id, asset);
 }
 
-bool SearchIndex::build_from_database() {
-  LOG_INFO("Building search index from database...");
+bool SearchIndex::build_from_assets(const std::vector<Asset>& assets) {
+  LOG_INFO("Building search index from {} assets...", assets.size());
 
   // Clear existing index
   LOG_DEBUG("Clearing existing search index...");
   clear();
-
-  // Get all assets from database
-  LOG_DEBUG("Fetching all assets from database...");
-  auto assets = database_->get_all_assets();
-  for (auto& asset : assets) {
-    asset.relative_path = get_relative_asset_path(asset.path, assets_directory_);
-  }
-  LOG_DEBUG("Retrieved {} assets from database", assets.size());
   if (assets.empty()) {
     LOG_INFO("No assets found in database");
     return true;
@@ -841,12 +785,6 @@ bool SearchIndex::build_from_database() {
   return true;
 }
 
-bool SearchIndex::load_from_database() {
-  // For initial implementation, we'll always rebuild from assets
-  // TODO: Implement database storage/loading of index
-  LOG_DEBUG("Loading search index from database (fallback to rebuild)");
-  return build_from_database();
-}
 
 bool SearchIndex::save_to_database() const {
   // For initial implementation, we don't persist the index

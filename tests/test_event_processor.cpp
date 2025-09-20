@@ -51,8 +51,8 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         REQUIRE(database.create_tables());
         
         // Create search index
-        SearchIndex search_index(&database);
-        REQUIRE(search_index.build_from_database());
+        SearchIndex search_index;
+        // No database setup needed anymore
         
         // Create mock components
         std::map<std::string, Asset> assets;
@@ -87,6 +87,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
                 asset.name = fs::u8path(event.path).filename().string();
                 asset.extension = fs::u8path(event.path).extension().string().substr(1); // Remove leading dot
                 asset.path = event.path;
+                asset.relative_path = fs::u8path(event.path).filename().string();
                 asset.size = fs::file_size(fs::u8path(event.path));
                 asset.last_modified = std::chrono::system_clock::now();
                         asset.type = AssetType::_3D; // For testing
@@ -137,6 +138,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         original_asset.name = "original_name.obj";
         original_asset.extension = "obj";
         original_asset.path = test_file.u8string();
+        original_asset.relative_path = "original_name.obj";
         original_asset.size = fs::file_size(test_file);
         original_asset.last_modified = std::chrono::system_clock::now();
         original_asset.type = AssetType::_3D;
@@ -158,6 +160,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         // Simulate modification by changing the name
         Asset modified_asset = original_asset;
         modified_asset.name = "modified_name.obj";
+        modified_asset.relative_path = "modified_name.obj";
         
         // IMPORTANT: Also update the full path to reflect the new name
         // The tokenizer extracts tokens from the full path, not just the name
@@ -193,6 +196,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
         asset_to_delete.name = "to_delete.dae";
         asset_to_delete.extension = "dae";
         asset_to_delete.path = test_file.u8string();
+        asset_to_delete.relative_path = "to_delete.dae";
         asset_to_delete.size = fs::file_size(test_file);
         asset_to_delete.last_modified = std::chrono::system_clock::now();
         asset_to_delete.type = AssetType::_3D;
@@ -243,6 +247,7 @@ TEST_CASE("EventProcessor search index integration", "[event_processor][search_i
             asset.name = filename;
             asset.extension = fs::path(filename).extension().string().substr(1);
             asset.path = test_file.u8string();
+            asset.relative_path = filename;
             asset.size = fs::file_size(test_file);
             asset.last_modified = std::chrono::system_clock::now();
                 asset.type = type;
@@ -314,8 +319,10 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         REQUIRE(database.initialize(test_db.string()));
         REQUIRE(database.create_tables());
         
-        SearchIndex search_index(&database);
-        REQUIRE(search_index.build_from_database());
+        SearchIndex search_index;
+        // Initialize with empty assets list
+        std::vector<Asset> empty_assets;
+        REQUIRE(search_index.build_from_assets(empty_assets));
     
     SECTION("Empty database builds empty index") {
         REQUIRE(search_index.get_token_count() == 0);
@@ -332,6 +339,7 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         asset.name = "a.b";
         asset.extension = "b";
         asset.path = test_file.u8string();
+        asset.relative_path = "a.b";
         asset.size = fs::file_size(test_file);
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::Document;
@@ -360,6 +368,7 @@ TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_in
         asset.name = "duplicate_test.txt";
         asset.extension = "txt";
         asset.path = test_file.u8string();
+        asset.relative_path = "duplicate_test.txt";
         asset.size = fs::file_size(test_file);
         asset.last_modified = std::chrono::system_clock::now();
         asset.type = AssetType::Document;

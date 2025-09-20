@@ -124,11 +124,10 @@ struct TokenEntry {
 // Main search index class
 class SearchIndex {
 public:
-    explicit SearchIndex(AssetDatabase* database);
-    
+    SearchIndex();
+
     // Index management
-    bool build_from_database();
-    bool load_from_database();
+    bool build_from_assets(const std::vector<Asset>& assets);
     bool save_to_database() const;
 
     void set_assets_directory(const std::string& assets_directory) { 
@@ -156,14 +155,12 @@ public:
     void debug_print_tokens() const;
     
 private:
-    AssetDatabase* database_;
     std::vector<TokenEntry> sorted_tokens_;  // Binary searchable
     std::unordered_map<uint32_t, Asset> asset_cache_;  // Fast ID-to-asset lookup
     std::string assets_directory_;
     
     // Tokenization
-    std::vector<std::string> tokenize_asset(const Asset& asset) const;
-    std::vector<std::string> tokenize_string(const std::string& text) const;
+    std::unordered_set<std::string> tokenize_asset(const Asset& asset) const;
     bool is_valid_token(const std::string& token) const;
     
     // Index operations
