@@ -37,7 +37,7 @@ std::string normalize_path_separators(const std::string& path) {
 
 // Function to get relative path from assets folder for display and search
 // TODO: Remove normalize_path_separators calls
-std::string relative_path(const std::string& full_path, const std::string& assets_directory) {
+std::string get_relative_path(const std::string& full_path, const std::string& assets_directory) {
   std::string normalized_full_path = normalize_path_separators(full_path);
   std::string root_path = normalize_path_separators(assets_directory);
 

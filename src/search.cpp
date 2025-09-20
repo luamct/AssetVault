@@ -785,7 +785,6 @@ bool SearchIndex::build_from_assets(const std::vector<Asset>& assets) {
   return true;
 }
 
-
 bool SearchIndex::save_to_database() const {
   // For initial implementation, we don't persist the index
   // TODO: Implement database storage of index

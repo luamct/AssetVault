@@ -231,11 +231,17 @@ int main() {
 
   // Initialize search index from assets
   LOG_INFO("Initializing search index...");
+  auto index_start = std::chrono::high_resolution_clock::now();
+
   if (!search_index.build_from_assets(db_assets)) {
     LOG_ERROR("Failed to initialize search index");
     return -1;
   }
-  LOG_INFO("Search index initialized with {} tokens", search_index.get_token_count());
+
+  auto index_end = std::chrono::high_resolution_clock::now();
+  auto index_duration = std::chrono::duration_cast<std::chrono::milliseconds>(index_end - index_start);
+  LOG_INFO("Search index initialized with {} tokens in {}ms",
+           search_index.get_token_count(), index_duration.count());
 
 
   // Initialize GLFW

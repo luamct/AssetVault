@@ -303,7 +303,7 @@ Asset EventProcessor::process_file(const std::string& full_path, const std::chro
     try {
         // Basic file information (path is already normalized)
         asset.path = full_path;
-        asset.relative_path = relative_path(asset.path, assets_directory_);
+        asset.relative_path = get_relative_path(asset.path, assets_directory_);
         fs::path path_obj = fs::u8path(full_path);
         asset.name = path_obj.filename().u8string();
         // File-specific information
