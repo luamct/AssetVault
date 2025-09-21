@@ -25,9 +25,10 @@ struct FileEvent {
   FileEventType type;
   std::string path;  // UTF-8 encoded path with normalized separators
   std::chrono::system_clock::time_point timestamp;
+  int retry_count = 0;  // Number of times this event has been retried
 
   FileEvent(FileEventType t, const std::string& p)
-      : type(t), path(p), timestamp(std::chrono::system_clock::now()) {}
+      : type(t), path(p), timestamp(std::chrono::system_clock::now()), retry_count(0) {}
 };
 
 // Callback type for file events

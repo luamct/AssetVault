@@ -13,10 +13,10 @@ namespace Config {
     // =============================================================================
 
     // Set to true to force database clearing and reindexing on startup
-    constexpr bool DEBUG_FORCE_DB_CLEAR = false;
+    constexpr bool DEBUG_FORCE_DB_CLEAR = true;
 
     // Set to true to delete all thumbnails on startup
-    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = false;
+    constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = true;
 
     // Font settings
     constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";
@@ -85,6 +85,9 @@ namespace Config {
 
     // File watcher settings
     constexpr int FILE_WATCHER_DEBOUNCE_MS = 50; // Time window to coalesce related events from the same files
+
+    // Asset processing settings
+    constexpr int MAX_ASSET_CREATION_RETRIES = 3; // Maximum number of retries for failed asset creation
 
     // Asset root directory configuration key
     inline constexpr const char* CONFIG_KEY_ASSETS_DIRECTORY = "assets_directory";

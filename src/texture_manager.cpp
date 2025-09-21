@@ -326,7 +326,7 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
     }
     else {
       LOG_ERROR("[THUMBNAIL] Failed to load model: {}", model_path);
-      return ThumbnailResult::OTHER_ERROR;
+      throw ThumbnailGenerationException("Failed to load 3D model: " + model_path);
     }
   }
 
@@ -364,7 +364,7 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
     glDeleteTextures(1, &temp_texture);
     glDeleteTextures(1, &temp_depth_texture);
     cleanup_model(model);
-    return ThumbnailResult::OPENGL_ERROR;
+    throw ThumbnailGenerationException("OpenGL framebuffer is not complete for thumbnail generation");
   }
 
   // Render model to framebuffer
@@ -406,7 +406,7 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
     }
     catch (const std::filesystem::filesystem_error& e) {
       LOG_ERROR("Failed to create thumbnail directory: {}: {}", parent_dir.generic_u8string(), e.what());
-      return ThumbnailResult::OTHER_ERROR;
+      throw ThumbnailGenerationException("Failed to create thumbnail directory: " + parent_dir.generic_u8string() + ": " + e.what());
     }
   }
 
@@ -420,7 +420,7 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
 
   if (!write_result) {
     LOG_ERROR("Failed to write 3D model thumbnail: {}", thumbnail_path.generic_u8string());
-    return ThumbnailResult::OTHER_ERROR;
+    throw ThumbnailGenerationException("Failed to write 3D model thumbnail: " + thumbnail_path.generic_u8string());
   }
 
   // Restore original framebuffer BEFORE cleanup
@@ -447,14 +447,14 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
   return ThumbnailResult::SUCCESS;
 }
 
-bool TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path) {
+void TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path) {
   const std::string svg_path_str = svg_path.u8string();
 
   // Load SVG with lunasvg (supports CSS classes, gradients, styles)
   auto document = lunasvg::Document::loadFromFile(svg_path_str);
   if (!document) {
     LOG_WARN("[SVG] Failed to load SVG with lunasvg: {}", svg_path_str);
-    return false;
+    throw ThumbnailGenerationException("Failed to load SVG with lunasvg: " + svg_path_str);
   }
 
   // Compute output size preserving aspect ratio, fit within Config::SVG_THUMBNAIL_SIZE
@@ -472,7 +472,7 @@ bool TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_pat
   auto bitmap = document->renderToBitmap(out_w, out_h);
   if (bitmap.isNull()) {
     LOG_WARN("[SVG] lunasvg failed to render: {}", svg_path_str);
-    return false;
+    throw ThumbnailGenerationException("lunasvg failed to render: " + svg_path_str);
   }
 
   // lunasvg returns ARGB32 premultiplied. Convert to RGBA plain for stb_image_write.
@@ -484,7 +484,7 @@ bool TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_pat
   std::filesystem::create_directories(thumbnail_dir, ec);
   if (ec) {
     LOG_WARN("[SVG] Failed to create thumbnail directory {}: {}", thumbnail_dir.string(), ec.message());
-    return false;
+    throw ThumbnailGenerationException("Failed to create thumbnail directory " + thumbnail_dir.string() + ": " + ec.message());
   }
 
   // Write PNG using stb_image_write (bitmap is RGBA)
@@ -493,11 +493,10 @@ bool TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_pat
   const int stride = bitmap.stride();
   if (!stbi_write_png(out_path.c_str(), out_w, out_h, 4, data, stride)) {
     LOG_WARN("[SVG] Failed to write PNG: {}", out_path);
-    return false;
+    throw ThumbnailGenerationException("Failed to write PNG: " + out_path);
   }
 
   LOG_TRACE("[SVG] Generated thumbnail via lunasvg: {} -> {} ({}x{})", svg_path_str, out_path, out_w, out_h);
-  return true;
 }
 
 unsigned int TextureManager::load_texture_for_model(const std::string& filepath) {

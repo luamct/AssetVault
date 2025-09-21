@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <filesystem>
 #include <mutex>
 #include <queue>
@@ -12,6 +13,15 @@
 
 // Forward declaration
 struct GLFWwindow;
+
+// Exception class for thumbnail generation failures
+class ThumbnailGenerationException : public std::exception {
+protected:
+    std::string message_;
+public:
+    explicit ThumbnailGenerationException(const std::string& message) : message_(message) {}
+    const char* what() const noexcept override { return message_.c_str(); }
+};
 
 // Texture cache entry structure
 struct TextureCacheEntry {
@@ -74,7 +84,7 @@ public:
   ThumbnailResult generate_3d_model_thumbnail(const std::string& model_path, const std::filesystem::path& thumbnail_path);
 
   // SVG thumbnail generation (static - can be called without instance)
-  static bool generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path);
+  static void generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path);
 
 
   // Texture cache cleanup (thread-safe)

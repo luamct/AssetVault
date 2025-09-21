@@ -186,11 +186,11 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
     double global_avg = total_assets_processed > 0 ? (double) total_processing_time_ms / total_assets_processed : 0.0;
 
     // Enhanced logging with both batch and global metrics
-    LOG_INFO("Batch of {} assets completed. Running average of {:.2f}ms per asset ({} total assets processed)", batch.size(), global_avg, total_assets_processed);
+    LOG_INFO("Batch of {} assets completed. Running average of {:.2f}ms per asset ({} total assets processed)", 
+        batch.size(), global_avg, total_assets_processed);
 }
 
-// Batch processing methods for better performance
-
+// Batch processing creation events
 void EventProcessor::process_created_events(const std::vector<FileEvent>& events) {
     std::vector<Asset> files_to_insert;
     files_to_insert.reserve(events.size());
@@ -210,13 +210,27 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
                 TextureManager::generate_svg_thumbnail(file_info.path, thumbnail_path);
             }
 
+            // Add asset to database (exceptions prevent reaching this point on failure)
             files_to_insert.push_back(file_info);
-            total_events_processed_++;
         }
         catch (const std::exception& e) {
-            LOG_ERROR("Error processing created event for {}: {}", event.path, e.what());
-            total_events_processed_++;
+            // Unified retry logic for all exceptions during asset processing
+            if (event.retry_count < Config::MAX_ASSET_CREATION_RETRIES) {
+                FileEvent retry_event = event;
+                retry_event.retry_count++;
+                queue_event(retry_event);
+                LOG_INFO("Re-queuing asset for retry (attempt {}/{}): {} - {}",
+                         retry_event.retry_count,
+                         Config::MAX_ASSET_CREATION_RETRIES,
+                         event.path, e.what());
+            } else {
+                LOG_ERROR("Failed to process asset after {} retries: {} - {}",
+                          Config::MAX_ASSET_CREATION_RETRIES,
+                          event.path, e.what());
+            }
         }
+
+        total_events_processed_++;
     }
 
     // Batch operations: database insert and assets map update
