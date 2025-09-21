@@ -8,6 +8,7 @@
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <assimp/scene.h>
 #include "logger.h"
 #include "utils.h"
 
@@ -35,6 +36,18 @@ TextureManager::TextureManager()
 
 TextureManager::~TextureManager() {
   cleanup();
+}
+
+// TextureData cleanup implementation
+void TextureData::cleanup() {
+  if (data) {
+    if (is_stbi_data) {
+      stbi_image_free(data);
+    } else {
+      free(data);
+    }
+    data = nullptr;
+  }
 }
 
 
@@ -99,35 +112,32 @@ unsigned int TextureManager::load_texture(const char* filename) {
 }
 
 unsigned int TextureManager::load_texture(const char* filename, int* out_width, int* out_height) {
+  // For the load_texture function, we need to force RGBA format (like the original implementation)
+  TextureData texture_data;
+  texture_data.source_info = "file (forced RGBA): " + std::string(filename);
+
   int width, height, channels;
-  unsigned char* data = stbi_load(filename, &width, &height, &channels, 4);
+  unsigned char* data = stbi_load(filename, &width, &height, &channels, 4); // Force RGBA
 
   if (!data) {
     LOG_ERROR("Failed to load texture: {}", filename);
     return 0;
   }
 
+  texture_data.data = data;
+  texture_data.width = width;
+  texture_data.height = height;
+  texture_data.channels = 4; // Forced to RGBA
+  texture_data.format = GL_RGBA;
+  texture_data.is_stbi_data = true;
+
   // Return dimensions if requested
   if (out_width) *out_width = width;
   if (out_height) *out_height = height;
 
-  unsigned int texture_id;
-
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters for pixel art (nearest neighbor filtering)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-  // Upload texture data
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-
-  stbi_image_free(data);
-
-  return texture_id;
+  // Use UI texture parameters (pixel art style with nearest neighbor filtering)
+  TextureParameters params = TextureParameters::ui_texture();
+  return create_opengl_texture(texture_data, params);
 }
 
 
@@ -500,61 +510,27 @@ void TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_pat
 }
 
 unsigned int TextureManager::load_texture_for_model(const std::string& filepath) {
-  int width, height, channels;
-  unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &channels, 0);
-  if (!data) {
+  // Use the new unified pipeline
+  TextureData texture_data = load_texture_data_from_file(filepath);
+  if (!texture_data.is_valid()) {
     LOG_WARN("Failed to load texture for 3d model: {}", filepath);
     return 0;
   }
 
-  unsigned int texture_id;
-
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-  // Upload texture data
-  GLenum format = GL_RGB;
-  if (channels == 4)
-    format = GL_RGBA;
-  else if (channels == 1)
-    format = GL_RED;
-
-  glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-  glGenerateMipmap(GL_TEXTURE_2D);
-
-  stbi_image_free(data);
-  return texture_id;
+  TextureParameters params = TextureParameters::model_texture();
+  return create_opengl_texture(texture_data, params);
 }
 
 unsigned int TextureManager::create_solid_color_texture(float r, float g, float b) {
-  // Create a 1x1 texture with the specified color
-  unsigned char color_data[3] = {
-    static_cast<unsigned char>(r * 255.0f),
-    static_cast<unsigned char>(g * 255.0f),
-    static_cast<unsigned char>(b * 255.0f)
-  };
+  // Use the new unified pipeline
+  TextureData texture_data = create_solid_color_data(r, g, b);
+  if (!texture_data.is_valid()) {
+    LOG_ERROR("Failed to create solid color texture data");
+    return 0;
+  }
 
-  unsigned int texture_id;
-
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-
-  // Set texture parameters
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-  // Upload the 1x1 color data
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, color_data);
-
-  return texture_id;
+  TextureParameters params = TextureParameters::solid_color();
+  return create_opengl_texture(texture_data, params);
 }
 
 unsigned int TextureManager::create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive, float emissive_intensity) {
@@ -569,26 +545,233 @@ unsigned int TextureManager::create_material_texture(const glm::vec3& diffuse, c
     emissive_intensity,
     final_color.r, final_color.g, final_color.b);
 
-  // Create a 1x1 texture with the blended color
-  unsigned char color_data[3] = {
-    static_cast<unsigned char>(final_color.r * 255.0f),
-    static_cast<unsigned char>(final_color.g * 255.0f),
-    static_cast<unsigned char>(final_color.b * 255.0f)
-  };
+  // Use the new unified pipeline
+  TextureData texture_data = create_solid_color_data(final_color.r, final_color.g, final_color.b);
+  if (!texture_data.is_valid()) {
+    LOG_ERROR("Failed to create material texture data");
+    return 0;
+  }
+
+  TextureParameters params = TextureParameters::solid_color();
+  return create_opengl_texture(texture_data, params);
+}
+
+unsigned int TextureManager::load_embedded_texture(const aiTexture* ai_texture) {
+  // Use the new unified pipeline
+  TextureData texture_data = load_texture_data_from_assimp(ai_texture);
+  if (!texture_data.is_valid()) {
+    LOG_WARN("[EMBEDDED] Failed to load embedded texture data");
+    return 0;
+  }
+
+  TextureParameters params = TextureParameters::model_texture();
+  return create_opengl_texture(texture_data, params);
+}
+
+// New unified texture loading system implementation
+
+TextureData TextureManager::load_texture_data_from_file(const std::string& filepath) {
+  TextureData texture_data;
+  texture_data.source_info = "file: " + filepath;
+
+  int width, height, channels;
+  unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &channels, 0);
+
+  if (!data) {
+    LOG_WARN("[TEXTURE_DATA] Failed to load texture from file: {}", filepath);
+    return texture_data; // Return invalid texture data
+  }
+
+  texture_data.data = data;
+  texture_data.width = width;
+  texture_data.height = height;
+  texture_data.channels = channels;
+
+  // Set format based on channels
+  if (channels == 1) {
+    texture_data.format = GL_RED;
+  } else if (channels == 3) {
+    texture_data.format = GL_RGB;
+  } else if (channels == 4) {
+    texture_data.format = GL_RGBA;
+  } else {
+    LOG_WARN("[TEXTURE_DATA] Unsupported channel count: {} for file: {}", channels, filepath);
+    texture_data.format = GL_RGB;
+  }
+
+  LOG_TRACE("[TEXTURE_DATA] Loaded texture data from file: {} ({}x{}, {} channels, format: {})",
+            filepath, width, height, channels, texture_data.format);
+
+  return texture_data;
+}
+
+TextureData TextureManager::load_texture_data_from_memory(const unsigned char* data, int size, const std::string& source_info) {
+  TextureData texture_data;
+  texture_data.source_info = source_info;
+
+  if (!data || size <= 0) {
+    LOG_WARN("[TEXTURE_DATA] Invalid input data for memory texture loading");
+    return texture_data; // Return invalid texture data
+  }
+
+  int width, height, channels;
+  unsigned char* decoded_data = stbi_load_from_memory(data, size, &width, &height, &channels, 0);
+
+  if (!decoded_data) {
+    LOG_WARN("[TEXTURE_DATA] Failed to decode texture from memory: {}", source_info);
+    return texture_data; // Return invalid texture data
+  }
+
+  texture_data.data = decoded_data;
+  texture_data.width = width;
+  texture_data.height = height;
+  texture_data.channels = channels;
+
+  // Set format based on channels
+  if (channels == 1) {
+    texture_data.format = GL_RED;
+  } else if (channels == 3) {
+    texture_data.format = GL_RGB;
+  } else if (channels == 4) {
+    texture_data.format = GL_RGBA;
+  } else {
+    LOG_WARN("[TEXTURE_DATA] Unsupported channel count: {} for memory texture: {}", channels, source_info);
+    texture_data.format = GL_RGB;
+  }
+
+  LOG_TRACE("[TEXTURE_DATA] Decoded texture data from memory: {} ({}x{}, {} channels, format: {})",
+            source_info, width, height, channels, texture_data.format);
+
+  return texture_data;
+}
+
+TextureData TextureManager::load_texture_data_from_assimp(const aiTexture* ai_texture) {
+  TextureData texture_data;
+
+  if (!ai_texture) {
+    LOG_WARN("[TEXTURE_DATA] aiTexture is null");
+    return texture_data; // Return invalid texture data
+  }
+
+  texture_data.source_info = "assimp embedded: " + std::string(ai_texture->achFormatHint);
+
+  LOG_TRACE("[TEXTURE_DATA] Loading embedded texture, height: {}, format: '{}'",
+            ai_texture->mHeight, ai_texture->achFormatHint);
+
+  // Check if texture is compressed (height == 0) or uncompressed (height > 0)
+  if (ai_texture->mHeight == 0) {
+    // Compressed texture data (PNG, JPG, etc.)
+    int width, height, channels;
+    unsigned char* data = stbi_load_from_memory(
+      reinterpret_cast<const unsigned char*>(ai_texture->pcData),
+      ai_texture->mWidth, // mWidth contains the data size for compressed textures
+      &width, &height, &channels, 0
+    );
+
+    if (!data) {
+      LOG_WARN("[TEXTURE_DATA] Failed to decode compressed embedded texture");
+      return texture_data; // Return invalid texture data
+    }
+
+    texture_data.data = data;
+    texture_data.width = width;
+    texture_data.height = height;
+    texture_data.channels = channels;
+
+    // Set format based on channels
+    if (channels == 1) {
+      texture_data.format = GL_RED;
+    } else if (channels == 3) {
+      texture_data.format = GL_RGB;
+    } else if (channels == 4) {
+      texture_data.format = GL_RGBA;
+    } else {
+      texture_data.format = GL_RGB;
+    }
+
+    LOG_TRACE("[TEXTURE_DATA] Decoded compressed embedded texture {}x{} (channels: {}, format: {})",
+              width, height, channels, texture_data.format);
+  }
+  else {
+    // Uncompressed texture data (raw ARGB32)
+    // Note: We need to copy the data since TextureData expects to own it via stbi_image_free
+    int data_size = ai_texture->mWidth * ai_texture->mHeight * 4; // ARGB32 = 4 bytes per pixel
+    unsigned char* copied_data = static_cast<unsigned char*>(malloc(data_size));
+
+    if (!copied_data) {
+      LOG_ERROR("[TEXTURE_DATA] Failed to allocate memory for uncompressed embedded texture");
+      return texture_data; // Return invalid texture data
+    }
+
+    memcpy(copied_data, ai_texture->pcData, data_size);
+
+    texture_data.data = copied_data;
+    texture_data.width = ai_texture->mWidth;
+    texture_data.height = ai_texture->mHeight;
+    texture_data.channels = 4; // ARGB32
+    texture_data.format = GL_BGRA; // Assimp uses BGRA format for uncompressed data
+    texture_data.is_stbi_data = false; // This data was allocated with malloc
+
+    LOG_TRACE("[TEXTURE_DATA] Copied uncompressed embedded texture {}x{} (ARGB32, format: BGRA)",
+              ai_texture->mWidth, ai_texture->mHeight);
+  }
+
+  return texture_data;
+}
+
+TextureData TextureManager::create_solid_color_data(float r, float g, float b) {
+  TextureData texture_data;
+  texture_data.source_info = "solid color: (" + std::to_string(r) + ", " + std::to_string(g) + ", " + std::to_string(b) + ")";
+
+  // Create a 1x1 texture with the specified color
+  unsigned char* color_data = static_cast<unsigned char*>(malloc(3)); // RGB = 3 bytes
+  if (!color_data) {
+    LOG_ERROR("[TEXTURE_DATA] Failed to allocate memory for solid color texture");
+    return texture_data; // Return invalid texture data
+  }
+
+  color_data[0] = static_cast<unsigned char>(r * 255.0f);
+  color_data[1] = static_cast<unsigned char>(g * 255.0f);
+  color_data[2] = static_cast<unsigned char>(b * 255.0f);
+
+  texture_data.data = color_data;
+  texture_data.width = 1;
+  texture_data.height = 1;
+  texture_data.channels = 3;
+  texture_data.format = GL_RGB;
+  texture_data.is_stbi_data = false; // This data was allocated with malloc
+
+  LOG_TRACE("[TEXTURE_DATA] Created solid color data: RGB({}, {}, {})", r, g, b);
+
+  return texture_data;
+}
+
+unsigned int TextureManager::create_opengl_texture(const TextureData& data, const TextureParameters& params) {
+  if (!data.is_valid()) {
+    LOG_WARN("[OPENGL_TEXTURE] Cannot create OpenGL texture from invalid TextureData");
+    return 0;
+  }
 
   unsigned int texture_id;
-
   glGenTextures(1, &texture_id);
   glBindTexture(GL_TEXTURE_2D, texture_id);
 
   // Set texture parameters
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, params.wrap_s);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, params.wrap_t);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, params.min_filter);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, params.mag_filter);
 
-  // Upload the 1x1 color data
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, color_data);
+  // Upload texture data
+  glTexImage2D(GL_TEXTURE_2D, 0, data.format, data.width, data.height, 0, data.format, GL_UNSIGNED_BYTE, data.data);
+
+  // Generate mipmaps if requested
+  if (params.generate_mipmaps) {
+    glGenerateMipmap(GL_TEXTURE_2D);
+  }
+
+  LOG_TRACE("[OPENGL_TEXTURE] Created OpenGL texture ID {} from {} ({}x{}, format: {}, mipmaps: {})",
+            texture_id, data.source_info, data.width, data.height, data.format, params.generate_mipmaps);
 
   return texture_id;
 }

@@ -198,6 +198,17 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
   std::string basepath = getBasePath(model_path);
   LOG_TRACE("[MATERIAL] Base path for textures: {}", basepath);
 
+  // Log embedded texture information
+  LOG_TRACE("[EMBEDDED] Scene contains {} embedded textures", scene->mNumTextures);
+  for (unsigned int i = 0; i < scene->mNumTextures; i++) {
+    const aiTexture* ai_tex = scene->mTextures[i];
+    if (ai_tex) {
+      LOG_TRACE("[EMBEDDED] Texture {}: {}x{}, format: '{}', filename: '{}'",
+                i, ai_tex->mWidth, ai_tex->mHeight, ai_tex->achFormatHint,
+                ai_tex->mFilename.length > 0 ? ai_tex->mFilename.C_Str() : "<no filename>");
+    }
+  }
+
   // Process ALL materials (not just the first one with a texture)
   for (unsigned int m = 0; m < scene->mNumMaterials; m++) {
     aiMaterial* ai_material = scene->mMaterials[m];
@@ -297,8 +308,33 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
             }
           }
           else {
-            LOG_TRACE("[MATERIAL] Texture file referenced but not found: {}", filename);
-            has_missing_texture_files = true;
+            // Check for embedded textures before marking as missing
+            LOG_TRACE("[MATERIAL] Checking for embedded texture: {}", filename);
+            bool found_embedded = false;
+
+            // Check all embedded textures in the scene
+            for (unsigned int i = 0; i < scene->mNumTextures; i++) {
+              const aiTexture* ai_tex = scene->mTextures[i];
+              if (ai_tex) {
+                // Embedded textures can be referenced by index (*0, *1, etc.) or by filename
+                std::string embedded_name = "*" + std::to_string(i);
+                if (filename == embedded_name ||
+                    (ai_tex->mFilename.length > 0 && filename == ai_tex->mFilename.C_Str())) {
+                  LOG_TRACE("[EMBEDDED] Found embedded texture for '{}' at index {}", filename, i);
+                  material.texture_id = texture_manager.load_embedded_texture(ai_tex);
+                  if (material.texture_id != 0) {
+                    material.has_texture = true;
+                    found_embedded = true;
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (!found_embedded) {
+              LOG_TRACE("[MATERIAL] Texture file referenced but not found (external or embedded): {}", filename);
+              has_missing_texture_files = true;
+            }
           }
         }
       }
@@ -384,6 +420,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
 void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 parent_transform);
 void process_mesh(aiMesh* mesh, const aiScene* scene, Model& model, glm::mat4 transform);
 unsigned int load_model_texture(const aiScene* scene, const std::string& model_path);
+unsigned int load_embedded_texture(const aiTexture* ai_texture);
 
 // Helper function to convert aiMatrix4x4 to glm::mat4
 glm::mat4 ai_to_glm_mat4(const aiMatrix4x4& from) {

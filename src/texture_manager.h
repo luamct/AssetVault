@@ -7,12 +7,32 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <memory>
 #include <glm/glm.hpp>
+
+// Only include OpenGL headers if available
+#ifdef GLAD_GL_VERSION_3_3
+#include <glad/glad.h>
+#else
+// Forward declare OpenGL types for tests
+typedef unsigned int GLenum;
+typedef unsigned int GLuint;
+#define GL_RGB 0x1907
+#define GL_RGBA 0x1908
+#define GL_RED 0x1903
+#define GL_BGRA 0x80E1
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_REPEAT 0x2901
+#define GL_NEAREST 0x2600
+#define GL_LINEAR 0x2601
+#define GL_LINEAR_MIPMAP_LINEAR 0x2703
+#endif
 
 #include "asset.h" // For AssetType and Asset
 
-// Forward declaration
+// Forward declarations
 struct GLFWwindow;
+struct aiTexture;
 
 // Exception class for thumbnail generation failures
 class ThumbnailGenerationException : public std::exception {
@@ -21,6 +41,82 @@ protected:
 public:
     explicit ThumbnailGenerationException(const std::string& message) : message_(message) {}
     const char* what() const noexcept override { return message_.c_str(); }
+};
+
+// Texture parameters configuration
+struct TextureParameters {
+    GLenum wrap_s;
+    GLenum wrap_t;
+    GLenum min_filter;
+    GLenum mag_filter;
+    bool generate_mipmaps;
+
+    // Preset configurations
+    static TextureParameters ui_texture() {
+        return {GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE, GL_NEAREST, GL_NEAREST, false};
+    }
+
+    static TextureParameters model_texture() {
+        return {GL_REPEAT, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, true};
+    }
+
+    static TextureParameters solid_color() {
+        return {GL_REPEAT, GL_REPEAT, GL_LINEAR, GL_LINEAR, false};
+    }
+};
+
+// Intermediate texture data representation (separates data loading from OpenGL creation)
+struct TextureData {
+    unsigned char* data;
+    int width;
+    int height;
+    int channels;
+    GLenum format;
+    std::string source_info; // for debugging
+    bool is_stbi_data; // Track whether data was allocated by stbi or malloc
+
+    // Constructor
+    TextureData() : data(nullptr), width(0), height(0), channels(0), format(GL_RGB), is_stbi_data(true) {}
+
+    // Move constructor
+    TextureData(TextureData&& other) noexcept
+        : data(other.data), width(other.width), height(other.height),
+          channels(other.channels), format(other.format), source_info(std::move(other.source_info)),
+          is_stbi_data(other.is_stbi_data) {
+        other.data = nullptr; // Transfer ownership
+    }
+
+    // Move assignment
+    TextureData& operator=(TextureData&& other) noexcept {
+        if (this != &other) {
+            cleanup();
+            data = other.data;
+            width = other.width;
+            height = other.height;
+            channels = other.channels;
+            format = other.format;
+            source_info = std::move(other.source_info);
+            is_stbi_data = other.is_stbi_data;
+            other.data = nullptr; // Transfer ownership
+        }
+        return *this;
+    }
+
+    // Disable copy operations
+    TextureData(const TextureData&) = delete;
+    TextureData& operator=(const TextureData&) = delete;
+
+    // Destructor with RAII cleanup
+    ~TextureData() {
+        cleanup();
+    }
+
+    bool is_valid() const {
+        return data != nullptr && width > 0 && height > 0;
+    }
+
+private:
+    void cleanup(); // Implementation in .cpp file
 };
 
 // Texture cache entry structure
@@ -62,6 +158,16 @@ public:
   void load_type_textures();
   void cleanup_texture_cache(const std::string& path);
   bool get_texture_dimensions(const std::string& file_path, int& width, int& height);
+
+  // New unified texture loading system
+  TextureData load_texture_data_from_file(const std::string& filepath);
+  TextureData load_texture_data_from_memory(const unsigned char* data, int size, const std::string& source_info = "memory");
+  TextureData load_texture_data_from_assimp(const aiTexture* ai_texture);
+  TextureData create_solid_color_data(float r, float g, float b);
+  unsigned int create_opengl_texture(const TextureData& data, const TextureParameters& params);
+
+  // Embedded texture loading (replaces function from 3d.cpp)
+  unsigned int load_embedded_texture(const aiTexture* ai_texture);
 
   // 3D model texture management
   unsigned int load_texture_for_model(const std::string& filepath);
