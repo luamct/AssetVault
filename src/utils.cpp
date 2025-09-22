@@ -4,8 +4,10 @@
 #include "logger.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <vector>
 #include <cstdlib>
@@ -25,6 +27,27 @@ std::string to_lowercase(const std::string& str) {
   std::string result = str;
   std::transform(result.begin(), result.end(), result.begin(),
     [](unsigned char c) { return std::tolower(c); });
+  return result;
+}
+
+// Function to trim leading and trailing whitespace from string
+std::string trim_string(const std::string& str) {
+  if (str.empty()) {
+    return str;
+  }
+
+  std::string result = str;
+
+  // Trim leading whitespace
+  result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) {
+    return !std::isspace(ch);
+  }));
+
+  // Trim trailing whitespace
+  result.erase(std::find_if(result.rbegin(), result.rend(), [](unsigned char ch) {
+    return !std::isspace(ch);
+  }).base(), result.end());
+
   return result;
 }
 

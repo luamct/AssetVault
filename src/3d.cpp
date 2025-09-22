@@ -9,6 +9,7 @@
 #include "stb_image.h"
 #include "texture_manager.h"
 #include "theme.h"
+#include "utils.h"
 
 // 3D Preview global variables are now managed by TextureManager
 
@@ -261,87 +262,60 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
     unsigned int diffuse_count = ai_material->GetTextureCount(aiTextureType_DIFFUSE);
     LOG_TRACE("[MATERIAL] Material '{}' has {} diffuse textures", material.name, diffuse_count);
 
-    // Track if this material references texture files that don't exist (indicates missing files)
-    bool has_missing_texture_files = false;
-
-    // Try to load texture
+    // Try to load texture - atomic approach
     for (unsigned int texIndex = 0; texIndex < diffuse_count; texIndex++) {
       aiString texture_path;
       aiReturn texFound = ai_material->GetTexture(aiTextureType_DIFFUSE, texIndex, &texture_path);
 
       if (texFound == AI_SUCCESS) {
-        std::string filename = texture_path.C_Str();
+        std::string filename = trim_string(texture_path.C_Str());
 
         // Fix path separators: convert Windows backslashes to forward slashes for cross-platform compatibility
         std::replace(filename.begin(), filename.end(), '\\', '/');
 
         LOG_TRACE("[MATERIAL] Trying to load texture: '{}'", filename);
 
-        // Try to load the texture
+        // Try 1: External file at model directory
         std::string fileloc = basepath + filename;
-        LOG_TRACE("[MATERIAL] Trying path: {}", fileloc);
-
         if (std::filesystem::exists(fileloc)) {
-          LOG_TRACE("[MATERIAL] File exists, attempting to load texture: {}", fileloc);
+          LOG_TRACE("[MATERIAL] Loading external texture: {}", fileloc);
           material.texture_id = texture_manager.load_texture_for_model(fileloc);
           if (material.texture_id != 0) {
-            LOG_TRACE("[MATERIAL] Successfully loaded texture with ID: {}", material.texture_id);
             material.has_texture = true;
-            break; // Use first successful texture
-          }
-          else {
-            LOG_WARN("[MATERIAL] Failed to load texture: {}", fileloc);
+            break;
           }
         }
-        else {
-          LOG_TRACE("[MATERIAL] File does not exist: {}", fileloc);
-          // Try alternative path
-          std::filesystem::path alt_path = std::filesystem::path(model_path).parent_path() / filename;
-          LOG_TRACE("[MATERIAL] Trying alternative path: {}", alt_path.string());
 
-          if (std::filesystem::exists(alt_path)) {
-            LOG_TRACE("[MATERIAL] Alternative file exists, attempting to load: {}", alt_path.string());
-            material.texture_id = texture_manager.load_texture_for_model(alt_path.string());
-            if (material.texture_id != 0) {
-              material.has_texture = true;
-              break;
-            }
-          }
-          else {
-            // Check for embedded textures before marking as missing
-            LOG_TRACE("[MATERIAL] Checking for embedded texture: {}", filename);
-            bool found_embedded = false;
-
-            // Check all embedded textures in the scene
-            for (unsigned int i = 0; i < scene->mNumTextures; i++) {
-              const aiTexture* ai_tex = scene->mTextures[i];
-              if (ai_tex) {
-                // Embedded textures can be referenced by index (*0, *1, etc.) or by filename
-                std::string embedded_name = "*" + std::to_string(i);
-                if (filename == embedded_name ||
-                    (ai_tex->mFilename.length > 0 && filename == ai_tex->mFilename.C_Str())) {
-                  LOG_TRACE("[EMBEDDED] Found embedded texture for '{}' at index {}", filename, i);
-                  material.texture_id = texture_manager.load_embedded_texture(ai_tex);
-                  if (material.texture_id != 0) {
-                    material.has_texture = true;
-                    found_embedded = true;
-                    break;
-                  }
-                }
+        // Try 3: Embedded textures
+        for (unsigned int i = 0; i < scene->mNumTextures; i++) {
+          const aiTexture* ai_tex = scene->mTextures[i];
+          if (ai_tex) {
+            // Embedded textures can be referenced by index (*0, *1, etc.) or by filename
+            std::string embedded_name = "*" + std::to_string(i);
+            if (filename == embedded_name ||
+                (ai_tex->mFilename.length > 0 && filename == ai_tex->mFilename.C_Str())) {
+              LOG_TRACE("[EMBEDDED] Loading embedded texture for '{}' at index {}", filename, i);
+              material.texture_id = texture_manager.load_embedded_texture(ai_tex);
+              if (material.texture_id != 0) {
+                material.has_texture = true;
+                break;
               }
             }
-
-            if (!found_embedded) {
-              LOG_TRACE("[MATERIAL] Texture file referenced but not found (external or embedded): {}", filename);
-              has_missing_texture_files = true;
-            }
           }
+        }
+
+        // If we reach here, texture loading failed completely
+        if (!material.has_texture) {
+          LOG_ERROR("[MATERIAL] Failed to load texture '{}' - tried external path: '{}', {} embedded textures",
+                    filename, basepath + filename, scene->mNumTextures);
+        }
+
+        // Even if texture loading failed, don't fail the entire model - use material colors as fallback
+        if (material.has_texture) {
+          break; // Use first successful texture
         }
       }
     }
-
-    // Store whether this material has missing texture files (for retry logic)
-    material.has_missing_texture_files = has_missing_texture_files;
 
     // Load material color properties
     aiColor3D diffuse_color(0.8f, 0.8f, 0.8f);
@@ -539,13 +513,15 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
     return false;
   }
 
+  LOG_DEBUG("[3D] Loading model: {}", filepath);
+
   Assimp::Importer importer;
   const aiScene* scene = importer.ReadFile(
     filepath, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace
   );
 
   if (!scene || !scene->mRootNode) {
-    LOG_ERROR("ASSIMP: {}", importer.GetErrorString());
+    LOG_ERROR("ASSIMP: Failed to load '{}' - {}", filepath, importer.GetErrorString());
     return false;
   }
 
@@ -603,6 +579,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   GLenum error = glGetError();
   if (error != GL_NO_ERROR) {
     LOG_ERROR("OpenGL error after vertex buffer creation: {}", error);
+    LOG_ERROR("OpenGL error after vertex buffer creation: 0x{:X} ({})", error, error);
     cleanup_model(model);
     return false;
   }
@@ -613,7 +590,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 
   error = glGetError();
   if (error != GL_NO_ERROR) {
-    LOG_ERROR("OpenGL error after index buffer creation: {}", error);
+    LOG_ERROR("OpenGL error after index buffer creation: 0x{:X} ({})", error, error);
     cleanup_model(model);
     return false;
   }
@@ -633,13 +610,8 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   // Load all materials from the model
   load_model_materials(scene, filepath, model, texture_manager);
 
-  // Check if any material has missing texture files
-  for (const auto& material : model.materials) {
-    if (material.has_missing_texture_files) {
-      // Just fail, don't need to track specific error type
-      return false;
-    }
-  }
+  LOG_DEBUG("[3D] Loaded {} materials", model.materials.size());
+
 
   model.loaded = true;
   return true;

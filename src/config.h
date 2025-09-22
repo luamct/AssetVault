@@ -42,7 +42,7 @@ namespace Config {
     constexpr float ICON_SCALE = 0.5f;           // Icon occupies 50% of the thumbnail area
 
     // 3D model thumbnail generation
-    constexpr int MODEL_THUMBNAIL_SIZE = 180;    // Size for generated 3D model thumbnails
+    constexpr int MODEL_THUMBNAIL_SIZE = 400;    // Size for generated 3D model thumbnails
     constexpr int MAX_TEXTURE_RETRY_ATTEMPTS = 50; // Max retries for texture loading before giving up
 
     // 3D preview controls

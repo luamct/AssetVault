@@ -28,7 +28,6 @@ struct Material {
   // Flags
   bool has_texture = false;
   bool has_diffuse_color = false;
-  bool has_missing_texture_files = false; // True if material references texture files that don't exist
   bool has_emissive = false; // True if material has emissive properties
 };
 

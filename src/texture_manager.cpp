@@ -322,12 +322,15 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
   LOG_TRACE("[THUMBNAIL] Thumbnail will be saved to: {}", thumbnail_path.generic_u8string());
 
   // Load the 3D model (includes texture IO) - timing includes setup overhead
-  LOG_TRACE("[THUMBNAIL] Loading 3D model: {}", model_path);
+  LOG_DEBUG("[THUMBNAIL] Loading 3D model for thumbnail: {}", model_path);
   auto start_io = std::chrono::high_resolution_clock::now();
   Model model;
   bool load_success = load_model(model_path, model, *this);
   auto end_io = std::chrono::high_resolution_clock::now();
   auto io_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_io - start_io);
+
+  LOG_DEBUG("[THUMBNAIL] load_model returned: {}, has_no_geometry: {}, vertices: {}, indices: {}",
+            load_success, model.has_no_geometry, model.vertices.size(), model.indices.size());
 
   if (!load_success) {
     if (model.has_no_geometry) {
@@ -335,7 +338,7 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
       return ThumbnailResult::NO_GEOMETRY;
     }
     else {
-      LOG_ERROR("[THUMBNAIL] Failed to load model: {}", model_path);
+      LOG_ERROR("[THUMBNAIL] Failed to load model for thumbnail: {}", model_path);
       throw ThumbnailGenerationException("Failed to load 3D model: " + model_path);
     }
   }
