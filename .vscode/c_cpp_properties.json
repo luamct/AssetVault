@@ -8,14 +8,8 @@
                 "${workspaceFolder}/external/imgui",
                 "${workspaceFolder}/external/imgui/backends",
                 "${workspaceFolder}/external/glad/include",
-                "${workspaceFolder}/external/nanosvg",
-                "${env:HOME}/vcpkg/packages/glfw3_arm64-osx/include",
-                "${env:HOME}/vcpkg/packages/assimp_arm64-osx/include",
-                "${env:HOME}/vcpkg/packages/glm_arm64-osx/include",
-                "${env:HOME}/vcpkg/packages/sqlite3_arm64-osx/include",
-                "${env:HOME}/vcpkg/packages/spdlog_arm64-osx/include",
-                "${env:HOME}/vcpkg/packages/fmt_arm64-osx/include",
-                "${env:HOME}/vcpkg/packages/catch2_arm64-osx/include"
+                "${workspaceFolder}/build/vcpkg_installed/arm64-osx/include",
+                "${workspaceFolder}/build/vcpkg_installed/arm64-osx/include/lunasvg"
             ],
             "defines": [
                 "_DEBUG",
@@ -37,7 +31,6 @@
                 "${workspaceFolder}/external/imgui",
                 "${workspaceFolder}/external/imgui/backends",
                 "${workspaceFolder}/external/glad/include",
-                "${workspaceFolder}/external/nanosvg",
                 "${workspaceFolder}/build/vcpkg_installed/x64-windows/include"
             ],
             "defines": [
