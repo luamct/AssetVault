@@ -578,7 +578,6 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   // Check for OpenGL errors
   GLenum error = glGetError();
   if (error != GL_NO_ERROR) {
-    LOG_ERROR("OpenGL error after vertex buffer creation: {}", error);
     LOG_ERROR("OpenGL error after vertex buffer creation: 0x{:X} ({})", error, error);
     cleanup_model(model);
     return false;
