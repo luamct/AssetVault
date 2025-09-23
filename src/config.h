@@ -13,7 +13,7 @@ namespace Config {
     // =============================================================================
 
     // Set to true to force database clearing and reindexing on startup
-    constexpr bool DEBUG_FORCE_DB_CLEAR = true;
+    constexpr bool DEBUG_FORCE_DB_CLEAR = false;
 
     // Set to true to delete all thumbnails on startup
     constexpr bool DEBUG_FORCE_THUMBNAIL_CLEAR = true;

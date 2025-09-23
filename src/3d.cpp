@@ -210,7 +210,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
     }
   }
 
-  // Process ALL materials (not just the first one with a texture)
+  // Process ALL materials
   for (unsigned int m = 0; m < scene->mNumMaterials; m++) {
     aiMaterial* ai_material = scene->mMaterials[m];
     Material material;
@@ -269,6 +269,12 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
 
       if (texFound == AI_SUCCESS) {
         std::string filename = trim_string(texture_path.C_Str());
+
+        // Skip empty texture paths (common in materials without textures assigned)
+        if (filename.empty()) {
+          LOG_WARN("[MATERIAL] Skipping empty texture path for material '{}' for {}", material.name, model_path);
+          continue;
+        }
 
         // Fix path separators: convert Windows backslashes to forward slashes for cross-platform compatibility
         std::replace(filename.begin(), filename.end(), '\\', '/');

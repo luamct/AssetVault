@@ -158,15 +158,7 @@ void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db
 }
 
 int main() {
-#ifdef _WIN32
-  // Set console to UTF-8 mode for proper Unicode display
-  SetConsoleOutputCP(CP_UTF8);
-  SetConsoleCP(CP_UTF8);
-  LOG_INFO("Console set to UTF-8 mode for Unicode support");
-#endif
-
-  // Initialize logging system
-  Logger::initialize(LogLevel::Debug);
+  Logger::initialize(LogLevel::Info);
   LOG_INFO("AssetInventory application starting...");
 
   // Initialize application directories (create cache, thumbnail, and data directories)
