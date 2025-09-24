@@ -956,6 +956,8 @@ void TextureManager::queue_texture_cleanup(const std::string& file_path) {
   LOG_TRACE("[TEXTURE] Queued cleanup for: {}", file_path);
 }
 
+// TODO: Should we cache textures by relative path, so we safe memory 
+// and don't need to pass this here
 void TextureManager::process_cleanup_queue(const std::string& assets_root_directory) {
   std::lock_guard<std::mutex> lock(cleanup_mutex_);
 
@@ -980,8 +982,8 @@ void TextureManager::process_cleanup_queue(const std::string& assets_root_direct
     }
 
     // Delete thumbnail if present for any asset path
-      std::string relative = get_relative_path(file_path, assets_root_directory);
-      std::filesystem::path thumbnail_path = get_thumbnail_path(relative);
+    std::string relative = get_relative_path(file_path, assets_root_directory);
+    std::filesystem::path thumbnail_path = get_thumbnail_path(relative);
     if (std::filesystem::exists(thumbnail_path)) {
       try {
         std::filesystem::remove(thumbnail_path);

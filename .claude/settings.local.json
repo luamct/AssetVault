@@ -3,7 +3,9 @@
     "allow": [
       "WebSearch",
       "Bash(./build/AssetInventory.app/Contents/MacOS/AssetInventory)",
-      "Bash(cmake:*)"
+      "Bash(cmake:*)",
+      "Bash(awk:*)",
+      "Bash(xargs:*)"
     ],
     "deny": [],
     "ask": [],

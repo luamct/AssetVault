@@ -292,7 +292,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
           }
         }
 
-        // Try 3: Embedded textures
+        // Try 2: Embedded textures
         for (unsigned int i = 0; i < scene->mNumTextures; i++) {
           const aiTexture* ai_tex = scene->mTextures[i];
           if (ai_tex) {
