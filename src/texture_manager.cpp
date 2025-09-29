@@ -318,8 +318,7 @@ void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
   std::filesystem::path path_obj(model_path);
   std::string filename = path_obj.filename().string();
 
-  LOG_TRACE("[THUMBNAIL] Starting 3D model thumbnail generation for: {}", model_path);
-  LOG_TRACE("[THUMBNAIL] Thumbnail will be saved to: {}", thumbnail_path.generic_u8string());
+  LOG_TRACE("[THUMBNAIL] Generating thumbnail for model {} at {}", model_path, thumbnail_path.generic_u8string());
 
   // Load the 3D model (includes texture IO) - timing includes setup overhead
   LOG_DEBUG("[THUMBNAIL] Loading 3D model for thumbnail: {}", model_path);

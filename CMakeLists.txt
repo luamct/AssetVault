@@ -365,6 +365,67 @@ target_link_libraries(UtilsTest PRIVATE
 
 add_test(NAME UtilsTests COMMAND UtilsTest)
 
+# Add Integration test executable
+add_executable(IntegrationTest
+    tests/test_integration.cpp
+    tests/test_helpers.cpp
+    src/ui.cpp
+    src/audio_manager.cpp
+    src/stb_vorbis_impl.cpp
+    ${FILE_WATCHER_SOURCES}
+)
+
+target_include_directories(IntegrationTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/external
+    ${GLAD_DIR}/include
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+)
+
+target_link_libraries(IntegrationTest PRIVATE
+    AssetInventoryCore
+    imgui
+    glad
+    assimp::assimp
+    glm::glm
+    Catch2::Catch2WithMain
+)
+
+# Define MAX_FRAMES_TESTS for integration testing
+target_compile_definitions(IntegrationTest PRIVATE MAX_FRAMES_TESTS=60)
+
+# Platform-specific libraries for IntegrationTest
+if(PLATFORM_WINDOWS)
+    target_link_libraries(IntegrationTest PRIVATE
+        legacy_stdio_definitions
+        kernel32 user32 shell32 uuid ole32 oleaut32 advapi32 ws2_32
+    )
+elseif(PLATFORM_MACOS)
+    target_link_libraries(IntegrationTest PRIVATE
+        ${COCOA_LIBRARY}
+        ${IOKIT_LIBRARY}
+        ${COREVIDEO_LIBRARY}
+        ${COREFOUNDATION_LIBRARY}
+        ${CORESERVICES_LIBRARY}
+    )
+endif()
+
+add_test(NAME IntegrationTests COMMAND IntegrationTest)
+
+# Copy resources for IntegrationTest
+add_custom_command(TARGET IntegrationTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying resources for IntegrationTest"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Roboto-Regular.ttf
+    $<TARGET_FILE_DIR:IntegrationTest>/external/fonts/Roboto-Regular.ttf
+
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/images
+    $<TARGET_FILE_DIR:IntegrationTest>/images
+)
+
 if(PLATFORM_MACOS)
     add_test(NAME FileWatcherMacOSTests COMMAND FileWatcherMacOSTest)
 endif()

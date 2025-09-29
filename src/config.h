@@ -115,13 +115,19 @@ namespace Config {
             return "cache";
         }
 #elif __APPLE__
-        // macOS: ~/Library/Caches/AssetInventory
-        const char* home = std::getenv("HOME");
-        if (home) {
-            return std::filesystem::path(home) / "Library" / "Caches" / "AssetInventory";
+        // macOS: $XDG_CACHE_HOME/AssetInventory or ~/Library/Caches/AssetInventory
+        const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
+        if (xdg_cache) {
+            return std::filesystem::path(xdg_cache) / "AssetInventory";
         }
         else {
-            return "cache";
+            const char* home = std::getenv("HOME");
+            if (home) {
+                return std::filesystem::path(home) / "Library" / "Caches" / "AssetInventory";
+            }
+            else {
+                return "cache";
+            }
         }
 #else
         // Linux: $XDG_CACHE_HOME/AssetInventory or ~/.cache/AssetInventory
@@ -153,13 +159,19 @@ namespace Config {
             return "data";
         }
 #elif __APPLE__
-        // macOS: ~/Library/Application Support/AssetInventory
-        const char* home = std::getenv("HOME");
-        if (home) {
-            return std::filesystem::path(home) / "Library" / "Application Support" / "AssetInventory";
+        // macOS: $XDG_DATA_HOME/AssetInventory or ~/Library/Application Support/AssetInventory
+        const char* xdg_data = std::getenv("XDG_DATA_HOME");
+        if (xdg_data) {
+            return std::filesystem::path(xdg_data) / "AssetInventory";
         }
         else {
-            return "data";
+            const char* home = std::getenv("HOME");
+            if (home) {
+                return std::filesystem::path(home) / "Library" / "Application Support" / "AssetInventory";
+            }
+            else {
+                return "data";
+            }
         }
 #else
         // Linux: $XDG_DATA_HOME/AssetInventory or ~/.local/share/AssetInventory

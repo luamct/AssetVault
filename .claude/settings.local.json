@@ -11,7 +11,11 @@
       "Bash(ctest:*)",
       "Read(//private/var/folders/**)",
       "Read(//private/tmp/**)",
-      "Bash(./build/SearchTest)"
+      "Bash(./build/SearchTest)",
+      "Bash(./build/IntegrationTest)",
+      "Bash(./build/IntegrationTest:*)",
+      "Bash(timeout:*)",
+      "Bash(./IntegrationTest:*)"
     ],
     "deny": [],
     "ask": [],

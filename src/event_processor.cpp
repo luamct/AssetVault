@@ -219,7 +219,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
                 FileEvent retry_event = event;
                 retry_event.retry_count++;
                 queue_event(retry_event);
-                LOG_INFO("Re-queuing asset for retry (attempt {}/{}): {} - {}",
+                LOG_WARN("Re-queuing asset for retry (attempt {}/{}): {} - {}",
                          retry_event.retry_count,
                          Config::MAX_ASSET_CREATION_RETRIES,
                          event.path, e.what());

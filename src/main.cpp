@@ -158,7 +158,7 @@ void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db
 }
 
 int main() {
-  Logger::initialize(LogLevel::Info);
+  Logger::initialize(LogLevel::Debug);
   LOG_INFO("AssetInventory application starting...");
 
   // Initialize application directories (create cache, thumbnail, and data directories)
@@ -177,7 +177,9 @@ int main() {
   SearchIndex search_index;  // Search index for fast lookups
 
   // Initialize database
-  if (!database.initialize(Config::DATABASE_PATH)) {
+  std::string db_path = Config::get_database_path().string();
+  LOG_INFO("Using database path: {}", db_path);
+  if (!database.initialize(db_path)) {
     LOG_ERROR("Failed to initialize database");
     return -1;
   }
@@ -345,7 +347,25 @@ int main() {
 
   // Main loop
   double last_time = glfwGetTime();
+  int frame_count = 0;  // Used for integration testing
+  (void)frame_count;    // Suppress unused variable warning in production
+
+  // Check for environment variable to limit frames (for integration testing)
+  int max_frames = 0;
+  const char* max_frames_env = std::getenv("MAX_FRAMES");
+  if (max_frames_env) {
+    max_frames = std::atoi(max_frames_env);
+    if (max_frames > 0) {
+      LOG_INFO("Environment test mode: Will exit after {} frames", max_frames);
+    }
+  }
+
+#ifdef MAX_FRAMES_TESTS
+  LOG_INFO("Integration test mode: Will exit after {} frames", MAX_FRAMES_TESTS);
+#endif
+
   LOG_INFO("Entering main rendering loop");
+
   while (!glfwWindowShouldClose(window)) {
     double current_time = glfwGetTime();
     io.DeltaTime = (float) (current_time - last_time);
@@ -501,6 +521,18 @@ int main() {
 
     glfwSwapBuffers(window);
 
+    frame_count++;
+#ifdef MAX_FRAMES_TESTS
+    if (frame_count >= MAX_FRAMES_TESTS) {
+      LOG_INFO("Integration test: Exiting after {} frames", frame_count);
+      break;
+    }
+#endif
+
+    if (max_frames > 0 && frame_count >= max_frames) {
+      LOG_INFO("Environment test: Exiting after {} frames", frame_count);
+      break;
+    }
   }
 
   // Cleanup audio manager
