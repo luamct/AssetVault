@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -6,410 +7,349 @@
 #include <vector>
 #include <unordered_map>
 #include <atomic>
+#include <mutex>
+#include <chrono>
+#include <set>
 
 #include "event_processor.h"
 #include "database.h"
 #include "search.h"
 #include "texture_manager.h"
 #include "file_watcher.h"
+#include "asset.h"
+#include "utils.h"
+#include "config.h"
+#include "test_helpers.h"
 
 namespace fs = std::filesystem;
 
-// Mock TextureManager for testing
-class MockTextureManager {
-public:
-    void queue_texture_cleanup(const fs::path& path, AssetType asset_type) {
-        invalidated_textures.push_back({path, asset_type});
-    }
-    
-    struct CleanupEntry {
-        fs::path path;
-        AssetType asset_type;
-    };
-    std::vector<CleanupEntry> invalidated_textures;
-};
+// Test cases for process_created_events method
+TEST_CASE("process_created_events functionality", "[process_created_events]") {
+    // Setup test environment
+    fs::path temp_dir = create_temp_dir("test_basic");
+    std::string assets_dir = temp_dir.string();
 
-TEST_CASE("EventProcessor search index integration", "[event_processor][search_index]") {
-    // Create test database
-    fs::path test_db = fs::temp_directory_path() / "test_event_processor.db";
-    
-    // Clean up any existing test database
-    try {
-        fs::remove(test_db);
-    } catch (...) {
-        // Ignore errors if file doesn't exist
-    }
-    
-    // Create temporary test files directory
-    fs::path temp_dir = fs::temp_directory_path() / "event_processor_test";
-    fs::create_directories(temp_dir);
-    
-    // Scope for database objects to ensure proper cleanup
-    {
-        AssetDatabase database;
-        REQUIRE(database.initialize(test_db.string()));
-        REQUIRE(database.create_tables());
-        
-        // Create search index
-        SearchIndex search_index;
-        // No database setup needed anymore
-        
-        // Create mock components
-        std::map<std::string, Asset> assets;
-        MockTextureManager mock_texture_manager;
-    
-    SECTION("Created events update search index") {
-        // Create test files
-        fs::path test_file1 = temp_dir / "test_model.fbx";
-        fs::path test_file2 = temp_dir / "test_texture.png";
-        
-        // Write some content to make them valid files
-        std::ofstream(test_file1) << "test fbx content";
-        std::ofstream(test_file2) << "test png content";
-        
-        // Create EventProcessor with mock texture manager
-        // Note: We need to work around the TextureManager dependency
-        // For now, let's skip the full integration test and focus on the core logic
-        
-        // Create FileEvents for the test files
-        std::vector<FileEvent> events;
-        events.emplace_back(FileEventType::Created, test_file1.u8string());
-        events.emplace_back(FileEventType::Created, test_file2.u8string());
-        
-        // Verify search index is initially empty
-        REQUIRE(search_index.get_token_count() == 0);
-        
-        // Manually process the files (simulating EventProcessor behavior)
-        std::vector<Asset> files_to_insert;
-        for (const auto& event : events) {
-            if (fs::exists(fs::u8path(event.path))) {
-                Asset asset;
-                asset.name = fs::u8path(event.path).filename().string();
-                asset.extension = fs::u8path(event.path).extension().string().substr(1); // Remove leading dot
-                asset.path = event.path;
-                asset.relative_path = fs::u8path(event.path).filename().string();
-                asset.size = fs::file_size(fs::u8path(event.path));
-                asset.last_modified = std::chrono::system_clock::now();
-                        asset.type = AssetType::_3D; // For testing
-                files_to_insert.push_back(asset);
-            }
-        }
-        
-        // Insert into database (this assigns IDs)
-        REQUIRE(database.insert_assets_batch(files_to_insert));
-        
-        // Verify IDs were assigned
-        for (const auto& asset : files_to_insert) {
-            REQUIRE(asset.id > 0);
-        }
-        
-        // Add to search index (simulating EventProcessor behavior)
-        for (const auto& asset : files_to_insert) {
-            search_index.add_asset(asset.id, asset);
-        }
-        
-        // Verify search index was updated
-        REQUIRE(search_index.get_token_count() > 0);
-        
-        // Test search functionality
-        auto results = search_index.search_prefix("test");
-        REQUIRE(results.size() == 2);
-        
-        // Verify the asset IDs are in the results
-        bool found_file1 = false, found_file2 = false;
-        for (uint32_t id : results) {
-            for (const auto& asset : files_to_insert) {
-                if (asset.id == id) {
-                    if (asset.name == "test_model.fbx") found_file1 = true;
-                    if (asset.name == "test_texture.png") found_file2 = true;
-                }
-            }
-        }
-        REQUIRE(found_file1);
-        REQUIRE(found_file2);
-    }
-    
-    SECTION("Modified events update search index") {
-        // Create and insert an initial asset
-        fs::path test_file = temp_dir / "original_name.obj";
-        std::ofstream(test_file) << "test obj content";
-        
-        Asset original_asset;
-        original_asset.name = "original_name.obj";
-        original_asset.extension = "obj";
-        original_asset.path = test_file.u8string();
-        original_asset.relative_path = "original_name.obj";
-        original_asset.size = fs::file_size(test_file);
-        original_asset.last_modified = std::chrono::system_clock::now();
-        original_asset.type = AssetType::_3D;
-        
-        std::vector<Asset> initial_assets = {original_asset};
-        REQUIRE(database.insert_assets_batch(initial_assets));
-        // Get the updated asset with assigned ID
-        original_asset = initial_assets[0];
-        REQUIRE(original_asset.id > 0);
-        
-        // Add to search index
-        search_index.add_asset(original_asset.id, original_asset);
-        
-        // Verify initial search works
-        auto initial_results = search_index.search_prefix("original");
-        REQUIRE(initial_results.size() == 1);
-        REQUIRE(initial_results[0] == original_asset.id);
-        
-        // Simulate modification by changing the name
-        Asset modified_asset = original_asset;
-        modified_asset.name = "modified_name.obj";
-        modified_asset.relative_path = "modified_name.obj";
-        
-        // IMPORTANT: Also update the full path to reflect the new name
-        // The tokenizer extracts tokens from the full path, not just the name
-        fs::path new_path = temp_dir / "modified_name.obj";
-        std::ofstream(new_path) << "modified obj content";  // Create the new file
-        modified_asset.path = new_path.u8string();
-        modified_asset.size = fs::file_size(new_path);
-        modified_asset.last_modified = std::chrono::system_clock::now();
-        
-        // Update in database
-        std::vector<Asset> assets_to_update = {modified_asset};
-        REQUIRE(database.update_assets_batch(assets_to_update));
-        
-        // Update search index (simulating EventProcessor behavior)
-        search_index.update_asset(modified_asset.id, modified_asset);
-        
-        // Verify old name no longer works
-        auto old_results = search_index.search_prefix("original");
-        REQUIRE(old_results.empty());
-        
-        // Verify new name works
-        auto new_results = search_index.search_prefix("modified");
-        REQUIRE(new_results.size() == 1);
-        REQUIRE(new_results[0] == modified_asset.id);
-    }
-    
-    SECTION("Deleted events remove from search index") {
-        // Create and insert an asset to delete
-        fs::path test_file = temp_dir / "to_delete.dae";
-        std::ofstream(test_file) << "test dae content";
-        
-        Asset asset_to_delete;
-        asset_to_delete.name = "to_delete.dae";
-        asset_to_delete.extension = "dae";
-        asset_to_delete.path = test_file.u8string();
-        asset_to_delete.relative_path = "to_delete.dae";
-        asset_to_delete.size = fs::file_size(test_file);
-        asset_to_delete.last_modified = std::chrono::system_clock::now();
-        asset_to_delete.type = AssetType::_3D;
-        
-        std::vector<Asset> initial_assets = {asset_to_delete};
-        REQUIRE(database.insert_assets_batch(initial_assets));
-        // Get the updated asset with assigned ID
-        asset_to_delete = initial_assets[0];
-        REQUIRE(asset_to_delete.id > 0);
-        
-        // Add to search index  
-        search_index.add_asset(asset_to_delete.id, asset_to_delete);
-        
-        // Verify search works initially
-        auto initial_results = search_index.search_prefix("delete");
-        REQUIRE(initial_results.size() == 1);
-        REQUIRE(initial_results[0] == asset_to_delete.id);
-        
-        // Delete from database
-        std::vector<std::string> paths_to_delete = {test_file.u8string()};
-        REQUIRE(database.delete_assets_batch(paths_to_delete));
-        
-        // Remove from search index (simulating EventProcessor behavior)
-        search_index.remove_asset(asset_to_delete.id);
-        
-        // Verify search no longer finds the asset
-        auto final_results = search_index.search_prefix("delete");
-        REQUIRE(final_results.empty());
-    }
-    
-    SECTION("Multiple asset types are properly indexed (excluding ignored types)") {
-        // Create assets of different types (only non-ignored types)
-        std::vector<std::pair<std::string, AssetType>> test_files = {
-            {"model.fbx", AssetType::_3D},
-            {"texture.png", AssetType::_2D},
-            {"sound.wav", AssetType::Audio},
-            {"shader.glsl", AssetType::Shader},
-            {"archive.zip", AssetType::Archive}
+    // Create mocks
+    MockDatabase db;
+    MockTextureManager texture_mgr;
+    MockSearchIndex search_idx;
+    std::map<std::string, Asset> assets;
+    std::mutex assets_mutex;
+    std::atomic<bool> search_update{false};
+
+    // Create EventProcessor with mocks
+    EventProcessor processor(db, assets, assets_mutex, search_update,
+                            texture_mgr, search_idx, assets_dir);
+
+    SECTION("Process single created event") {
+        // Create a test file
+        auto test_file = create_temp_file(temp_dir, "test_model.fbx", "FBX model data");
+
+        // Create FileEvent
+        std::vector<FileEvent> events = {
+            FileEvent(FileEventType::Created, test_file.string())
         };
-        
-        std::vector<Asset> assets_to_insert;
-        
-        for (const auto& [filename, type] : test_files) {
-            fs::path test_file = temp_dir / filename;
-            std::ofstream(test_file) << "test content";
-            
-            Asset asset;
-            asset.name = filename;
-            asset.extension = fs::path(filename).extension().string().substr(1);
-            asset.path = test_file.u8string();
-            asset.relative_path = filename;
-            asset.size = fs::file_size(test_file);
-            asset.last_modified = std::chrono::system_clock::now();
-                asset.type = type;
-            
-            assets_to_insert.push_back(asset);
-        }
-        
-        // Insert all assets
-        REQUIRE(database.insert_assets_batch(assets_to_insert));
-        
-        // Add all to search index
-        for (const auto& asset : assets_to_insert) {
-            REQUIRE(asset.id > 0);
-            search_index.add_asset(asset.id, asset);
-        }
-        
-        // Verify search index contains all types
-        REQUIRE(search_index.get_token_count() > 0);
-        
-        // Test searching for different extensions
-        auto fbx_results = search_index.search_prefix("fbx");
-        auto png_results = search_index.search_prefix("png");
-        auto wav_results = search_index.search_prefix("wav");
-        
-        REQUIRE(fbx_results.size() == 1);
-        REQUIRE(png_results.size() == 1);
-        REQUIRE(wav_results.size() == 1);
-        
-        // Test searching for common terms
-        auto model_results = search_index.search_prefix("model");
-        auto texture_results = search_index.search_prefix("texture");
-        auto sound_results = search_index.search_prefix("sound");
-        auto archive_results = search_index.search_prefix("archive");
-        
-        REQUIRE(model_results.size() == 1);
-        REQUIRE(texture_results.size() == 1);
-        REQUIRE(sound_results.size() == 1);
-        REQUIRE(archive_results.size() == 1);
+
+        // Process the events directly
+        processor.process_created_events(events);
+
+        // Verify asset was inserted into database
+        REQUIRE(db.inserted_assets.size() == 1);
+
+        const Asset& asset = db.inserted_assets[0];
+
+        // Verify basic properties
+        REQUIRE(asset.path == normalize_path_separators(test_file.string()));
+        REQUIRE(asset.name == "test_model.fbx");
+        REQUIRE(asset.extension == ".fbx");
+        REQUIRE(asset.type == AssetType::_3D);
+        REQUIRE(asset.size == 14); // "FBX model data" is 14 bytes
+
+        // Verify 3D thumbnail was generated
+        REQUIRE(texture_mgr.generated_3d_thumbnails.size() == 1);
+        REQUIRE(texture_mgr.generated_3d_thumbnails[0].model_path == test_file.string());
+
+        // Verify asset was added to search index
+        REQUIRE(search_idx.added_assets.size() == 1);
+        REQUIRE(search_idx.added_assets[0].asset.path == asset.path);
+
+        // Verify asset was added to in-memory map
+        REQUIRE(assets.size() == 1);
+        REQUIRE(assets.count(asset.path) == 1);
     }
-    } // Close database scope
-    
-    // Clean up test files and database
-    fs::remove_all(temp_dir);
-    try {
-        fs::remove(test_db);
-    } catch (...) {
-        // Ignore errors during cleanup
+
+    SECTION("Process multiple created events") {
+        // Create multiple test files including UTF-8 filenames
+        auto fbx_file = create_temp_file(temp_dir, "model.fbx", "3D model");
+        auto png_file = create_temp_file(temp_dir, "texture.png", "image data");
+        auto svg_file = create_temp_file(temp_dir, "icon.svg", "<svg></svg>");
+        auto utf8_file = create_temp_file(temp_dir, "日本語.obj", "Japanese model"); // Japanese filename
+        auto russian_file = create_temp_file(temp_dir, "файл.mp3", "Russian audio"); // Russian filename
+
+        std::vector<FileEvent> events = {
+            FileEvent(FileEventType::Created, fbx_file.string()),
+            FileEvent(FileEventType::Created, png_file.string()),
+            FileEvent(FileEventType::Created, svg_file.string()),
+            FileEvent(FileEventType::Created, utf8_file.string()),
+            FileEvent(FileEventType::Created, russian_file.string())
+        };
+
+        // Process all events
+        processor.process_created_events(events);
+
+        // Verify all assets were inserted
+        REQUIRE(db.inserted_assets.size() == 5);
+
+        // Verify correct types
+        std::map<std::string, AssetType> expected_types = {
+            {fbx_file.string(), AssetType::_3D},
+            {png_file.string(), AssetType::_2D},
+            {svg_file.string(), AssetType::_2D},
+            {utf8_file.string(), AssetType::_3D},
+            {russian_file.string(), AssetType::Audio}
+        };
+
+        for (const auto& asset : db.inserted_assets) {
+            REQUIRE(expected_types.count(asset.path) == 1);
+            REQUIRE(asset.type == expected_types[asset.path]);
+        }
+
+        // Verify 3D thumbnails were generated for both 3D models
+        REQUIRE(texture_mgr.generated_3d_thumbnails.size() == 2);
+        std::set<std::string> generated_3d_paths;
+        for (const auto& thumb : texture_mgr.generated_3d_thumbnails) {
+            generated_3d_paths.insert(thumb.model_path);
+        }
+        REQUIRE(generated_3d_paths.count(fbx_file.string()) == 1);
+        REQUIRE(generated_3d_paths.count(utf8_file.string()) == 1);
+
+        // Verify SVG thumbnail was generated only for SVG
+        REQUIRE(texture_mgr.generated_svg_thumbnails.size() == 1);
+        REQUIRE(texture_mgr.generated_svg_thumbnails[0].svg_path == svg_file.string());
     }
+
+    SECTION("Process non-existent file with retry") {
+        // Create event for non-existent file
+        std::string non_existent = (temp_dir / "missing.png").string();
+
+        std::vector<FileEvent> events = {
+            FileEvent(FileEventType::Created, non_existent)
+        };
+
+        // Process the event
+        processor.process_created_events(events);
+
+        // Should not insert anything since file doesn't exist
+        REQUIRE(db.inserted_assets.size() == 0);
+
+        // No assets should be in memory either
+        REQUIRE(assets.size() == 0);
+    }
+
+    SECTION("Process empty event list") {
+        std::vector<FileEvent> events;
+
+        // Should not crash or cause issues
+        processor.process_created_events(events);
+
+        REQUIRE(db.inserted_assets.size() == 0);
+    }
+
+    // Cleanup
+    cleanup_temp_dir(temp_dir);
 }
 
-TEST_CASE("EventProcessor search index edge cases", "[event_processor][search_index]") {
-    // Create test database
-    fs::path test_db = fs::temp_directory_path() / "test_event_processor_edge.db";
-    
-    // Clean up any existing test database
-    try {
-        fs::remove(test_db);
-    } catch (...) {
-        // Ignore errors if file doesn't exist
+TEST_CASE("process_created_events thumbnail generation", "[process_created_events]") {
+    // Setup test environment
+    fs::path temp_dir = create_temp_dir("test_thumbnails");
+    std::string assets_dir = temp_dir.string();
+
+    // Create mocks
+    MockDatabase db;
+    MockTextureManager texture_mgr;
+    MockSearchIndex search_idx;
+    std::map<std::string, Asset> assets;
+    std::mutex assets_mutex;
+    std::atomic<bool> search_update{false};
+
+    // Create EventProcessor with mocks
+    EventProcessor processor(db, assets, assets_mutex, search_update,
+                            texture_mgr, search_idx, assets_dir);
+
+    SECTION("Generate 3D thumbnails for 3D models") {
+        auto fbx_file = create_temp_file(temp_dir, "model.fbx", "3D model data");
+        auto obj_file = create_temp_file(temp_dir, "model.obj", "OBJ model data");
+
+        std::vector<FileEvent> events = {
+            FileEvent(FileEventType::Created, fbx_file.string()),
+            FileEvent(FileEventType::Created, obj_file.string())
+        };
+
+        processor.process_created_events(events);
+
+        // Verify 3D thumbnails were generated for both models
+        REQUIRE(texture_mgr.generated_3d_thumbnails.size() == 2);
+
+        std::set<std::string> generated_paths;
+        for (const auto& thumb : texture_mgr.generated_3d_thumbnails) {
+            generated_paths.insert(thumb.model_path);
+        }
+
+        REQUIRE(generated_paths.count(fbx_file.string()) == 1);
+        REQUIRE(generated_paths.count(obj_file.string()) == 1);
     }
-    
-    // Create temporary test files directory
-    fs::path temp_dir = fs::temp_directory_path() / "event_processor_edge_test";
-    fs::create_directories(temp_dir);
-    
-    // Scope for database objects to ensure proper cleanup
-    {
-        AssetDatabase database;
-        REQUIRE(database.initialize(test_db.string()));
-        REQUIRE(database.create_tables());
-        
-        SearchIndex search_index;
-        // Initialize with empty assets list
-        std::vector<Asset> empty_assets;
-        REQUIRE(search_index.build_from_assets(empty_assets));
-    
-    SECTION("Empty database builds empty index") {
-        REQUIRE(search_index.get_token_count() == 0);
-        
-        auto results = search_index.search_prefix("anything");
-        REQUIRE(results.empty());
+
+    SECTION("No thumbnails for non-3D assets") {
+        auto png_file = create_temp_file(temp_dir, "image.png", "image data");
+        auto txt_file = create_temp_file(temp_dir, "doc.txt", "text content");
+
+        std::vector<FileEvent> events = {
+            FileEvent(FileEventType::Created, png_file.string()),
+            FileEvent(FileEventType::Created, txt_file.string())
+        };
+
+        processor.process_created_events(events);
+
+        // No 3D thumbnails should be generated
+        REQUIRE(texture_mgr.generated_3d_thumbnails.size() == 0);
+
+        // No SVG thumbnails should be generated
+        REQUIRE(texture_mgr.generated_svg_thumbnails.size() == 0);
+
+        // But assets should still be processed
+        REQUIRE(db.inserted_assets.size() == 2);
     }
-    
-    SECTION("Assets with short names are ignored") {
-        fs::path test_file = temp_dir / "a.b"; // Very short name
-        std::ofstream(test_file) << "content";
-        
-        Asset asset;
-        asset.name = "a.b";
-        asset.extension = "b";
-        asset.path = test_file.u8string();
-        asset.relative_path = "a.b";
-        asset.size = fs::file_size(test_file);
-        asset.last_modified = std::chrono::system_clock::now();
-        asset.type = AssetType::Document;
-        
-        std::vector<Asset> assets_to_insert = {asset};
-        REQUIRE(database.insert_assets_batch(assets_to_insert));
-        // Get the updated asset with assigned ID
-        asset = assets_to_insert[0];
-        REQUIRE(asset.id > 0);
-        
-        search_index.add_asset(asset.id, asset);
-        
-        // Short tokens (<=2 chars) should be ignored
-        auto results = search_index.search_prefix("a");
-        REQUIRE(results.empty());
-        
-        auto results2 = search_index.search_prefix("b");
-        REQUIRE(results.empty());
+
+    SECTION("Generate SVG thumbnails for SVG files") {
+        auto svg1_file = create_temp_file(temp_dir, "icon1.svg", "<svg></svg>");
+        auto svg2_file = create_temp_file(temp_dir, "logo.svg", "<svg><circle r='10'/></svg>");
+
+        std::vector<FileEvent> events = {
+            FileEvent(FileEventType::Created, svg1_file.string()),
+            FileEvent(FileEventType::Created, svg2_file.string())
+        };
+
+        processor.process_created_events(events);
+
+        // Verify SVG thumbnails were generated for both files
+        REQUIRE(texture_mgr.generated_svg_thumbnails.size() == 2);
+
+        std::set<std::string> generated_svg_paths;
+        for (const auto& svg_thumb : texture_mgr.generated_svg_thumbnails) {
+            generated_svg_paths.insert(svg_thumb.svg_path);
+        }
+
+        REQUIRE(generated_svg_paths.count(svg1_file.string()) == 1);
+        REQUIRE(generated_svg_paths.count(svg2_file.string()) == 1);
+
+        // No 3D thumbnails should be generated
+        REQUIRE(texture_mgr.generated_3d_thumbnails.size() == 0);
+
+        // Assets should still be processed
+        REQUIRE(db.inserted_assets.size() == 2);
     }
-    
-    SECTION("Duplicate asset IDs are handled") {
-        fs::path test_file = temp_dir / "duplicate_test.txt";
-        std::ofstream(test_file) << "content";
-        
-        Asset asset;
-        asset.name = "duplicate_test.txt";
-        asset.extension = "txt";
-        asset.path = test_file.u8string();
-        asset.relative_path = "duplicate_test.txt";
-        asset.size = fs::file_size(test_file);
-        asset.last_modified = std::chrono::system_clock::now();
-        asset.type = AssetType::Document;
-        
-        std::vector<Asset> assets_to_insert = {asset};
-        REQUIRE(database.insert_assets_batch(assets_to_insert));
-        // Get the updated asset with assigned ID
-        asset = assets_to_insert[0];
-        REQUIRE(asset.id > 0);
-        
-        // Add to index twice (should not cause issues)
-        search_index.add_asset(asset.id, asset);
-        search_index.add_asset(asset.id, asset);
-        
-        auto results = search_index.search_prefix("duplicate");
-        REQUIRE(results.size() == 1);
-        REQUIRE(results[0] == asset.id);
+
+    // Cleanup
+    cleanup_temp_dir(temp_dir);
+}
+
+TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
+    // Setup test environment
+    fs::path temp_dir = create_temp_dir("test_deleted");
+    std::string assets_dir = temp_dir.string();
+
+    // Create mocks
+    MockDatabase db;
+    MockTextureManager texture_mgr;
+    MockSearchIndex search_idx;
+    std::map<std::string, Asset> assets;
+    std::mutex assets_mutex;
+    std::atomic<bool> search_update{false};
+
+    // Create EventProcessor with mocks
+    EventProcessor processor(db, assets, assets_mutex, search_update,
+                            texture_mgr, search_idx, assets_dir);
+
+    SECTION("Delete existing assets") {
+        // Pre-populate assets map with test assets
+        Asset asset1 = create_test_asset("model.fbx", ".fbx", AssetType::_3D,
+                                        (temp_dir / "model.fbx").string(), assets_dir, 1);
+
+        Asset asset2 = create_test_asset("texture.png", ".png", AssetType::_2D,
+                                        (temp_dir / "texture.png").string(), assets_dir, 2);
+
+        assets[asset1.path] = asset1;
+        assets[asset2.path] = asset2;
+
+        // Create deletion events
+        std::vector<FileEvent> events = {
+            FileEvent(FileEventType::Deleted, asset1.path),
+            FileEvent(FileEventType::Deleted, asset2.path)
+        };
+
+        // Process deletion events
+        processor.process_deleted_events(events);
+
+        // Verify assets were removed from in-memory map
+        REQUIRE(assets.size() == 0);
+
+        // Verify database deletion was called
+        REQUIRE(db.deleted_paths.size() == 2);
+        REQUIRE(db.deleted_paths[0] == asset1.path);
+        REQUIRE(db.deleted_paths[1] == asset2.path);
+
+        // Verify search index removal was called
+        REQUIRE(search_idx.removed_ids.size() == 2);
+        REQUIRE(search_idx.removed_ids[0] == 1);
+        REQUIRE(search_idx.removed_ids[1] == 2);
+
+        // Verify texture cleanup was requested
+        REQUIRE(texture_mgr.cleanup_requests.size() == 2);
+        REQUIRE(texture_mgr.cleanup_requests[0].path == asset1.path);
+        REQUIRE(texture_mgr.cleanup_requests[1].path == asset2.path);
     }
-    
-    SECTION("Asset filtering helper function works correctly") {
-        // Test the should_skip_asset function directly
-        
-        // Test ignored types (should return true - these should be skipped)
-        REQUIRE(should_skip_asset(".txt"));    // Documents
-        REQUIRE(should_skip_asset(".mtl"));    // Auxiliary
-        REQUIRE(should_skip_asset(".cache"));  // Auxiliary
-        REQUIRE(should_skip_asset(".xyz"));    // Unknown
-        REQUIRE(should_skip_asset(""));        // No extension (Unknown)
-        
-        // Test processable types (should return false - these should NOT be skipped)
-        REQUIRE_FALSE(should_skip_asset(".fbx"));    // 3D models
-        REQUIRE_FALSE(should_skip_asset(".png"));    // 2D textures
-        REQUIRE_FALSE(should_skip_asset(".wav"));    // Audio
+
+    SECTION("Delete non-existent assets") {
+        // Create deletion events for assets not in the map
+        std::string non_existent1 = (temp_dir / "missing1.jpg").string();
+        std::string non_existent2 = (temp_dir / "missing2.obj").string();
+
+        std::vector<FileEvent> events = {
+            FileEvent(FileEventType::Deleted, non_existent1),
+            FileEvent(FileEventType::Deleted, non_existent2)
+        };
+
+        // Process deletion events
+        processor.process_deleted_events(events);
+
+        // Assets map should remain empty
+        REQUIRE(assets.size() == 0);
+
+        // Database deletion should still be called (paths are passed regardless)
+        REQUIRE(db.deleted_paths.size() == 2);
+        REQUIRE(db.deleted_paths[0] == non_existent1);
+        REQUIRE(db.deleted_paths[1] == non_existent2);
+
+        // No search index removals since assets didn't exist
+        REQUIRE(search_idx.removed_ids.size() == 0);
+
+        // Texture cleanup should still be requested
+        REQUIRE(texture_mgr.cleanup_requests.size() == 2);
+        REQUIRE(texture_mgr.cleanup_requests[0].path == non_existent1);
+        REQUIRE(texture_mgr.cleanup_requests[1].path == non_existent2);
     }
-    } // Close database scope
-    
-    // Clean up test files and database
-    fs::remove_all(temp_dir);
-    try {
-        fs::remove(test_db);
-    } catch (...) {
-        // Ignore errors during cleanup
+
+    SECTION("Empty events list") {
+        std::vector<FileEvent> events;
+
+        // Should not crash or cause issues
+        processor.process_deleted_events(events);
+
+        REQUIRE(db.deleted_paths.size() == 0);
+        REQUIRE(search_idx.removed_ids.size() == 0);
+        REQUIRE(texture_mgr.cleanup_requests.size() == 0);
     }
+
+    // Cleanup
+    cleanup_temp_dir(temp_dir);
 }

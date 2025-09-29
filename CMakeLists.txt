@@ -196,18 +196,28 @@ endif()
 add_library(AssetInventoryCore STATIC
     src/asset.cpp
     src/database.cpp
+    src/event_processor.cpp
     src/search.cpp
+    src/texture_manager.cpp
+    src/3d.cpp
     src/utils.cpp
+    external/glad/src/glad.c
 )
 
 target_include_directories(AssetInventoryCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/external
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
 )
 
 target_link_libraries(AssetInventoryCore PUBLIC
     unofficial::sqlite3::sqlite3
     spdlog::spdlog
+    glfw
+    assimp::assimp
+    glm::glm
+    lunasvg::lunasvg
 )
 
 # Unit test executable
@@ -322,6 +332,7 @@ add_test(NAME DbTests COMMAND DbTest)
 # Add EventProcessor test executable
 add_executable(EventProcessorTest
     tests/test_event_processor.cpp
+    tests/test_helpers.cpp
 )
 
 target_include_directories(EventProcessorTest PRIVATE

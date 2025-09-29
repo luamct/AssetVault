@@ -310,7 +310,7 @@ bool TextureManager::get_texture_dimensions(const std::string& file_path, int& w
   return false;
 }
 
-TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(const std::string& model_path, const std::filesystem::path& thumbnail_path) {
+void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, const std::filesystem::path& thumbnail_path) {
   // Start total timing
   auto start_total = std::chrono::high_resolution_clock::now();
 
@@ -335,7 +335,7 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
   if (!load_success) {
     if (model.has_no_geometry) {
       LOG_INFO("[THUMBNAIL] Model has no geometry (animation-only FBX), skipping thumbnail: {}", model_path);
-      return ThumbnailResult::NO_GEOMETRY;
+      return;
     }
     else {
       LOG_ERROR("[THUMBNAIL] Failed to load model for thumbnail: {}", model_path);
@@ -457,7 +457,6 @@ TextureManager::ThumbnailResult TextureManager::generate_3d_model_thumbnail(cons
     filename, total_duration.count() / 1000.0, io_duration.count() / 1000.0,
     gpu_duration.count() / 1000.0, write_duration.count() / 1000.0);
 
-  return ThumbnailResult::SUCCESS;
 }
 
 void TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path) {

@@ -144,7 +144,7 @@ class TextureManager {
 public:
   // Constructor and destructor
   TextureManager();
-  ~TextureManager();
+  virtual ~TextureManager();
 
   // Initialization and cleanup
   bool initialize();
@@ -175,26 +175,15 @@ public:
   unsigned int create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive, float emissive_intensity);
 
 
-  // Thumbnail generation result types
-  enum class ThumbnailResult {
-    SUCCESS,              // Thumbnail generated successfully
-    NO_GEOMETRY,          // Animation-only file (no renderable geometry)
-    MISSING_TEXTURES,     // Model has missing texture files
-    OPENGL_ERROR,         // OpenGL error during rendering
-    FILE_NOT_FOUND,       // Model file doesn't exist
-    ASSIMP_ERROR,         // Assimp failed to load model
-    OTHER_ERROR           // Other unspecified error
-  };
-
   // 3D model thumbnail generation
-  ThumbnailResult generate_3d_model_thumbnail(const std::string& model_path, const std::filesystem::path& thumbnail_path);
+  virtual void generate_3d_model_thumbnail(const std::string& model_path, const std::filesystem::path& thumbnail_path);
 
-  // SVG thumbnail generation (static - can be called without instance)
-  static void generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path);
+  // SVG thumbnail generation
+  virtual void generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path);
 
 
   // Texture cache cleanup (thread-safe)
-  void queue_texture_cleanup(const std::string& file_path);
+  virtual void queue_texture_cleanup(const std::string& file_path);
   void process_cleanup_queue(const std::string& assets_root_directory);
   void clear_texture_cache(); // Clear all cached textures (for path encoding changes)
 

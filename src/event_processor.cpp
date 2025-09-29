@@ -207,7 +207,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
             }
             else if (file_info.type == AssetType::_2D && file_info.extension == ".svg") {
                 fs::path thumbnail_path = get_thumbnail_path(file_info.relative_path);
-                TextureManager::generate_svg_thumbnail(file_info.path, thumbnail_path);
+                texture_manager_.generate_svg_thumbnail(file_info.path, thumbnail_path);
             }
 
             // Add asset to database (exceptions prevent reaching this point on failure)
@@ -294,66 +294,30 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     database_.delete_assets_batch(paths_to_delete);
 }
 
-// Individual asset manipulation methods (still used by batch processing)
-
-void EventProcessor::add_asset(const Asset& asset) {
-    std::lock_guard<std::mutex> lock(assets_mutex_);
-    assets_[asset.path] = asset;
-}
-
-void EventProcessor::update_asset(const Asset& asset) {
-    std::lock_guard<std::mutex> lock(assets_mutex_);
-    assets_[asset.path] = asset;
-}
-
-void EventProcessor::remove_asset(const std::string& path) {
-    std::lock_guard<std::mutex> lock(assets_mutex_);
-    assets_.erase(path);
-}
-
 Asset EventProcessor::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
+    fs::path path_obj = fs::u8path(full_path);
+
+    // Check if file exists first - throw exception for non-existent files
+    if (!fs::exists(path_obj)) {
+        throw std::runtime_error("File does not exist: " + full_path);
+    }
+
+    // Basic file information (path is already normalized)
     Asset asset;
+    asset.path = full_path;
+    asset.relative_path = get_relative_path(asset.path, assets_directory_);
+    asset.name = path_obj.filename().u8string();
+    // File-specific information
+    asset.extension = path_obj.extension().string();
+    asset.type = get_asset_type(asset.extension);
 
-    try {
-        // Basic file information (path is already normalized)
-        asset.path = full_path;
-        asset.relative_path = get_relative_path(asset.path, assets_directory_);
-        fs::path path_obj = fs::u8path(full_path);
-        asset.name = path_obj.filename().u8string();
-        // File-specific information
-        asset.extension = path_obj.extension().string();
-        asset.type = get_asset_type(asset.extension);
-
-        try {
-            asset.size = fs::file_size(path_obj);
-            // Store display time as modification time (for user-facing display)
-            try {
-                auto ftime = fs::last_write_time(path_obj);
-                auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                    ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
-                );
-                asset.last_modified = sctp;
-            }
-            catch (const fs::filesystem_error& e) {
-                // Fallback to provided timestamp for display
-                asset.last_modified = timestamp;
-                LOG_WARN("Using provided timestamp for display for {}: {}", full_path, e.what());
-            }
-        }
-        catch (const fs::filesystem_error& e) {
-            LOG_WARN("Could not get file info for {}: {}", asset.path, e.what());
-            asset.size = 0;
-            asset.last_modified = timestamp;
-        }
-    }
-    catch (const fs::filesystem_error& e) {
-        LOG_ERROR("Error creating file info for {}: {}", full_path, e.what());
-        // Return minimal file info on error
-        asset.path = full_path;
-        fs::path path_obj = fs::u8path(full_path);
-        asset.name = path_obj.filename().u8string();
-        asset.last_modified = timestamp;
-    }
+    // File size and modification time (let exceptions bubble up)
+    asset.size = fs::file_size(path_obj);
+    auto ftime = fs::last_write_time(path_obj);
+    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+        ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
+    );
+    asset.last_modified = sctp;
 
     return asset;
 }

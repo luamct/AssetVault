@@ -8,10 +8,10 @@
 class AssetDatabase {
 public:
   AssetDatabase();
-  ~AssetDatabase();
+  virtual ~AssetDatabase();
 
   // Database operations
-  bool initialize(const std::string& db_path = "asset_inventory.db");
+  virtual bool initialize(const std::string& db_path = "asset_inventory.db");
   void close();
   bool is_open() const;
 
@@ -26,7 +26,7 @@ public:
   bool delete_assets_by_directory(const std::string& directory_path);
 
   // Query operations
-  std::vector<Asset> get_all_assets();
+  virtual std::vector<Asset> get_all_assets();
   std::vector<Asset> get_assets_by_type(AssetType type);
   std::vector<Asset> get_assets_by_directory(const std::string& directory_path);
   Asset get_asset_by_path(const std::string& full_path);
@@ -39,9 +39,9 @@ public:
   uint64_t get_size_by_type(AssetType type);
 
   // Batch operations
-  bool insert_assets_batch(std::vector<Asset>& files);  // Non-const to update IDs after insertion
-  bool update_assets_batch(const std::vector<Asset>& files);
-  bool delete_assets_batch(const std::vector<std::string>& paths);
+  virtual bool insert_assets_batch(std::vector<Asset>& files);  // Non-const to update IDs after insertion
+  virtual bool update_assets_batch(const std::vector<Asset>& files);
+  virtual bool delete_assets_batch(const std::vector<std::string>& paths);
   bool clear_all_assets();
 
   // Configuration operations

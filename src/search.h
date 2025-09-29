@@ -125,6 +125,7 @@ struct TokenEntry {
 class SearchIndex {
 public:
     SearchIndex();
+    virtual ~SearchIndex() = default;
 
     // Index management
     bool build_from_assets(const std::vector<Asset>& assets);
@@ -135,9 +136,9 @@ public:
     }
     
     // Asset operations
-    void add_asset(uint32_t asset_id, const Asset& asset);
-    void remove_asset(uint32_t asset_id);
-    void update_asset(uint32_t asset_id, const Asset& asset);
+    virtual void add_asset(uint32_t asset_id, const Asset& asset);
+    virtual void remove_asset(uint32_t asset_id);
+    virtual void update_asset(uint32_t asset_id, const Asset& asset);
     
     // Search operations
     std::vector<uint32_t> search_prefix(const std::string& prefix) const;

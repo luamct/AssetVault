@@ -5,7 +5,13 @@
       "Bash(./build/AssetInventory.app/Contents/MacOS/AssetInventory)",
       "Bash(cmake:*)",
       "Bash(awk:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(./build/EventProcessorTest)",
+      "Bash(./build/EventProcessorTest:*)",
+      "Bash(ctest:*)",
+      "Read(//private/var/folders/**)",
+      "Read(//private/tmp/**)",
+      "Bash(./build/SearchTest)"
     ],
     "deny": [],
     "ask": [],

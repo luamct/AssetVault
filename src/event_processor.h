@@ -25,7 +25,7 @@ public:
     EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
         std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
         TextureManager& texture_manager, SearchIndex& search_index,
-        const std::string& assets_directory, GLFWwindow* thumbnail_context);
+        const std::string& assets_directory, GLFWwindow* thumbnail_context = nullptr);
     ~EventProcessor();
 
     // Start/stop the background processing thread
@@ -68,6 +68,10 @@ public:
     // Clear all pending events from the queue (only call when stopped)
     void clear_queue();
 
+    // Event processing methods (made public for testing)
+    void process_created_events(const std::vector<FileEvent>& events);
+    void process_deleted_events(const std::vector<FileEvent>& events);
+
 private:
     // Background thread function
     void process_events();
@@ -75,14 +79,6 @@ private:
     // Process a batch of events
     void process_event_batch(const std::vector<FileEvent>& batch);
 
-    // Event processing methods
-    void process_created_events(const std::vector<FileEvent>& events);
-    void process_deleted_events(const std::vector<FileEvent>& events);
-
-    // Asset manipulation methods (thread-safe)
-    void add_asset(const Asset& asset);
-    void update_asset(const Asset& asset);
-    void remove_asset(const std::string& path);
     
     // OpenGL context setup for thumbnail generation
     bool setup_thumbnail_opengl_context();

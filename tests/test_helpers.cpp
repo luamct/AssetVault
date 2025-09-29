@@ -4,13 +4,17 @@
 #include <iostream>
 #include "utils.h"
 
+namespace fs = std::filesystem;
+
 Asset create_test_asset(
     const std::string& name,
     const std::string& extension,
     AssetType type,
     const std::string& path,
-    const std::string& assets_root) {
+    const std::string& assets_root,
+    uint32_t id) {
     Asset asset;
+    asset.id = id;
     asset.name = name;
     asset.extension = extension;
     asset.type = type;
@@ -48,4 +52,88 @@ void print_file_events(const std::vector<FileEvent>& events, const std::string& 
     if (events.empty()) {
         std::cout << "  (no events)" << std::endl;
     }
+}
+
+// Mock class implementations
+
+// MockDatabase implementation
+MockDatabase::MockDatabase() : AssetDatabase() {}
+
+bool MockDatabase::initialize(const std::string& db_path) {
+    return true;
+}
+
+bool MockDatabase::insert_assets_batch(std::vector<Asset>& assets) {
+    // Simulate real database behavior by setting IDs
+    for (auto& asset : assets) {
+        asset.id = next_id_++;
+    }
+    inserted_assets.insert(inserted_assets.end(), assets.begin(), assets.end());
+    return true;
+}
+
+bool MockDatabase::update_assets_batch(const std::vector<Asset>& assets) {
+    updated_assets.insert(updated_assets.end(), assets.begin(), assets.end());
+    return true;
+}
+
+bool MockDatabase::delete_assets_batch(const std::vector<std::string>& paths) {
+    deleted_paths.insert(deleted_paths.end(), paths.begin(), paths.end());
+    return true;
+}
+
+std::vector<Asset> MockDatabase::get_all_assets() {
+    return {};
+}
+
+// MockTextureManager implementation
+MockTextureManager::MockTextureManager() : TextureManager() {}
+
+void MockTextureManager::generate_3d_model_thumbnail(const std::string& model_path, const fs::path& thumbnail_path) {
+    generated_3d_thumbnails.push_back({model_path, thumbnail_path.string()});
+}
+
+void MockTextureManager::queue_texture_cleanup(const std::string& file_path) {
+    cleanup_requests.push_back({file_path});
+}
+
+void MockTextureManager::generate_svg_thumbnail(const fs::path& svg_path, const fs::path& thumbnail_path) {
+    generated_svg_thumbnails.push_back({svg_path.string(), thumbnail_path.string()});
+}
+
+// MockSearchIndex implementation
+void MockSearchIndex::add_asset(uint32_t id, const Asset& asset) {
+    added_assets.push_back({id, asset});
+}
+
+void MockSearchIndex::remove_asset(uint32_t id) {
+    removed_ids.push_back(id);
+}
+
+void MockSearchIndex::update_asset(uint32_t id, const Asset& asset) {
+    updated_assets.push_back({id, asset});
+}
+
+std::vector<uint32_t> MockSearchIndex::search(const std::string& query) {
+    return {};
+}
+
+// Helper functions for temporary test files
+fs::path create_temp_dir(const std::string& name) {
+    fs::path temp_dir = fs::temp_directory_path() / name;
+    fs::create_directories(temp_dir);
+    return temp_dir;
+}
+
+fs::path create_temp_file(const fs::path& dir, const std::string& name, const std::string& content) {
+    fs::path file_path = dir / name;
+    std::ofstream file(file_path);
+    file << content;
+    file.close();
+    return file_path;
+}
+
+void cleanup_temp_dir(const fs::path& dir) {
+    std::error_code ec;
+    fs::remove_all(dir, ec);
 }
