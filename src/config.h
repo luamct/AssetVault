@@ -102,55 +102,16 @@ namespace Config {
     // CROSS-PLATFORM PATHS
     // =============================================================================
 
-    // Get the proper cache directory for the current platform
-    inline std::filesystem::path get_cache_directory() {
-#ifdef _WIN32
-        // Windows: %LOCALAPPDATA%\AssetInventory
-        const char* localappdata = std::getenv("LOCALAPPDATA");
-        if (localappdata) {
-            return std::filesystem::path(localappdata) / "AssetInventory";
-        }
-        else {
-            // Fallback to current directory if env var not found
-            return "cache";
-        }
-#elif __APPLE__
-        // macOS: $XDG_CACHE_HOME/AssetInventory or ~/Library/Caches/AssetInventory
-        const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
-        if (xdg_cache) {
-            return std::filesystem::path(xdg_cache) / "AssetInventory";
-        }
-        else {
-            const char* home = std::getenv("HOME");
-            if (home) {
-                return std::filesystem::path(home) / "Library" / "Caches" / "AssetInventory";
-            }
-            else {
-                return "cache";
-            }
-        }
-#else
-        // Linux: $XDG_CACHE_HOME/AssetInventory or ~/.cache/AssetInventory
-        const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
-        if (xdg_cache) {
-            return std::filesystem::path(xdg_cache) / "AssetInventory";
-        }
-        else {
-            const char* home = std::getenv("HOME");
-            if (home) {
-                return std::filesystem::path(home) / ".cache" / "AssetInventory";
-            }
-            else {
-                return "cache";
-            }
-        }
-#endif
-    }
 
     // Get the proper data directory for the current platform
     inline std::filesystem::path get_data_directory() {
+        // Check if we're in testing mode
+        if (std::getenv("TESTING")) {
+            return "data";
+        }
+
 #ifdef _WIN32
-        // Windows: %LOCALAPPDATA%\AssetInventory (same as cache for local apps)
+        // Windows: %LOCALAPPDATA%\AssetInventory
         const char* localappdata = std::getenv("LOCALAPPDATA");
         if (localappdata) {
             return std::filesystem::path(localappdata) / "AssetInventory";
@@ -159,41 +120,20 @@ namespace Config {
             return "data";
         }
 #elif __APPLE__
-        // macOS: $XDG_DATA_HOME/AssetInventory or ~/Library/Application Support/AssetInventory
-        const char* xdg_data = std::getenv("XDG_DATA_HOME");
-        if (xdg_data) {
-            return std::filesystem::path(xdg_data) / "AssetInventory";
+        // macOS: ~/Library/Application Support/AssetInventory
+        const char* home = std::getenv("HOME");
+        if (home) {
+            return std::filesystem::path(home) / "Library" / "Application Support" / "AssetInventory";
         }
         else {
-            const char* home = std::getenv("HOME");
-            if (home) {
-                return std::filesystem::path(home) / "Library" / "Application Support" / "AssetInventory";
-            }
-            else {
-                return "data";
-            }
-        }
-#else
-        // Linux: $XDG_DATA_HOME/AssetInventory or ~/.local/share/AssetInventory
-        const char* xdg_data = std::getenv("XDG_DATA_HOME");
-        if (xdg_data) {
-            return std::filesystem::path(xdg_data) / "AssetInventory";
-        }
-        else {
-            const char* home = std::getenv("HOME");
-            if (home) {
-                return std::filesystem::path(home) / ".local" / "share" / "AssetInventory";
-            }
-            else {
-                return "data";
-            }
+            return "data";
         }
 #endif
     }
 
-    // Get the thumbnail directory (in cache)
+    // Get the thumbnail directory (in data directory)
     inline std::filesystem::path get_thumbnail_directory() {
-        return get_cache_directory() / THUMBNAIL_DIRECTORY;
+        return get_data_directory() / THUMBNAIL_DIRECTORY;
     }
 
     // Get the database path (in data directory)
@@ -203,22 +143,16 @@ namespace Config {
 
     // Create application directories if necessary
     inline void initialize_directories() {
-        // Create cache directory for thumbnails
-        std::filesystem::path cache_dir = get_cache_directory();
-        if (!std::filesystem::exists(cache_dir)) {
-            std::filesystem::create_directories(cache_dir);
-        }
-
-        // Create thumbnail directory
-        std::filesystem::path thumbnail_dir = get_thumbnail_directory();
-        if (!std::filesystem::exists(thumbnail_dir)) {
-            std::filesystem::create_directories(thumbnail_dir);
-        }
-
-        // Create data directory for database
+        // Create data directory (for database and thumbnails)
         std::filesystem::path data_dir = get_data_directory();
         if (!std::filesystem::exists(data_dir)) {
             std::filesystem::create_directories(data_dir);
+        }
+
+        // Create thumbnail directory within data directory
+        std::filesystem::path thumbnail_dir = get_thumbnail_directory();
+        if (!std::filesystem::exists(thumbnail_dir)) {
+            std::filesystem::create_directories(thumbnail_dir);
         }
     }
 }

@@ -258,8 +258,20 @@ int main() {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
 
-  // Create window
-  GLFWwindow* window = glfwCreateWindow(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT, "Asset Inventory", nullptr, nullptr);
+  // Check if we're running in headless mode for testing
+  bool headless_mode = std::getenv("TESTING") != nullptr;
+  if (headless_mode) {
+    LOG_INFO("Running in headless mode for testing");
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  }
+
+  // Create window (visible or invisible depending on headless mode)
+  GLFWwindow* window = glfwCreateWindow(
+    headless_mode ? 1 : Config::WINDOW_WIDTH,
+    headless_mode ? 1 : Config::WINDOW_HEIGHT,
+    headless_mode ? "Asset Inventory (Headless)" : "Asset Inventory",
+    nullptr, nullptr);
+
   if (!window) {
     LOG_ERROR("Failed to create GLFW window");
     glfwTerminate();
@@ -267,7 +279,9 @@ int main() {
   }
 
   glfwMakeContextCurrent(window);
-  glfwSwapInterval(1); // Enable vsync
+  if (!headless_mode) {
+    glfwSwapInterval(1); // Enable vsync only for visible windows
+  }
 
   // Initialize GLAD
   if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
@@ -465,7 +479,7 @@ int main() {
     }
 
     // P key to print texture cache
-    if (ImGui::IsKeyPressed(ImGuiKey_P) && !io.WantTextInput) {
+    if (ImGui::IsKeyPressed(ImGuiKey_P) && !input_io.WantTextInput) {
       texture_manager.print_texture_cache(ui_state.assets_directory);
     }
 

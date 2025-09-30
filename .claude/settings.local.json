@@ -15,7 +15,8 @@
       "Bash(./build/IntegrationTest)",
       "Bash(./build/IntegrationTest:*)",
       "Bash(timeout:*)",
-      "Bash(./IntegrationTest:*)"
+      "Bash(./IntegrationTest:*)",
+      "Read(//Users/luamct/GameDev/**)"
     ],
     "deny": [],
     "ask": [],

@@ -4,6 +4,7 @@
 #include <thread>
 #include <iostream>
 
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -21,10 +22,6 @@
 namespace fs = std::filesystem;
 
 TEST_CASE("Integration: Real application execution", "[integration]") {
-    // Setup test environment with isolated directories
-    fs::path temp_data_dir = create_temp_dir("integration_data");
-    fs::path temp_cache_dir = create_temp_dir("integration_cache");
-
     // Find test assets directory
     fs::path test_assets_dir = fs::current_path() / "tests" / "files" / "assets";
     if (!fs::exists(test_assets_dir)) {
@@ -33,27 +30,13 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
     }
 
     SECTION("Run real application and verify results") {
-        // Set up environment variables to control the application behavior
-        std::string old_data_path, old_cache_path;
-        bool had_data_path = false, had_cache_path = false;
-
-        // Save existing environment variables
-        if (const char* existing = std::getenv("XDG_DATA_HOME")) {
-            old_data_path = existing;
-            had_data_path = true;
-        }
-        if (const char* existing = std::getenv("XDG_CACHE_HOME")) {
-            old_cache_path = existing;
-            had_cache_path = true;
-        }
-
-        // Set test environment to use our temporary directories
-        setenv("XDG_DATA_HOME", temp_data_dir.string().c_str(), 1);
-        setenv("XDG_CACHE_HOME", temp_cache_dir.string().c_str(), 1);
+        // Set test environment variables
+        setenv("TESTING", "1", 1);
         setenv("MAX_FRAMES", "60", 1);
 
         // Pre-configure the database with our test assets directory
-        fs::path test_db_path = temp_data_dir / "AssetInventory" / "assets.db";
+        // When TESTING is set, the app will use a local "data" directory
+        fs::path test_db_path = fs::path("data") / "assets.db";
         LOG_INFO("DB_PATH: {}", test_db_path.string());
         
         fs::create_directories(test_db_path.parent_path());
@@ -66,8 +49,22 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
         }
 
         // Run the actual main application executable as a subprocess
-        std::string app_path = "./AssetInventory.app/Contents/MacOS/AssetInventory";
-        std::string command = app_path + " 2>&1";  // Capture both stdout and stderr
+        // ctest runs from build directory, so use relative path from there
+        fs::path exe_path;
+
+#ifdef _WIN32
+        // Windows: Debug build
+        exe_path = fs::path("Debug") / "AssetInventory.exe";
+#elif __APPLE__
+        // macOS: AssetInventory.app bundle
+        exe_path = fs::path("AssetInventory.app") / "Contents" / "MacOS" / "AssetInventory";
+#endif
+
+        INFO("Looking for AssetInventory at: " << exe_path.string());
+        REQUIRE(fs::exists(exe_path));
+
+        // Build command with proper quoting for paths with spaces
+        std::string command = "\"" + exe_path.string() + "\" 2>&1";
 
         LOG_INFO("Running command: {}", command);
         int result = std::system(command.c_str());
@@ -109,21 +106,13 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
 
         verify_db.close();
 
-        // Restore original environment variables
-        if (had_data_path) {
-            setenv("XDG_DATA_HOME", old_data_path.c_str(), 1);
-        } else {
-            unsetenv("XDG_DATA_HOME");
-        }
-        if (had_cache_path) {
-            setenv("XDG_CACHE_HOME", old_cache_path.c_str(), 1);
-        } else {
-            unsetenv("XDG_CACHE_HOME");
-        }
-        unsetenv("MAX_FRAMES");  // Always clean up test environment variable
+        // Clean up test environment variables
+        unsetenv("TESTING");
+        unsetenv("MAX_FRAMES");
     }
 
-    // Cleanup
-    cleanup_temp_dir(temp_data_dir);
-    cleanup_temp_dir(temp_cache_dir);
+    // Cleanup - remove the local "data" directory created during test
+    if (fs::exists("data")) {
+        fs::remove_all("data");
+    }
 }
