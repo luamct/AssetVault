@@ -1,7 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
 #include <iostream>
-
+#include <thread>
+#include <chrono>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -21,6 +22,10 @@
 namespace fs = std::filesystem;
 
 TEST_CASE("Integration: Real application execution", "[integration]") {
+    // NOTE: These integration tests are designed to run IN ORDER and depend on each other.
+    // Each test builds on the state left by the previous test to minimize setup overhead.
+    // DO NOT run tests in isolation or in random order.
+
     // Find test assets directory
     fs::path test_assets_source = fs::current_path() / "tests" / "files" / "assets";
     if (!fs::exists(test_assets_source)) {
@@ -28,85 +33,275 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
         REQUIRE(fs::exists(test_assets_source));
     }
 
-    SECTION("Basic run() execution with pre-populated assets") {
-        // Create temporary folder with test assets already in place
-        fs::path temp_assets_dir = fs::temp_directory_path() / "AssetInventory_integration_test";
-        if (fs::exists(temp_assets_dir)) {
-            fs::remove_all(temp_assets_dir);
-        }
-        fs::create_directories(temp_assets_dir);
+    // One-time setup: Enable headless mode and configure database
+    setenv("TESTING", "1", 1);
 
-        // Copy test assets before starting the application
-        LOG_INFO("Copying test assets to temporary directory...");
-        fs::copy(test_assets_source, temp_assets_dir, fs::copy_options::recursive);
-        LOG_INFO("Copied test assets to: {}", temp_assets_dir.string());
+    fs::path test_db = fs::path("data") / "assets.db";
+    if (fs::exists(test_db)) {
+        fs::remove(test_db);
+    }
+    fs::create_directories("data");
 
-        // Set test environment variables for headless mode
-        setenv("TESTING", "1", 1);
+    std::string db_path_str = Config::get_database_path().string();
+    std::string assets_directory = test_assets_source.string();
+    fs::path assets_dir(assets_directory);
 
-        // Configure the database with our test directory
-        fs::path test_db_path = fs::path("data") / "assets.db";
-        fs::create_directories(test_db_path.parent_path());
-
-        {
-            AssetDatabase setup_db;
-            REQUIRE(setup_db.initialize(test_db_path.string()));
-            REQUIRE(setup_db.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, temp_assets_dir.string()));
-            setup_db.close();
-        }
-
-        // Run the application on the main thread
-        LOG_INFO("Starting application...");
-        int result = run();
-        REQUIRE(result == 0);
-        LOG_INFO("Application completed successfully");
-
-        // Verify the application processed all the test assets
-        AssetDatabase verify_db;
-        REQUIRE(verify_db.initialize(test_db_path.string()));
-
-        auto assets = verify_db.get_all_assets();
-        REQUIRE(assets.size() > 0);
-
-        // Verify we found the expected test assets
-        bool found_fbx = false;
-        bool found_obj = false;
-        bool found_glb = false;
-        bool found_png = false;
-
-        for (const auto& asset : assets) {
-            if (asset.extension == ".fbx") found_fbx = true;
-            if (asset.extension == ".obj") found_obj = true;
-            if (asset.extension == ".glb") found_glb = true;
-            if (asset.extension == ".png") found_png = true;
-        }
-
-        REQUIRE(found_fbx);
-        REQUIRE(found_obj);
-        REQUIRE(found_glb);
-        REQUIRE(found_png);
-
-        // Verify assets have proper metadata set by the application
-        for (const auto& asset : assets) {
-            REQUIRE(!asset.name.empty());
-            REQUIRE(!asset.path.empty());
-            REQUIRE(!asset.extension.empty());
-            REQUIRE(asset.size > 0);
-            REQUIRE(asset.id > 0);
-        }
-
-        verify_db.close();
-
-        // Clean up temporary folder
-        if (fs::exists(temp_assets_dir)) {
-            fs::remove_all(temp_assets_dir);
-        }
-
-        // Clean up test environment variables
-        unsetenv("TESTING");
+    {
+        AssetDatabase setup_db;
+        REQUIRE(setup_db.initialize(db_path_str));
+        REQUIRE(setup_db.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, assets_directory));
+        setup_db.close();
     }
 
-    // Cleanup - remove the local "data" directory created during test
+    SECTION("Processes files already in folder at start") {
+        g_shutdown_requested = false;
+
+        std::thread test_thread([&]{
+            // Wait for app initialization and initial scan
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            // Verify all existing files were found and processed
+            AssetDatabase verify_db;
+            REQUIRE(verify_db.initialize(db_path_str));
+            auto assets = verify_db.get_all_assets();
+
+            LOG_INFO("[TEST] Found {} assets in database", assets.size());
+            REQUIRE(assets.size() == 5);  // racer.fbx, racer.glb, racer.obj, racer.png, zombie.svg
+
+            // Verify we found expected asset types
+            bool found_fbx = false, found_glb = false, found_obj = false;
+            bool found_png = false, found_svg = false;
+
+            for (const auto& asset : assets) {
+                if (asset.extension == ".fbx") found_fbx = true;
+                if (asset.extension == ".glb") found_glb = true;
+                if (asset.extension == ".obj") found_obj = true;
+                if (asset.extension == ".png") found_png = true;
+                if (asset.extension == ".svg") found_svg = true;
+            }
+
+            REQUIRE(found_fbx);
+            REQUIRE(found_glb);
+            REQUIRE(found_obj);
+            REQUIRE(found_png);
+            REQUIRE(found_svg);
+
+            verify_db.close();
+
+            LOG_INFO("[TEST] ✓ All existing files processed successfully");
+            g_shutdown_requested = true;
+        });
+
+        int result = run();
+        test_thread.join();
+        REQUIRE(result == 0);
+    }
+
+    SECTION("Loads database which already contains assets") {
+        // Database already has assets from previous test - just verify it loads them
+
+        g_shutdown_requested = false;
+
+        std::thread test_thread([&]{
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+
+            // Verify it loaded the existing database
+            AssetDatabase verify_db;
+            REQUIRE(verify_db.initialize(db_path_str));
+            auto assets = verify_db.get_all_assets();
+
+            LOG_INFO("[TEST] Database loaded with {} existing assets", assets.size());
+            REQUIRE(assets.size() > 0);  // Should have pre-populated asset plus scanned ones
+            verify_db.close();
+
+            LOG_INFO("[TEST] ✓ Successfully loaded existing database");
+            g_shutdown_requested = true;
+        });
+
+        int result = run();
+        test_thread.join();
+        REQUIRE(result == 0);
+    }
+
+    SECTION("Adds assets added during execution") {
+        // Database and assets directory already configured from previous tests
+
+        g_shutdown_requested = false;
+
+        std::thread test_thread([&]{
+            // Wait for app initialization
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            AssetDatabase verify_db;
+            REQUIRE(verify_db.initialize(db_path_str));
+            size_t initial_count = verify_db.get_all_assets().size();
+            verify_db.close();
+
+            // Copy an existing asset to create a "new" file
+            LOG_INFO("[TEST] Adding new asset file...");
+            fs::path source_file = assets_dir / "racer.obj";
+            fs::path test_file = assets_dir / "racer_copy.obj";
+
+            if (fs::exists(test_file)) {
+                fs::remove(test_file);
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+
+            fs::copy_file(source_file, test_file);
+
+            // Wait for FileWatcher and EventProcessor
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            // Verify asset was added
+            REQUIRE(verify_db.initialize(db_path_str));
+            auto assets = verify_db.get_all_assets();
+            LOG_INFO("[TEST] Database now contains {} assets (expected {})", assets.size(), initial_count + 1);
+            REQUIRE(assets.size() == initial_count + 1);
+
+            bool found = false;
+            for (const auto& asset : assets) {
+                if (asset.name == "racer_copy.obj") {
+                    found = true;
+                    REQUIRE(asset.type == AssetType::_3D);
+                    break;
+                }
+            }
+            REQUIRE(found);
+            verify_db.close();
+
+            // Cleanup test file
+            fs::remove(test_file);
+
+            LOG_INFO("[TEST] ✓ Asset added successfully during execution");
+            g_shutdown_requested = true;
+        });
+
+        int result = run();
+        test_thread.join();
+        REQUIRE(result == 0);
+    }
+
+    SECTION("Removes assets deleted during execution") {
+        g_shutdown_requested = false;
+
+        std::thread test_thread([&]{
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            // Create a temporary file first
+            fs::path test_file = assets_dir / "temp_delete_test.obj";
+            fs::copy_file(assets_dir / "racer.obj", test_file);
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            AssetDatabase verify_db;
+            REQUIRE(verify_db.initialize(db_path_str));
+            size_t count_with_file = verify_db.get_all_assets().size();
+            verify_db.close();
+
+            // Delete the file
+            LOG_INFO("[TEST] Deleting asset file...");
+            fs::remove(test_file);
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            // Verify it was removed from database
+            REQUIRE(verify_db.initialize(db_path_str));
+            auto assets = verify_db.get_all_assets();
+            LOG_INFO("[TEST] Database now contains {} assets (expected {})", assets.size(), count_with_file - 1);
+            REQUIRE(assets.size() == count_with_file - 1);
+
+            bool still_exists = false;
+            for (const auto& asset : assets) {
+                if (asset.name == "temp_delete_test.obj") {
+                    still_exists = true;
+                    break;
+                }
+            }
+            REQUIRE(!still_exists);
+            verify_db.close();
+
+            LOG_INFO("[TEST] ✓ Asset removed successfully from database");
+            g_shutdown_requested = true;
+        });
+
+        int result = run();
+        test_thread.join();
+        REQUIRE(result == 0);
+    }
+
+    SECTION("Creates thumbnails for 3D models") {
+        // Thumbnails already created from previous tests
+
+        g_shutdown_requested = false;
+
+        std::thread test_thread([&]{
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+
+            // Check that 3D model thumbnails were created
+            fs::path thumbnail_dir = fs::path("data") / "thumbnails";
+            REQUIRE(fs::exists(thumbnail_dir));
+
+            bool found_racer_thumb = false;
+            LOG_INFO("[TEST] Checking thumbnails in: {}", thumbnail_dir.string());
+
+            for (const auto& entry : fs::directory_iterator(thumbnail_dir)) {
+                std::string filename = entry.path().filename().string();
+                LOG_INFO("[TEST]   Found thumbnail: {}", filename);
+
+                // All racer.* files share same thumbnail (racer.png)
+                if (filename == "racer.png") {
+                    found_racer_thumb = true;
+                    // Verify it's a real file with content
+                    REQUIRE(fs::file_size(entry.path()) > 0);
+                }
+            }
+
+            REQUIRE(found_racer_thumb);
+
+            LOG_INFO("[TEST] ✓ 3D model thumbnails created successfully");
+            g_shutdown_requested = true;
+        });
+
+        int result = run();
+        test_thread.join();
+        REQUIRE(result == 0);
+    }
+
+    SECTION("Creates thumbnails for SVG files") {
+        // SVG thumbnail already created from first test
+
+        g_shutdown_requested = false;
+
+        std::thread test_thread([&]{
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+
+            // Check that SVG thumbnail was created
+            fs::path thumbnail_dir = fs::path("data") / "thumbnails";
+            REQUIRE(fs::exists(thumbnail_dir));
+
+            bool found_svg_thumb = false;
+
+            for (const auto& entry : fs::directory_iterator(thumbnail_dir)) {
+                std::string filename = entry.path().filename().string();
+                LOG_INFO("[TEST] Checking file: {}", filename);
+                // SVG thumbnails are rasterized to PNG
+                if (filename.find("zombie") != std::string::npos && filename.find(".png") != std::string::npos) {
+                    found_svg_thumb = true;
+                    LOG_INFO("[TEST] ✓ Found SVG thumbnail: {}", filename);
+                }
+            }
+
+            REQUIRE(found_svg_thumb);
+
+            LOG_INFO("[TEST] ✓ SVG thumbnail created successfully");
+            g_shutdown_requested = true;
+        });
+
+        int result = run();
+        test_thread.join();
+        REQUIRE(result == 0);
+    }
+
+    // One-time teardown: Clean up test environment
+    unsetenv("TESTING");
     if (fs::exists("data")) {
         fs::remove_all("data");
     }

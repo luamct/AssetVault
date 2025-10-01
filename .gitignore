@@ -28,7 +28,6 @@ Makefile
 *_p.c
 *.ilk
 *.meta
-*.obj
 *.iobj
 *.pch
 *.pdb

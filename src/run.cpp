@@ -10,6 +10,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -161,8 +162,11 @@ void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db
 }
 
 int run() {
+  // Check if running in headless mode (via TESTING env var)
+  bool headless_mode = std::getenv("TESTING") != nullptr;
+
   Logger::initialize(LogLevel::Debug);
-  LOG_INFO("AssetInventory application starting...");
+  LOG_INFO("AssetInventory application starting{}", headless_mode ? " (headless mode)" : "...");
 
   // Initialize application directories (create cache, thumbnail, and data directories)
   Config::initialize_directories();
@@ -201,28 +205,10 @@ int run() {
 
   // Debug: Force clear thumbnails if flag is set
   if (Config::DEBUG_FORCE_THUMBNAIL_CLEAR) {
-    LOG_WARN("DEBUG_FORCE_THUMBNAIL_CLEAR is enabled - deleting all thumbnails for debugging...");
-
-    // Use proper cross-platform thumbnail directory
-    fs::path thumbnail_dir = Config::get_thumbnail_directory();
-    LOG_INFO("Using thumbnail directory: {}", thumbnail_dir.string());
-
-    try {
-      if (fs::exists(thumbnail_dir)) {
-        fs::remove_all(thumbnail_dir);
-        LOG_INFO("All thumbnails deleted successfully from: {}", thumbnail_dir.string());
-      }
-      else {
-        LOG_INFO("Thumbnails directory does not exist yet: {}", thumbnail_dir.string());
-      }
-    }
-    catch (const fs::filesystem_error& e) {
-      LOG_ERROR("Failed to delete thumbnails: {}", e.what());
-    }
+    clear_all_thumbnails();
   }
 
   // Get all assets from database for both search index and initial scan
-  LOG_INFO("Loading assets from database...");
   auto db_assets = database.get_all_assets();
   LOG_INFO("Loaded {} assets from database", db_assets.size());
 
@@ -242,6 +228,7 @@ int run() {
 
 
   // Initialize GLFW
+  LOG_INFO("Initializing GLFW{}...", headless_mode ? " (headless)" : "");
   if (!glfwInit()) {
     LOG_ERROR("Failed to initialize GLFW");
     return -1;
@@ -261,10 +248,8 @@ int run() {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
 
-  // Check if we're running in headless mode for testing
-  bool headless_mode = std::getenv("TESTING") != nullptr;
+  // In headless mode, create minimal invisible window
   if (headless_mode) {
-    LOG_INFO("Running in headless mode for testing");
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
   }
 
@@ -307,25 +292,29 @@ int run() {
   // Switch back to main context
   glfwMakeContextCurrent(window);
 
-  // Initialize Dear ImGui
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
-  ImGuiIO& io = ImGui::GetIO();
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+  // Initialize Dear ImGui (skip in headless mode)
+  ImGuiIO* io_ptr = nullptr;
+  if (!headless_mode) {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io_ptr = &io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
-  // Disable imgui.ini file - we'll handle window positioning in code
-  io.IniFilename = nullptr;
+    // Disable imgui.ini file - we'll handle window positioning in code
+    io.IniFilename = nullptr;
 
-  // Load Roboto font
-  Theme::load_roboto_font(io);
+    // Load Roboto font
+    Theme::load_roboto_font(io);
 
-  // Setup light and fun theme
-  Theme::setup_light_fun_theme();
+    // Setup light and fun theme
+    Theme::setup_light_fun_theme();
 
-  // Setup Platform/Renderer backends
-  ImGui_ImplGlfw_InitForOpenGL(window, true);
-  ImGui_ImplOpenGL3_Init("#version 330");
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+  }
 
   // Initialize texture manager
   if (!texture_manager.initialize()) {
@@ -363,17 +352,27 @@ int run() {
   }
 
   // Main loop
-  double last_time = glfwGetTime();
+  if (headless_mode) {
+    // Headless mode: just wait for shutdown signal
+    // Background systems (EventProcessor, FileWatcher, Database) continue running
+    LOG_INFO("Entering headless mode - background systems active, waiting for shutdown signal");
+    while (!g_shutdown_requested.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    LOG_INFO("Headless mode: shutdown signal received");
+  }
+  else {
+    // UI mode: full rendering loop
+    double last_time = glfwGetTime();
+    LOG_INFO("Entering main rendering loop");
 
-  LOG_INFO("Entering main rendering loop");
+    // Main loop - check both window close and shutdown request
+    while (!glfwWindowShouldClose(window) && !g_shutdown_requested.load()) {
+      double current_time = glfwGetTime();
+      io_ptr->DeltaTime = (float) (current_time - last_time);
+      last_time = current_time;
 
-  // Main loop - check both window close and shutdown request
-  while (!glfwWindowShouldClose(window) && !g_shutdown_requested.load()) {
-    double current_time = glfwGetTime();
-    io.DeltaTime = (float) (current_time - last_time);
-    last_time = current_time;
-
-    glfwPollEvents();
+      glfwPollEvents();
 
     if (ui_state.assets_directory_changed) {
       ui_state.assets_directory_changed = false;
@@ -522,7 +521,8 @@ int run() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     glfwSwapBuffers(window);
-  }
+    }  // End of UI mode main loop
+  }  // End of headless/UI conditional
 
   // Cleanup audio manager
   audio_manager.cleanup();
@@ -533,10 +533,12 @@ int run() {
   // Cleanup 3D preview resources
   cleanup_model(current_model);
 
-  // Cleanup
-  ImGui_ImplOpenGL3_Shutdown();
-  ImGui_ImplGlfw_Shutdown();
-  ImGui::DestroyContext();
+  // Cleanup ImGui (only if initialized)
+  if (!headless_mode) {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+  }
 
   // Stop file watcher and close database
   file_watcher.stop_watching();

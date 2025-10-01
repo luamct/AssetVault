@@ -3,6 +3,7 @@
 #include <atomic>
 
 // Main application entry point
+// Runs in headless mode if TESTING environment variable is set
 // Returns 0 on success, non-zero on error
 int run();
 

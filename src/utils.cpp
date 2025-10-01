@@ -188,3 +188,24 @@ std::vector<std::filesystem::path> find_assets_under_directory(const std::map<st
 
   return result;
 }
+
+void clear_all_thumbnails() {
+  LOG_WARN("DEBUG_FORCE_THUMBNAIL_CLEAR is enabled - deleting all thumbnails for debugging...");
+
+  // Use proper cross-platform thumbnail directory
+  fs::path thumbnail_dir = Config::get_thumbnail_directory();
+  LOG_INFO("Using thumbnail directory: {}", thumbnail_dir.string());
+
+  try {
+    if (fs::exists(thumbnail_dir)) {
+      fs::remove_all(thumbnail_dir);
+      LOG_INFO("All thumbnails deleted successfully from: {}", thumbnail_dir.string());
+    }
+    else {
+      LOG_INFO("Thumbnails directory does not exist yet: {}", thumbnail_dir.string());
+    }
+  }
+  catch (const fs::filesystem_error& e) {
+    LOG_ERROR("Failed to delete thumbnails: {}", e.what());
+  }
+}
