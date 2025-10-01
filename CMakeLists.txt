@@ -112,6 +112,7 @@ endif()
 # Main executable
 add_executable(AssetInventory
     src/main.cpp
+    src/run.cpp
     src/asset.cpp
     src/database.cpp
     src/utils.cpp
@@ -194,6 +195,7 @@ endif()
 
 # Create a shared library for test utilities to avoid recompilation
 add_library(AssetInventoryCore STATIC
+    src/run.cpp
     src/asset.cpp
     src/database.cpp
     src/event_processor.cpp
@@ -201,6 +203,10 @@ add_library(AssetInventoryCore STATIC
     src/texture_manager.cpp
     src/3d.cpp
     src/utils.cpp
+    src/ui.cpp
+    src/audio_manager.cpp
+    src/stb_vorbis_impl.cpp
+    ${FILE_WATCHER_SOURCES}
     external/glad/src/glad.c
 )
 
@@ -209,6 +215,7 @@ target_include_directories(AssetInventoryCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/external
     ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
     ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/backends
 )
 
 target_link_libraries(AssetInventoryCore PUBLIC
@@ -218,6 +225,7 @@ target_link_libraries(AssetInventoryCore PUBLIC
     assimp::assimp
     glm::glm
     lunasvg::lunasvg
+    imgui
 )
 
 # Unit test executable
@@ -369,10 +377,6 @@ add_test(NAME UtilsTests COMMAND UtilsTest)
 add_executable(IntegrationTest
     tests/test_integration.cpp
     tests/test_helpers.cpp
-    src/ui.cpp
-    src/audio_manager.cpp
-    src/stb_vorbis_impl.cpp
-    ${FILE_WATCHER_SOURCES}
 )
 
 target_include_directories(IntegrationTest PRIVATE

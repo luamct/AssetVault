@@ -1,7 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
-#include <chrono>
-#include <thread>
 #include <iostream>
 
 
@@ -17,60 +15,53 @@
 #include "config.h"
 #include "logger.h"
 #include "ui.h"
+#include "run.h"
 #include "test_helpers.h"
 
 namespace fs = std::filesystem;
 
 TEST_CASE("Integration: Real application execution", "[integration]") {
     // Find test assets directory
-    fs::path test_assets_dir = fs::current_path() / "tests" / "files" / "assets";
-    if (!fs::exists(test_assets_dir)) {
-        test_assets_dir = fs::current_path().parent_path() / "tests" / "files" / "assets";
-        REQUIRE(fs::exists(test_assets_dir));
+    fs::path test_assets_source = fs::current_path() / "tests" / "files" / "assets";
+    if (!fs::exists(test_assets_source)) {
+        test_assets_source = fs::current_path().parent_path() / "tests" / "files" / "assets";
+        REQUIRE(fs::exists(test_assets_source));
     }
 
-    SECTION("Run real application and verify results") {
-        // Set test environment variables
-        setenv("TESTING", "1", 1);
-        setenv("MAX_FRAMES", "60", 1);
+    SECTION("Basic run() execution with pre-populated assets") {
+        // Create temporary folder with test assets already in place
+        fs::path temp_assets_dir = fs::temp_directory_path() / "AssetInventory_integration_test";
+        if (fs::exists(temp_assets_dir)) {
+            fs::remove_all(temp_assets_dir);
+        }
+        fs::create_directories(temp_assets_dir);
 
-        // Pre-configure the database with our test assets directory
-        // When TESTING is set, the app will use a local "data" directory
+        // Copy test assets before starting the application
+        LOG_INFO("Copying test assets to temporary directory...");
+        fs::copy(test_assets_source, temp_assets_dir, fs::copy_options::recursive);
+        LOG_INFO("Copied test assets to: {}", temp_assets_dir.string());
+
+        // Set test environment variables for headless mode
+        setenv("TESTING", "1", 1);
+
+        // Configure the database with our test directory
         fs::path test_db_path = fs::path("data") / "assets.db";
-        LOG_INFO("DB_PATH: {}", test_db_path.string());
-        
         fs::create_directories(test_db_path.parent_path());
 
         {
             AssetDatabase setup_db;
             REQUIRE(setup_db.initialize(test_db_path.string()));
-            REQUIRE(setup_db.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, test_assets_dir.string()));
+            REQUIRE(setup_db.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, temp_assets_dir.string()));
             setup_db.close();
         }
 
-        // Run the actual main application executable as a subprocess
-        // ctest runs from build directory, so use relative path from there
-        fs::path exe_path;
-
-#ifdef _WIN32
-        // Windows: Debug build
-        exe_path = fs::path("Debug") / "AssetInventory.exe";
-#elif __APPLE__
-        // macOS: AssetInventory.app bundle
-        exe_path = fs::path("AssetInventory.app") / "Contents" / "MacOS" / "AssetInventory";
-#endif
-
-        INFO("Looking for AssetInventory at: " << exe_path.string());
-        REQUIRE(fs::exists(exe_path));
-
-        // Build command with proper quoting for paths with spaces
-        std::string command = "\"" + exe_path.string() + "\" 2>&1";
-
-        LOG_INFO("Running command: {}", command);
-        int result = std::system(command.c_str());
+        // Run the application on the main thread
+        LOG_INFO("Starting application...");
+        int result = run();
         REQUIRE(result == 0);
+        LOG_INFO("Application completed successfully");
 
-        // Verify the real application actually processed assets
+        // Verify the application processed all the test assets
         AssetDatabase verify_db;
         REQUIRE(verify_db.initialize(test_db_path.string()));
 
@@ -95,7 +86,7 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
         REQUIRE(found_glb);
         REQUIRE(found_png);
 
-        // Verify assets have proper metadata set by the real application
+        // Verify assets have proper metadata set by the application
         for (const auto& asset : assets) {
             REQUIRE(!asset.name.empty());
             REQUIRE(!asset.path.empty());
@@ -106,9 +97,13 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
 
         verify_db.close();
 
+        // Clean up temporary folder
+        if (fs::exists(temp_assets_dir)) {
+            fs::remove_all(temp_assets_dir);
+        }
+
         // Clean up test environment variables
         unsetenv("TESTING");
-        unsetenv("MAX_FRAMES");
     }
 
     // Cleanup - remove the local "data" directory created during test
