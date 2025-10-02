@@ -20,6 +20,7 @@
 #include "utils.h"
 #include "config.h"
 #include "test_helpers.h"
+#include "services.h"
 
 namespace fs = std::filesystem;
 
@@ -37,8 +38,10 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
     std::atomic<bool> search_update{false};
 
     // Create EventProcessor with mocks
-    EventProcessor processor(db, safe_assets, search_update,
-                            texture_mgr, search_idx, assets_dir);
+    EventProcessor processor(safe_assets, search_update, texture_mgr, assets_dir);
+
+    // Register services for testing
+    Services::provide(&db, &search_idx, &processor);
 
     SECTION("Process single created event") {
         // Create a test file
@@ -160,7 +163,6 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
         REQUIRE(db.inserted_assets.size() == 0);
     }
 
-    // Cleanup
     cleanup_temp_dir(temp_dir);
 }
 
@@ -177,8 +179,10 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
     std::atomic<bool> search_update{false};
 
     // Create EventProcessor with mocks
-    EventProcessor processor(db, safe_assets, search_update,
-                            texture_mgr, search_idx, assets_dir);
+    EventProcessor processor(safe_assets, search_update, texture_mgr, assets_dir);
+
+    // Register services for testing
+    Services::provide(&db, &search_idx, &processor);
 
     SECTION("Generate 3D thumbnails for 3D models") {
         auto fbx_file = create_temp_file(temp_dir, "model.fbx", "3D model data");
@@ -253,7 +257,6 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
         REQUIRE(db.inserted_assets.size() == 2);
     }
 
-    // Cleanup
     cleanup_temp_dir(temp_dir);
 }
 
@@ -270,8 +273,10 @@ TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
     std::atomic<bool> search_update{false};
 
     // Create EventProcessor with mocks
-    EventProcessor processor(db, safe_assets, search_update,
-                            texture_mgr, search_idx, assets_dir);
+    EventProcessor processor(safe_assets, search_update, texture_mgr, assets_dir);
+
+    // Register services for testing
+    Services::provide(&db, &search_idx, &processor);
 
     SECTION("Delete existing assets") {
         // Pre-populate assets map with test assets
@@ -362,6 +367,5 @@ TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
         REQUIRE(texture_mgr.cleanup_requests.size() == 0);
     }
 
-    // Cleanup
     cleanup_temp_dir(temp_dir);
 }

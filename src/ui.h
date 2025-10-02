@@ -94,10 +94,10 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
 
 // Main UI panel rendering functions
 void render_search_panel(UIState& ui_state,
-    const SafeAssets& safe_assets, SearchIndex& search_index,
+    const SafeAssets& safe_assets,
     float panel_width, float panel_height);
 
-void render_progress_panel(UIState& ui_state, EventProcessor* processor,
+void render_progress_panel(UIState& ui_state,
     float panel_width, float panel_height);
 
 void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,

@@ -8,6 +8,7 @@
 #include "test_helpers.h"
 #include "utils.h"
 #include "config.h"
+#include "services.h"
 
 // Mock global for linking - we're not testing functions that use it
 class EventProcessor;
@@ -642,6 +643,10 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     // Create a real SearchIndex for testing (no database dependency)
     SearchIndex search_index;
+    MockDatabase mock_db;  // Needed for Services
+
+    // Register services for testing (nullptr for EventProcessor - not needed for search tests)
+    Services::provide(&mock_db, &search_index, nullptr);
 
     // Manually populate the search index for testing
     {
@@ -653,7 +658,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("Filter by text") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster");
-        filter_assets(search_state, test_assets, search_index);
+        filter_assets(search_state, test_assets);
 
         REQUIRE(search_state.results.size() == 2);
         // Check that both monster assets are in results (order may vary with unordered_map)
@@ -669,7 +674,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("Filter by type") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d");
-        filter_assets(search_state, test_assets, search_index);
+        filter_assets(search_state, test_assets);
 
         REQUIRE(search_state.results.size() == 2);
         REQUIRE(search_state.results[0].type == AssetType::_2D);
@@ -678,7 +683,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("Filter by multiple types") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d,audio");
-        filter_assets(search_state, test_assets, search_index);
+        filter_assets(search_state, test_assets);
 
         REQUIRE(search_state.results.size() == 4);
         // Should include both 2D textures and both audio files
@@ -686,7 +691,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("Combined type and text filter") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d texture");
-        filter_assets(search_state, test_assets, search_index);
+        filter_assets(search_state, test_assets);
 
         REQUIRE(search_state.results.size() == 2);
         // Check that both texture assets are in results (order may vary with unordered_map)
@@ -702,14 +707,14 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("No matches") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "nonexistent");
-        filter_assets(search_state, test_assets, search_index);
+        filter_assets(search_state, test_assets);
 
         REQUIRE(search_state.results.empty());
     }
 
     SECTION("Empty query returns all") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "");
-        filter_assets(search_state, test_assets, search_index);
+        filter_assets(search_state, test_assets);
 
         size_t assets_size;
         {
@@ -724,7 +729,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
         search_state.selected_asset_index = 5;
         search_state.model_preview_row = 3;
 
-        filter_assets(search_state, test_assets, search_index);
+        filter_assets(search_state, test_assets);
 
         // Selection should be preserved across filtering; preview row resets
         REQUIRE(search_state.selected_asset_index == 5);

@@ -4,6 +4,7 @@
 #include "event_processor.h"
 #include "logger.h"
 #include "asset.h"
+#include "services.h"
 #include <sstream>
 #include <iostream>
 #include <algorithm>
@@ -373,8 +374,7 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   return true;
 }
 
-void filter_assets(UIState& ui_state, const SafeAssets& safe_assets,
-  SearchIndex& search_index) {
+void filter_assets(UIState& ui_state, const SafeAssets& safe_assets) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   ui_state.results.clear();
@@ -426,7 +426,7 @@ void filter_assets(UIState& ui_state, const SafeAssets& safe_assets,
     }
 
     if (!search_terms.empty()) {
-      candidate_ids = search_index.search_terms(search_terms);
+      candidate_ids = Services::search_index().search_terms(search_terms);
       LOG_TRACE("Search index returned {} candidates for {} valid terms", candidate_ids.size(), search_terms.size());
     }
     else {
@@ -452,7 +452,7 @@ void filter_assets(UIState& ui_state, const SafeAssets& safe_assets,
   // Convert asset IDs to Asset objects and apply remaining filters
   for (uint32_t asset_id : candidate_ids) {
     // Efficient O(1) lookup using SearchIndex cache
-    const Asset* asset_ptr = search_index.get_asset_by_id(asset_id);
+    const Asset* asset_ptr = Services::search_index().get_asset_by_id(asset_id);
     if (!asset_ptr) {
       continue; // Asset ID not found in SearchIndex cache (might be stale index)
     }

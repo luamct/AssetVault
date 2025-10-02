@@ -115,6 +115,7 @@ add_executable(AssetInventory
     src/run.cpp
     src/asset.cpp
     src/database.cpp
+    src/services.cpp
     src/utils.cpp
     src/3d.cpp
     src/texture_manager.cpp
@@ -198,6 +199,7 @@ add_library(AssetInventoryCore STATIC
     src/run.cpp
     src/asset.cpp
     src/database.cpp
+    src/services.cpp
     src/event_processor.cpp
     src/search.cpp
     src/texture_manager.cpp

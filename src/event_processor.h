@@ -22,9 +22,9 @@ class SearchIndex;
 // Unified event processor for both initial scan and runtime file events
 class EventProcessor {
 public:
-    EventProcessor(AssetDatabase& database, SafeAssets& safe_assets,
+    EventProcessor(SafeAssets& safe_assets,
         std::atomic<bool>& search_update_needed,
-        TextureManager& texture_manager, SearchIndex& search_index,
+        TextureManager& texture_manager,
         const std::string& assets_directory, GLFWwindow* thumbnail_context = nullptr);
     ~EventProcessor();
 
@@ -84,11 +84,9 @@ private:
     bool setup_thumbnail_opengl_context();
 
     // References to global state
-    AssetDatabase& database_;
     SafeAssets& safe_assets_;
     std::atomic<bool>& search_update_needed_;
     TextureManager& texture_manager_;
-    SearchIndex& search_index_;
 
     // Processing thread and synchronization
     std::thread processing_thread_;

@@ -10,6 +10,7 @@
 #include "3d.h"
 #include "search.h"
 #include "logger.h"
+#include "services.h"
 #include <vector>
 #include <sstream>
 #include <algorithm>
@@ -433,7 +434,7 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
 
 void render_search_panel(
   UIState& ui_state,
-  const SafeAssets& safe_assets, SearchIndex& search_index,
+  const SafeAssets& safe_assets,
   float panel_width, float panel_height) {
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), true);
 
@@ -457,7 +458,7 @@ void render_search_panel(
 
   if (enter_pressed) {
     // Immediate search on Enter key
-    filter_assets(ui_state, safe_assets, search_index);
+    filter_assets(ui_state, safe_assets);
     ui_state.last_buffer = current_input;
     ui_state.input_tracking = current_input;
     ui_state.pending_search = false;
@@ -550,7 +551,7 @@ void render_search_panel(
 
   // If any toggle changed, trigger immediate search
   if (any_toggle_changed) {
-    filter_assets(ui_state, safe_assets, search_index);
+    filter_assets(ui_state, safe_assets);
     ui_state.pending_search = false;
   }
 
@@ -699,12 +700,12 @@ namespace {
   }
 }
 
-void render_progress_panel(UIState& ui_state, EventProcessor* processor,
+void render_progress_panel(UIState& ui_state,
   float panel_width, float panel_height) {
   ImGui::BeginChild("ProgressRegion", ImVec2(panel_width, panel_height), true);
 
   // Unified progress bar for all asset processing
-  bool show_progress = (processor && processor->has_pending_work());
+  bool show_progress = Services::event_processor().has_pending_work();
 
   // Header row: left = status (only when processing), right = FPS
   {
@@ -726,9 +727,9 @@ void render_progress_panel(UIState& ui_state, EventProcessor* processor,
 
   if (show_progress) {
     // Progress bar data from event processor
-    float progress = processor->get_progress();
-    size_t processed = processor->get_total_processed();
-    size_t total = processor->get_total_queued();
+    float progress = Services::event_processor().get_progress();
+    size_t processed = Services::event_processor().get_total_processed();
+    size_t total = Services::event_processor().get_total_queued();
 
     // Vertically center the progress bar within the panel child
     float bar_height = ImGui::GetFrameHeight();

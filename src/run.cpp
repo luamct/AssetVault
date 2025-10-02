@@ -36,24 +36,21 @@
 #include "search.h"
 #include "logger.h"
 #include "ui.h"
+#include "services.h"
 
 namespace fs = std::filesystem;
 
 // Global shutdown flag removed - now passed as parameter to run()
 
-// Global callback state (needed for callback functions)
-EventProcessor* g_event_processor = nullptr;
-
 // File event callback function (runs on background thread)
 // Queues events for unified processing
 void on_file_event(const FileEvent& event) {
   LOG_TRACE("[NEW_EVENT] type = {}, asset = {}", FileWatcher::file_event_type_to_string(event.type), event.path);
-  g_event_processor->queue_event(event);
+  Services::event_processor().queue_event(event);
 }
 
 // Perform initial scan and generate events for EventProcessor
-void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db_assets, SafeAssets& safe_assets,
-  EventProcessor* event_processor) {
+void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db_assets, SafeAssets& safe_assets) {
   if (root_path.empty()) {
     LOG_WARN("scan_for_changes called with empty root path; skipping");
     return;
@@ -149,7 +146,7 @@ void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db
   // Then queue any detected changes to update from that baseline
   if (!events_to_queue.empty()) {
     auto queue_start = std::chrono::high_resolution_clock::now();
-    event_processor->queue_events(events_to_queue);
+    Services::event_processor().queue_events(events_to_queue);
     auto queue_end = std::chrono::high_resolution_clock::now();
     auto queue_duration = std::chrono::duration_cast<std::chrono::milliseconds>(queue_end - queue_start);
 
@@ -224,6 +221,9 @@ int run(std::atomic<bool>* shutdown_requested) {
   LOG_INFO("Search index initialized with {} tokens in {}ms",
            search_index.get_token_count(), index_duration.count());
 
+  // Register core services for global access (event_processor registered later after creation)
+  Services::provide(&database, &search_index, nullptr);
+  LOG_INFO("Core services registered (EventProcessor will be added after initialization)");
 
   // Initialize GLFW
   LOG_INFO("Initializing GLFW{}...", headless_mode ? " (headless)" : "");
@@ -320,13 +320,17 @@ int run(std::atomic<bool>* shutdown_requested) {
     return -1;
   }
 
-  g_event_processor = new EventProcessor(database, safe_assets,
-    ui_state.update_needed, texture_manager, search_index,
+  EventProcessor* event_processor = new EventProcessor(safe_assets,
+    ui_state.update_needed, texture_manager,
     ui_state.assets_directory, thumbnail_context);
-  if (!g_event_processor->start()) {
+  if (!event_processor->start()) {
     LOG_ERROR("Failed to start EventProcessor");
     return -1;
   }
+
+  // Update services with EventProcessor
+  Services::provide(&database, &search_index, event_processor);
+  LOG_INFO("EventProcessor registered with Services");
 
   // Initialize 3D preview system
   if (!texture_manager.initialize_preview_system()) {
@@ -341,7 +345,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   }
 
   if (!ui_state.assets_directory.empty()) {
-    scan_for_changes(ui_state.assets_directory, db_assets, safe_assets, g_event_processor);
+    scan_for_changes(ui_state.assets_directory, db_assets, safe_assets);
 
     if (!file_watcher.start_watching(ui_state.assets_directory, on_file_event, &safe_assets)) {
       LOG_ERROR("Failed to start file watcher");
@@ -379,8 +383,8 @@ int run(std::atomic<bool>* shutdown_requested) {
       
       // Stop file watcher, event processor and clear pending events
       file_watcher.stop_watching();
-      g_event_processor->stop();
-      g_event_processor->clear_queue();
+      Services::event_processor().stop();
+      Services::event_processor().clear_queue();
 
       // Clear assets from memory and database
       {
@@ -401,12 +405,12 @@ int run(std::atomic<bool>* shutdown_requested) {
       }
 
       // Update event processor directory and restart
-      g_event_processor->set_assets_directory(ui_state.assets_directory);
-      if (!g_event_processor->start()) {
+      Services::event_processor().set_assets_directory(ui_state.assets_directory);
+      if (!Services::event_processor().start()) {
         LOG_ERROR("Failed to restart event processor after assets directory change");
       }
 
-      scan_for_changes(ui_state.assets_directory, std::vector<Asset>(), safe_assets, g_event_processor);
+      scan_for_changes(ui_state.assets_directory, std::vector<Asset>(), safe_assets);
 
       if (!file_watcher.start_watching(ui_state.assets_directory, on_file_event, &safe_assets)) {
         LOG_ERROR("Failed to start file watcher for path: {}", ui_state.assets_directory);
@@ -421,7 +425,7 @@ int run(std::atomic<bool>* shutdown_requested) {
     // Check if search needs to be updated due to asset changes
     if (ui_state.update_needed.exchange(false)) {
       // Re-apply current search filter to include updated assets
-      filter_assets(ui_state, safe_assets, search_index);
+      filter_assets(ui_state, safe_assets);
 
       // Removes texture cache entries and thumbnails for deleted assets
       texture_manager.process_cleanup_queue(ui_state.assets_directory);
@@ -435,7 +439,7 @@ int run(std::atomic<bool>* shutdown_requested) {
 
       if (elapsed >= Config::SEARCH_DEBOUNCE_MS) {
         // Execute the search
-        filter_assets(ui_state, safe_assets, search_index);
+        filter_assets(ui_state, safe_assets);
         ui_state.last_buffer = ui_state.buffer;
         ui_state.pending_search = false;
       }
@@ -492,11 +496,11 @@ int run(std::atomic<bool>* shutdown_requested) {
     float bottom_height = window_height * 0.80f - WINDOW_MARGIN;
 
     // ============ TOP LEFT: Search Box ============
-    render_search_panel(ui_state, safe_assets, search_index, left_width, top_height);
+    render_search_panel(ui_state, safe_assets, left_width, top_height);
 
     // ============ TOP RIGHT: Progress and Messages ============
     ImGui::SameLine();
-    render_progress_panel(ui_state, g_event_processor, right_width, top_height);
+    render_progress_panel(ui_state, right_width, top_height);
 
     // ============ BOTTOM LEFT: Search Results ============
     render_asset_grid(ui_state, texture_manager, safe_assets, left_width, bottom_height);
@@ -542,10 +546,10 @@ int run(std::atomic<bool>* shutdown_requested) {
   file_watcher.stop_watching();
 
   // Cleanup event processor
-  if (g_event_processor) {
-    g_event_processor->stop();
-    delete g_event_processor;
-    g_event_processor = nullptr;
+  if (event_processor) {
+    event_processor->stop();
+    delete event_processor;
+    event_processor = nullptr;
   }
 
   database.close();

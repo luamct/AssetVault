@@ -15,15 +15,16 @@
 #include "search.h"
 #include "texture_manager.h"
 #include "utils.h"
+#include "services.h"
 
 namespace fs = std::filesystem;
 
-EventProcessor::EventProcessor(AssetDatabase& database, SafeAssets& safe_assets,
+EventProcessor::EventProcessor(SafeAssets& safe_assets,
     std::atomic<bool>& search_update_needed,
-    TextureManager& texture_manager, SearchIndex& search_index,
+    TextureManager& texture_manager,
     const std::string& assets_directory, GLFWwindow* thumbnail_context)
-    : database_(database), safe_assets_(safe_assets), search_update_needed_(search_update_needed),
-    texture_manager_(texture_manager), search_index_(search_index), batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
+    : safe_assets_(safe_assets), search_update_needed_(search_update_needed),
+    texture_manager_(texture_manager), batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
     thumbnail_context_(thumbnail_context), assets_directory_(assets_directory) {
 }
@@ -235,13 +236,13 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
 
     // Batch operations: database insert and assets map update
     if (!files_to_insert.empty()) {
-        database_.insert_assets_batch(files_to_insert);
+        Services::database().insert_assets_batch(files_to_insert);
 
         // Single pass: update assets map and search index
         auto [lock, assets] = safe_assets_.write();
         for (const auto& file : files_to_insert) {
             assets[file.path] = file;
-            search_index_.add_asset(file.id, file);
+            Services::search_index().add_asset(file.id, file);
         }
     }
 }
@@ -286,12 +287,12 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
 
         // Remove from search index in the same critical section
         for (uint32_t asset_id : deleted_asset_ids) {
-            search_index_.remove_asset(asset_id);
+            Services::search_index().remove_asset(asset_id);
         }
     }
 
     // Batch delete from database (outside mutex)
-    database_.delete_assets_batch(paths_to_delete);
+    Services::database().delete_assets_batch(paths_to_delete);
 }
 
 Asset EventProcessor::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
