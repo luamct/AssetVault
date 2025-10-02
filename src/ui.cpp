@@ -433,8 +433,7 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
 
 void render_search_panel(
   UIState& ui_state,
-  std::map<std::string, Asset>& assets,
-  std::mutex& assets_mutex, SearchIndex& search_index,
+  const SafeAssets& safe_assets, SearchIndex& search_index,
   float panel_width, float panel_height) {
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), true);
 
@@ -458,7 +457,7 @@ void render_search_panel(
 
   if (enter_pressed) {
     // Immediate search on Enter key
-    filter_assets(ui_state, assets, assets_mutex, search_index);
+    filter_assets(ui_state, safe_assets, search_index);
     ui_state.last_buffer = current_input;
     ui_state.input_tracking = current_input;
     ui_state.pending_search = false;
@@ -551,7 +550,7 @@ void render_search_panel(
 
   // If any toggle changed, trigger immediate search
   if (any_toggle_changed) {
-    filter_assets(ui_state, assets, assets_mutex, search_index);
+    filter_assets(ui_state, safe_assets, search_index);
     ui_state.pending_search = false;
   }
 
@@ -777,7 +776,7 @@ void render_progress_panel(UIState& ui_state, EventProcessor* processor,
 }
 
 void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
-  std::map<std::string, Asset>& assets, float panel_width, float panel_height) {
+  SafeAssets& safe_assets, float panel_width, float panel_height) {
   ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), true);
 
   // Show total results count if we have results
@@ -929,7 +928,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
   // Show message if no assets found
   if (ui_state.results.empty()) {
-    if (assets.empty()) {
+    bool assets_empty;
+    {
+      auto [lock, assets] = safe_assets.read();
+      assets_empty = assets.empty();
+    }
+    if (assets_empty) {
       ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets found. Add files to the 'assets' directory.");
     }
     else {

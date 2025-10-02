@@ -44,7 +44,7 @@ class FileWatcher {
   ~FileWatcher();
 
   // Start watching a directory
-  bool start_watching(const std::string& path, FileEventCallback callback, AssetMap* assets = nullptr, std::mutex* assets_mutex = nullptr);
+  bool start_watching(const std::string& path, FileEventCallback callback, SafeAssets* assets = nullptr);
 
   // Stop watching
   void stop_watching();
@@ -75,7 +75,7 @@ class FileWatcher {
 class FileWatcherImpl {
  public:
   virtual ~FileWatcherImpl() = default;
-  virtual bool start_watching(const std::string& path, FileEventCallback callback, AssetMap* assets = nullptr, std::mutex* assets_mutex = nullptr) = 0;
+  virtual bool start_watching(const std::string& path, FileEventCallback callback, SafeAssets* assets = nullptr) = 0;
   virtual void stop_watching() = 0;
   virtual bool is_watching() const = 0;
 };

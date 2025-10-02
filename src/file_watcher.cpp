@@ -31,8 +31,7 @@ FileWatcher::FileWatcher() : p_impl(nullptr) {
 
 FileWatcher::~FileWatcher() { stop_watching(); }
 
-// TODO: Why are AssetMap and mutex pointers here and not references?
-bool FileWatcher::start_watching(const std::string& path, FileEventCallback callback, AssetMap* assets, std::mutex* assets_mutex) {
+bool FileWatcher::start_watching(const std::string& path, FileEventCallback callback, SafeAssets* assets) {
   LOG_DEBUG("Starting file watcher at {}", path);
   if (!p_impl) {
     LOG_ERROR("No file watcher implementation available");
@@ -42,7 +41,7 @@ bool FileWatcher::start_watching(const std::string& path, FileEventCallback call
   watched_path = path;
   is_watching_flag = true;
 
-  return p_impl->start_watching(path, callback, assets, assets_mutex);
+  return p_impl->start_watching(path, callback, assets);
 }
 
 void FileWatcher::stop_watching() {

@@ -36,8 +36,7 @@ private:
   std::atomic<bool> should_stop;
   std::atomic<bool> is_watching_flag;
   FileEventCallback callback;
-  AssetMap* assets_;
-  std::mutex* assets_mutex_;
+  SafeAssets* safe_assets_;
   std::string watched_path;
 
   // Timer-based event tracking
@@ -112,7 +111,7 @@ public:
     current_instance = nullptr;
   }
 
-  bool start_watching(const std::string& path, FileEventCallback cb, AssetMap* assets, std::mutex* assets_mutex) override {
+  bool start_watching(const std::string& path, FileEventCallback cb, SafeAssets* safe_assets) override {
     if (is_watching_flag.load()) {
       LOG_ERROR("Already watching a directory");
       return false;
@@ -120,8 +119,7 @@ public:
 
     watched_path = path;
     callback = cb;
-    assets_ = assets;
-    assets_mutex_ = assets_mutex;
+    safe_assets_ = safe_assets;
 
     should_stop = false;
     timer_should_stop = false;
@@ -216,7 +214,7 @@ private:
           watcher->add_pending_event(FileEventType::Deleted, path);
           watcher->add_pending_event(FileEventType::Created, path);
         }
-        else if (watcher->assets_ && watcher->assets_mutex_) {
+        else if (watcher->safe_assets_) {
           // Not an atomic save - handle as a real rename/move
           // Only trigger events for actual moves, not metadata-only renames:
           // - Created: file exists AND is NOT tracked (moved in)
@@ -228,15 +226,15 @@ private:
           if (is_directory) {
             // For directories, check if there are any tracked assets under this path
             bool has_tracked_assets = false;
-            if (watcher->assets_ && watcher->assets_mutex_) {
-              std::lock_guard<std::mutex> lock(*watcher->assets_mutex_);
+            if (watcher->safe_assets_) {
+              auto [lock, assets] = watcher->safe_assets_->read();
               std::string dir_path_str = file_path.generic_u8string();
 
               // Use binary search to find the first potential match
-              auto it = watcher->assets_->lower_bound(dir_path_str);
+              auto it = assets.lower_bound(dir_path_str);
 
               // Check if any assets start with this directory path
-              while (it != watcher->assets_->end()) {
+              while (it != assets.end()) {
                 const std::string& asset_path = it->first;
 
                 // Check if this asset is under the directory
@@ -273,8 +271,8 @@ private:
             // For files, check if the specific file is tracked
             bool is_tracked;
             {
-              std::lock_guard<std::mutex> lock(*watcher->assets_mutex_);
-              is_tracked = watcher->assets_->find(file_path.generic_u8string()) != watcher->assets_->end();
+              auto [lock, assets] = watcher->safe_assets_->read();
+              is_tracked = assets.find(file_path.generic_u8string()) != assets.end();
             }
 
             if (file_exists && !is_tracked) {
@@ -454,7 +452,7 @@ private:
   void emit_deletion_events_for_directory(const fs::path& dir_path) {
     LOG_DEBUG("Emitting deletion events for directory: {}", dir_path.string());
 
-    if (!assets_ || !assets_mutex_) {
+    if (!safe_assets_) {
       LOG_WARN("No assets provided for directory deletion handling");
       return;
     }
@@ -463,8 +461,8 @@ private:
     std::vector<fs::path> files_to_delete;
 
     {
-      std::lock_guard<std::mutex> lock(*assets_mutex_);
-      files_to_delete = find_assets_under_directory(*assets_, dir_path);
+      auto [lock, assets] = safe_assets_->read();
+      files_to_delete = find_assets_under_directory(assets, dir_path);
     }
 
     // Emit deletion events for all found assets

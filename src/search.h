@@ -104,8 +104,8 @@ class AssetDatabase;
 class SearchIndex;
 
 // Function to filter assets based on search query using search index
-void filter_assets(UIState& ui_state, const std::map<std::string, Asset>& assets,
-                  std::mutex& assets_mutex, SearchIndex& search_index);
+void filter_assets(UIState& ui_state, const SafeAssets& safe_assets,
+                  SearchIndex& search_index);
 
 // Entry in the sorted token index
 struct TokenEntry {

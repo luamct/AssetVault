@@ -39,8 +39,7 @@ private:
   std::atomic<bool> should_stop;
   std::atomic<bool> is_watching_flag;
   FileEventCallback callback;
-  AssetMap* assets_;
-  std::mutex* assets_mutex_;
+  SafeAssets* safe_assets_;
   std::string watched_path;
 
   // Buffer for file change notifications
@@ -67,7 +66,7 @@ public:
 
   ~WindowsFileWatcher() { stop_watching(); }
 
-  bool start_watching(const std::string& path, FileEventCallback cb, AssetMap* assets, std::mutex* assets_mutex) override {
+  bool start_watching(const std::string& path, FileEventCallback cb, SafeAssets* safe_assets) override {
     if (is_watching_flag.load()) {
       LOG_ERROR("Already watching a directory");
       return false;
@@ -75,8 +74,7 @@ public:
 
     watched_path = path;
     callback = cb;
-    assets_ = assets;
-    assets_mutex_ = assets_mutex;
+    safe_assets_ = safe_assets;
 
     // Create event for signaling
     h_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -335,9 +333,9 @@ private:
         // Use optimized O(log n) lookup to find tracked files under this path
         std::vector<fs::path> files_to_delete;
 
-        if (assets_ && assets_mutex_) {
-          std::lock_guard<std::mutex> assets_lock(*assets_mutex_);
-          files_to_delete = find_assets_under_directory(*assets_, full_path);
+        if (safe_assets_) {
+          auto [lock, assets] = safe_assets_->read();
+          files_to_delete = find_assets_under_directory(assets, full_path);
         }
 
         if (!files_to_delete.empty()) {
@@ -377,9 +375,9 @@ private:
         // Use optimized O(log n) lookup to find tracked files under this path
         std::vector<fs::path> files_to_delete;
 
-        if (assets_ && assets_mutex_) {
-          std::lock_guard<std::mutex> assets_lock(*assets_mutex_);
-          files_to_delete = find_assets_under_directory(*assets_, full_path);
+        if (safe_assets_) {
+          auto [lock, assets] = safe_assets_->read();
+          files_to_delete = find_assets_under_directory(assets, full_path);
         }
 
         if (!files_to_delete.empty()) {

@@ -94,15 +94,14 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
 
 // Main UI panel rendering functions
 void render_search_panel(UIState& ui_state,
-    std::map<std::string, Asset>& assets,
-    std::mutex& assets_mutex, SearchIndex& search_index,
+    const SafeAssets& safe_assets, SearchIndex& search_index,
     float panel_width, float panel_height);
 
 void render_progress_panel(UIState& ui_state, EventProcessor* processor,
     float panel_width, float panel_height);
 
 void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
-    std::map<std::string, Asset>& assets, float panel_width, float panel_height);
+    SafeAssets& safe_assets, float panel_width, float panel_height);
 
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
     AudioManager& audio_manager, Model& current_model,

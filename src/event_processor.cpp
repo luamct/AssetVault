@@ -18,11 +18,11 @@
 
 namespace fs = std::filesystem;
 
-EventProcessor::EventProcessor(AssetDatabase& database, std::map<std::string, Asset>& assets,
-    std::mutex& assets_mutex, std::atomic<bool>& search_update_needed,
+EventProcessor::EventProcessor(AssetDatabase& database, SafeAssets& safe_assets,
+    std::atomic<bool>& search_update_needed,
     TextureManager& texture_manager, SearchIndex& search_index,
     const std::string& assets_directory, GLFWwindow* thumbnail_context)
-    : database_(database), assets_(assets), assets_mutex_(assets_mutex), search_update_needed_(search_update_needed),
+    : database_(database), safe_assets_(safe_assets), search_update_needed_(search_update_needed),
     texture_manager_(texture_manager), search_index_(search_index), batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
     thumbnail_context_(thumbnail_context), assets_directory_(assets_directory) {
@@ -60,8 +60,8 @@ void EventProcessor::stop() {
 }
 
 bool EventProcessor::has_asset_at_path(const std::string& path) {
-    std::lock_guard<std::mutex> lock(assets_mutex_);
-    return assets_.find(path) != assets_.end();
+    auto [lock, assets] = safe_assets_.read();
+    return assets.find(path) != assets.end();
 }
 
 void EventProcessor::queue_event(const FileEvent& event) {
@@ -238,9 +238,9 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
         database_.insert_assets_batch(files_to_insert);
 
         // Single pass: update assets map and search index
-        std::lock_guard<std::mutex> lock(assets_mutex_);
+        auto [lock, assets] = safe_assets_.write();
         for (const auto& file : files_to_insert) {
-            assets_[file.path] = file;
+            assets[file.path] = file;
             search_index_.add_asset(file.id, file);
         }
     }
@@ -259,7 +259,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
 
     // Single pass: collect paths, asset IDs, and handle thumbnail cleanup
     {
-        std::lock_guard<std::mutex> lock(assets_mutex_);
+        auto [lock, assets] = safe_assets_.write();
 
         for (const auto& event : events) {
             std::string path = event.path;
@@ -268,8 +268,8 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
             // Always queue texture/thumbnail cleanup for this path
             texture_manager_.queue_texture_cleanup(path);
 
-            auto asset_it = assets_.find(path);
-            if (asset_it != assets_.end()) {
+            auto asset_it = assets.find(path);
+            if (asset_it != assets.end()) {
                 const Asset& asset = asset_it->second;
 
                 // Collect asset ID for search index cleanup
@@ -278,7 +278,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
                 }
 
                 // Remove from assets map immediately
-                assets_.erase(asset_it);
+                assets.erase(asset_it);
             }
 
             total_events_processed_++;

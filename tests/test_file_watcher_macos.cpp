@@ -27,11 +27,12 @@ fs::path get_test_files_dir() {
 }
 
 // Simple helper function for test asset management
-void add_test_asset(AssetMap& assets, const fs::path& path) {
+void add_test_asset(SafeAssets& safe_assets, const fs::path& path) {
     Asset asset;
     asset.path = path.u8string();
     asset.name = path.filename().string();
     asset.type = get_asset_type(path.u8string());
+    auto [lock, assets] = safe_assets.write();
     assets[path.u8string()] = asset;
 }
 
@@ -39,8 +40,7 @@ void add_test_asset(AssetMap& assets, const fs::path& path) {
 class FileWatcherTestFixture {
 public:
     fs::path test_dir;
-    AssetMap assets;
-    std::mutex assets_mutex;  // Not actually needed for thread safety in tests, but file watcher requires it
+    SafeAssets safe_assets;
     std::shared_ptr<std::vector<FileEvent>> shared_events;  // Thread-safe events storage
     std::unique_ptr<FileWatcher> watcher;
 
@@ -75,7 +75,7 @@ public:
             events_ptr->push_back(event);
             };
 
-        watcher->start_watching(test_dir.string(), event_callback, &assets, &assets_mutex);
+        watcher->start_watching(test_dir.string(), event_callback, &safe_assets);
 
         // Store the shared pointer so we can access events later
         shared_events = events_ptr;
@@ -235,7 +235,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         auto source_file = get_test_files_dir() / "single_file.png";
         auto internal_file = fixture.test_dir / "tracked.png";
         fs::copy_file(source_file, internal_file);
-        add_test_asset(fixture.assets, internal_file);
+        add_test_asset(fixture.safe_assets, internal_file);
 
         // Start watching
         fixture.start_watching();
@@ -289,7 +289,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
 
         // Add files to asset database
         for (const auto& file_path : test_files) {
-            add_test_asset(fixture.assets, file_path);
+            add_test_asset(fixture.safe_assets, file_path);
         }
 
         // Start watching
@@ -337,7 +337,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         auto source_file = get_test_files_dir() / "single_file.png";
         auto old_file = fixture.test_dir / "old_name.png";
         fs::copy_file(source_file, old_file);
-        add_test_asset(fixture.assets, old_file);
+        add_test_asset(fixture.safe_assets, old_file);
 
         // Start watching
         fixture.start_watching();
@@ -407,7 +407,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
             old_dir / "file3.png"
         };
         for (const auto& file : test_files) {
-            add_test_asset(fixture.assets, file);
+            add_test_asset(fixture.safe_assets, file);
         }
 
         // Start watching
@@ -570,7 +570,7 @@ TEST_CASE("[MacOS] FSEvents directory move operations", "[file_watcher_macos]") 
         auto file = fixture.test_dir / "to_delete.png";
         fs::copy_file(source_file, file);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));  // Let filesystem settle
-        add_test_asset(fixture.assets, file);
+        add_test_asset(fixture.safe_assets, file);
 
         // Start watching
         fixture.start_watching();
@@ -636,7 +636,7 @@ TEST_CASE("[MacOS] FSEvents directory move operations", "[file_watcher_macos]") 
 
         // Add all files to asset database (simulating they're tracked)
         for (const auto& file_path : test_files) {
-            add_test_asset(fixture.assets, file_path);
+            add_test_asset(fixture.safe_assets, file_path);
         }
 
         // Start watching
@@ -689,7 +689,7 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         // Track in database (simulating it was previously indexed)
-        add_test_asset(fixture.assets, file);
+        add_test_asset(fixture.safe_assets, file);
 
         // Start watching
         fixture.start_watching();
@@ -741,7 +741,7 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         // Track in database (simulating it was previously indexed)
-        add_test_asset(fixture.assets, file);
+        add_test_asset(fixture.safe_assets, file);
 
         // Start watching
         fixture.start_watching();

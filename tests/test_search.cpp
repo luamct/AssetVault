@@ -614,7 +614,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
 
 TEST_CASE("filter_assets functionality", "[search]") {
     // Create test assets map
-    std::map<std::string, Asset> test_assets;
+    SafeAssets test_assets;
     auto assets_vector = std::vector<Asset>{
         create_test_asset("monster_texture", ".png", AssetType::_2D),
         create_test_asset("robot_texture", ".jpg", AssetType::_2D),
@@ -628,23 +628,32 @@ TEST_CASE("filter_assets functionality", "[search]") {
     uint32_t id = 1;
     for (auto& asset : assets_vector) {
         asset.id = id++;
-        test_assets[asset.path] = asset;
     }
 
-    std::mutex test_mutex;
+    // Populate test_assets
+    {
+        auto [lock, assets_map] = test_assets.write();
+        for (const auto& asset : assets_vector) {
+            assets_map[asset.path] = asset;
+        }
+    }
+
     UIState search_state;
-    
+
     // Create a real SearchIndex for testing (no database dependency)
     SearchIndex search_index;
-    
+
     // Manually populate the search index for testing
-    for (const auto& [key, asset] : test_assets) {
-        search_index.add_asset(asset.id, asset);
+    {
+        auto [lock, assets_map] = test_assets.read();
+        for (const auto& [key, asset] : assets_map) {
+            search_index.add_asset(asset.id, asset);
+        }
     }
 
     SECTION("Filter by text") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster");
-        filter_assets(search_state, test_assets, test_mutex, search_index);
+        filter_assets(search_state, test_assets, search_index);
 
         REQUIRE(search_state.results.size() == 2);
         // Check that both monster assets are in results (order may vary with unordered_map)
@@ -660,7 +669,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("Filter by type") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d");
-        filter_assets(search_state, test_assets, test_mutex, search_index);
+        filter_assets(search_state, test_assets, search_index);
 
         REQUIRE(search_state.results.size() == 2);
         REQUIRE(search_state.results[0].type == AssetType::_2D);
@@ -669,7 +678,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("Filter by multiple types") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d,audio");
-        filter_assets(search_state, test_assets, test_mutex, search_index);
+        filter_assets(search_state, test_assets, search_index);
 
         REQUIRE(search_state.results.size() == 4);
         // Should include both 2D textures and both audio files
@@ -677,7 +686,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("Combined type and text filter") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d texture");
-        filter_assets(search_state, test_assets, test_mutex, search_index);
+        filter_assets(search_state, test_assets, search_index);
 
         REQUIRE(search_state.results.size() == 2);
         // Check that both texture assets are in results (order may vary with unordered_map)
@@ -693,16 +702,21 @@ TEST_CASE("filter_assets functionality", "[search]") {
 
     SECTION("No matches") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "nonexistent");
-        filter_assets(search_state, test_assets, test_mutex, search_index);
+        filter_assets(search_state, test_assets, search_index);
 
         REQUIRE(search_state.results.empty());
     }
 
     SECTION("Empty query returns all") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "");
-        filter_assets(search_state, test_assets, test_mutex, search_index);
+        filter_assets(search_state, test_assets, search_index);
 
-        REQUIRE(search_state.results.size() == test_assets.size());
+        size_t assets_size;
+        {
+            auto [lock, assets_map] = test_assets.read();
+            assets_size = assets_map.size();
+        }
+        REQUIRE(search_state.results.size() == assets_size);
     }
 
     SECTION("Search state initialization") {
@@ -710,7 +724,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
         search_state.selected_asset_index = 5;
         search_state.model_preview_row = 3;
 
-        filter_assets(search_state, test_assets, test_mutex, search_index);
+        filter_assets(search_state, test_assets, search_index);
 
         // Selection should be preserved across filtering; preview row resets
         REQUIRE(search_state.selected_asset_index == 5);

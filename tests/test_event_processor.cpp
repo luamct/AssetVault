@@ -33,12 +33,11 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
     MockDatabase db;
     MockTextureManager texture_mgr;
     MockSearchIndex search_idx;
-    std::map<std::string, Asset> assets;
-    std::mutex assets_mutex;
+    SafeAssets safe_assets;
     std::atomic<bool> search_update{false};
 
     // Create EventProcessor with mocks
-    EventProcessor processor(db, assets, assets_mutex, search_update,
+    EventProcessor processor(db, safe_assets, search_update,
                             texture_mgr, search_idx, assets_dir);
 
     SECTION("Process single created event") {
@@ -74,8 +73,11 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
         REQUIRE(search_idx.added_assets[0].asset.path == asset.path);
 
         // Verify asset was added to in-memory map
-        REQUIRE(assets.size() == 1);
-        REQUIRE(assets.count(asset.path) == 1);
+        {
+            auto [lock, assets] = safe_assets.read();
+            REQUIRE(assets.size() == 1);
+            REQUIRE(assets.count(asset.path) == 1);
+        }
     }
 
     SECTION("Process multiple created events") {
@@ -143,7 +145,10 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
         REQUIRE(db.inserted_assets.size() == 0);
 
         // No assets should be in memory either
-        REQUIRE(assets.size() == 0);
+        {
+            auto [lock, assets] = safe_assets.read();
+            REQUIRE(assets.size() == 0);
+        }
     }
 
     SECTION("Process empty event list") {
@@ -168,12 +173,11 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
     MockDatabase db;
     MockTextureManager texture_mgr;
     MockSearchIndex search_idx;
-    std::map<std::string, Asset> assets;
-    std::mutex assets_mutex;
+    SafeAssets safe_assets;
     std::atomic<bool> search_update{false};
 
     // Create EventProcessor with mocks
-    EventProcessor processor(db, assets, assets_mutex, search_update,
+    EventProcessor processor(db, safe_assets, search_update,
                             texture_mgr, search_idx, assets_dir);
 
     SECTION("Generate 3D thumbnails for 3D models") {
@@ -262,12 +266,11 @@ TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
     MockDatabase db;
     MockTextureManager texture_mgr;
     MockSearchIndex search_idx;
-    std::map<std::string, Asset> assets;
-    std::mutex assets_mutex;
+    SafeAssets safe_assets;
     std::atomic<bool> search_update{false};
 
     // Create EventProcessor with mocks
-    EventProcessor processor(db, assets, assets_mutex, search_update,
+    EventProcessor processor(db, safe_assets, search_update,
                             texture_mgr, search_idx, assets_dir);
 
     SECTION("Delete existing assets") {
@@ -278,8 +281,11 @@ TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
         Asset asset2 = create_test_asset("texture.png", ".png", AssetType::_2D,
                                         (temp_dir / "texture.png").string(), assets_dir, 2);
 
-        assets[asset1.path] = asset1;
-        assets[asset2.path] = asset2;
+        {
+            auto [lock, assets] = safe_assets.write();
+            assets[asset1.path] = asset1;
+            assets[asset2.path] = asset2;
+        }
 
         // Create deletion events
         std::vector<FileEvent> events = {
@@ -291,7 +297,10 @@ TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
         processor.process_deleted_events(events);
 
         // Verify assets were removed from in-memory map
-        REQUIRE(assets.size() == 0);
+        {
+            auto [lock, assets] = safe_assets.read();
+            REQUIRE(assets.size() == 0);
+        }
 
         // Verify database deletion was called
         REQUIRE(db.deleted_paths.size() == 2);
@@ -323,7 +332,10 @@ TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
         processor.process_deleted_events(events);
 
         // Assets map should remain empty
-        REQUIRE(assets.size() == 0);
+        {
+            auto [lock, assets] = safe_assets.read();
+            REQUIRE(assets.size() == 0);
+        }
 
         // Database deletion should still be called (paths are passed regardless)
         REQUIRE(db.deleted_paths.size() == 2);

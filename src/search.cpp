@@ -373,8 +373,8 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   return true;
 }
 
-void filter_assets(UIState& ui_state, const std::map<std::string, Asset>& assets,
-  std::mutex& assets_mutex, SearchIndex& search_index) {
+void filter_assets(UIState& ui_state, const SafeAssets& safe_assets,
+  SearchIndex& search_index) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   ui_state.results.clear();
@@ -403,7 +403,7 @@ void filter_assets(UIState& ui_state, const std::map<std::string, Asset>& assets
   SearchQuery query = parse_search_query(ui_state.buffer, ui_type_filters, active_path_filters);
 
   // Lock assets during filtering to prevent race conditions
-  std::lock_guard<std::mutex> lock(assets_mutex);
+  auto [lock, assets] = safe_assets.read();
 
   total_assets = assets.size();
   LOG_TRACE("Using SearchIndex for {} assets with query: '{}', type filters count: {}, path filters count: {}",

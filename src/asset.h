@@ -2,6 +2,9 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <map>
+#include <shared_mutex>
+#include <functional>
 
 using time_point = std::chrono::system_clock::time_point;
 
@@ -34,3 +37,32 @@ AssetType get_asset_type_from_string(const std::string& type_string);
 
 // Early filtering helper - determines if asset should be skipped based on extension
 bool should_skip_asset(const std::string& extension);
+
+// Thread-safe wrapper for the assets map with read/write lock support
+// Uses shared_mutex to allow multiple concurrent readers or single writer
+class SafeAssets {
+public:
+    using AssetMap = std::map<std::string, Asset>;
+
+    SafeAssets() = default;
+
+    // Disable copy (mutex is not copyable)
+    SafeAssets(const SafeAssets&) = delete;
+    SafeAssets& operator=(const SafeAssets&) = delete;
+
+    // Read-only access (returns shared_lock + const ref)
+    // Usage: auto [lock, assets] = safe_assets.read();
+    auto read() const -> std::pair<std::shared_lock<std::shared_mutex>, const AssetMap&> {
+        return {std::shared_lock{mutex_}, assets_};
+    }
+
+    // Write access (returns unique_lock + ref)
+    // Usage: auto [lock, assets] = safe_assets.write();
+    auto write() -> std::pair<std::unique_lock<std::shared_mutex>, AssetMap&> {
+        return {std::unique_lock{mutex_}, assets_};
+    }
+
+private:
+    mutable std::shared_mutex mutex_;
+    AssetMap assets_;
+};
