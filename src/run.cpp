@@ -39,8 +39,7 @@
 
 namespace fs = std::filesystem;
 
-// Global shutdown flag for graceful termination
-std::atomic<bool> g_shutdown_requested(false);
+// Global shutdown flag removed - now passed as parameter to run()
 
 // Global callback state (needed for callback functions)
 EventProcessor* g_event_processor = nullptr;
@@ -161,7 +160,7 @@ void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db
   }
 }
 
-int run() {
+int run(std::atomic<bool>* shutdown_requested) {
   // Check if running in headless mode (via TESTING env var)
   bool headless_mode = std::getenv("TESTING") != nullptr;
 
@@ -356,7 +355,7 @@ int run() {
     // Headless mode: just wait for shutdown signal
     // Background systems (EventProcessor, FileWatcher, Database) continue running
     LOG_INFO("Entering headless mode - background systems active, waiting for shutdown signal");
-    while (!g_shutdown_requested.load()) {
+    while (!shutdown_requested || !shutdown_requested->load()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     LOG_INFO("Headless mode: shutdown signal received");
@@ -367,7 +366,7 @@ int run() {
     LOG_INFO("Entering main rendering loop");
 
     // Main loop - check both window close and shutdown request
-    while (!glfwWindowShouldClose(window) && !g_shutdown_requested.load()) {
+    while (!glfwWindowShouldClose(window) && (!shutdown_requested || !shutdown_requested->load())) {
       double current_time = glfwGetTime();
       io_ptr->DeltaTime = (float) (current_time - last_time);
       last_time = current_time;

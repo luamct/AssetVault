@@ -19,7 +19,9 @@
       "Read(//Users/luamct/GameDev/**)",
       "Bash(gtimeout:*)",
       "Bash(pkill:*)",
-      "Bash(g++:*)"
+      "Bash(g++:*)",
+      "Bash(time:*)",
+      "Bash(./build/FileWatcherMacOSTest:*)"
     ],
     "deny": [],
     "ask": [],

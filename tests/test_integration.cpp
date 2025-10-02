@@ -54,11 +54,11 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
     }
 
     SECTION("Processes files already in folder at start") {
-        g_shutdown_requested = false;
+        std::atomic<bool> shutdown_requested(false);
 
         std::thread test_thread([&]{
             // Wait for app initialization and initial scan
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             // Verify all existing files were found and processed
             AssetDatabase verify_db;
@@ -89,21 +89,20 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             verify_db.close();
 
             LOG_INFO("[TEST] ✓ All existing files processed successfully");
-            g_shutdown_requested = true;
+            shutdown_requested = true;
         });
 
-        int result = run();
+        int result = run(&shutdown_requested);
         test_thread.join();
         REQUIRE(result == 0);
     }
 
     SECTION("Loads database which already contains assets") {
         // Database already has assets from previous test - just verify it loads them
-
-        g_shutdown_requested = false;
+        std::atomic<bool> shutdown_requested(false);
 
         std::thread test_thread([&]{
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
             // Verify it loaded the existing database
             AssetDatabase verify_db;
@@ -115,22 +114,21 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             verify_db.close();
 
             LOG_INFO("[TEST] ✓ Successfully loaded existing database");
-            g_shutdown_requested = true;
+            shutdown_requested = true;
         });
 
-        int result = run();
+        int result = run(&shutdown_requested);
         test_thread.join();
         REQUIRE(result == 0);
     }
 
     SECTION("Adds assets added during execution") {
         // Database and assets directory already configured from previous tests
-
-        g_shutdown_requested = false;
+        std::atomic<bool> shutdown_requested(false);
 
         std::thread test_thread([&]{
             // Wait for app initialization
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
             AssetDatabase verify_db;
             REQUIRE(verify_db.initialize(db_path_str));
@@ -144,13 +142,13 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
 
             if (fs::exists(test_file)) {
                 fs::remove(test_file);
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
 
             fs::copy_file(source_file, test_file);
 
             // Wait for FileWatcher and EventProcessor
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             // Verify asset was added
             REQUIRE(verify_db.initialize(db_path_str));
@@ -173,24 +171,24 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             fs::remove(test_file);
 
             LOG_INFO("[TEST] ✓ Asset added successfully during execution");
-            g_shutdown_requested = true;
+            shutdown_requested = true;
         });
 
-        int result = run();
+        int result = run(&shutdown_requested);
         test_thread.join();
         REQUIRE(result == 0);
     }
 
     SECTION("Removes assets deleted during execution") {
-        g_shutdown_requested = false;
+        std::atomic<bool> shutdown_requested(false);
 
         std::thread test_thread([&]{
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
             // Create a temporary file first
             fs::path test_file = assets_dir / "temp_delete_test.obj";
             fs::copy_file(assets_dir / "racer.obj", test_file);
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             AssetDatabase verify_db;
             REQUIRE(verify_db.initialize(db_path_str));
@@ -200,7 +198,7 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             // Delete the file
             LOG_INFO("[TEST] Deleting asset file...");
             fs::remove(test_file);
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             // Verify it was removed from database
             REQUIRE(verify_db.initialize(db_path_str));
@@ -219,21 +217,20 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             verify_db.close();
 
             LOG_INFO("[TEST] ✓ Asset removed successfully from database");
-            g_shutdown_requested = true;
+            shutdown_requested = true;
         });
 
-        int result = run();
+        int result = run(&shutdown_requested);
         test_thread.join();
         REQUIRE(result == 0);
     }
 
     SECTION("Creates thumbnails for 3D models") {
         // Thumbnails already created from previous tests
-
-        g_shutdown_requested = false;
+        std::atomic<bool> shutdown_requested(false);
 
         std::thread test_thread([&]{
-            std::this_thread::sleep_for(std::chrono::seconds(3));
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             // Check that 3D model thumbnails were created
             fs::path thumbnail_dir = fs::path("data") / "thumbnails";
@@ -257,21 +254,20 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             REQUIRE(found_racer_thumb);
 
             LOG_INFO("[TEST] ✓ 3D model thumbnails created successfully");
-            g_shutdown_requested = true;
+            shutdown_requested = true;
         });
 
-        int result = run();
+        int result = run(&shutdown_requested);
         test_thread.join();
         REQUIRE(result == 0);
     }
 
     SECTION("Creates thumbnails for SVG files") {
         // SVG thumbnail already created from first test
-
-        g_shutdown_requested = false;
+        std::atomic<bool> shutdown_requested(false);
 
         std::thread test_thread([&]{
-            std::this_thread::sleep_for(std::chrono::seconds(3));
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             // Check that SVG thumbnail was created
             fs::path thumbnail_dir = fs::path("data") / "thumbnails";
@@ -292,10 +288,10 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             REQUIRE(found_svg_thumb);
 
             LOG_INFO("[TEST] ✓ SVG thumbnail created successfully");
-            g_shutdown_requested = true;
+            shutdown_requested = true;
         });
 
-        int result = run();
+        int result = run(&shutdown_requested);
         test_thread.join();
         REQUIRE(result == 0);
     }
