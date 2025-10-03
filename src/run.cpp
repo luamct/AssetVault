@@ -207,8 +207,6 @@ int run(std::atomic<bool>* shutdown_requested) {
     LOG_INFO("Loaded assets directory from config: {}", ui_state.assets_directory);
   }
 
-  search_index.set_assets_directory(ui_state.assets_directory);
-
   // Debug: Force clear database if flag is set
   if (Config::DEBUG_FORCE_DB_CLEAR) {
     LOG_WARN("Forcing database clear for testing...");
@@ -255,9 +253,8 @@ int run(std::atomic<bool>* shutdown_requested) {
   glfwWindowHint(GLFW_VISIBLE, headless_mode ? GLFW_FALSE : GLFW_TRUE);
   int window_width = headless_mode ? 1 : Config::WINDOW_WIDTH;
   int window_height = headless_mode ? 1 : Config::WINDOW_HEIGHT;
-  const char* window_title = headless_mode ? "Asset Inventory (Headless)" : "Asset Inventory";
 
-  GLFWwindow* window = glfwCreateWindow(window_width, window_height, window_title, nullptr, nullptr);
+  GLFWwindow* window = glfwCreateWindow(window_width, window_height, "Asset Inventory", nullptr, nullptr);
   if (!window) {
     LOG_ERROR("Failed to create GLFW window");
     glfwTerminate();
@@ -300,16 +297,14 @@ int run(std::atomic<bool>* shutdown_requested) {
   }
 
   // Initialize EventProcessor
-  event_processor = new EventProcessor(safe_assets,
-    ui_state.update_needed, texture_manager,
-    ui_state.assets_directory, thumbnail_context);
+  event_processor = new EventProcessor(safe_assets, ui_state.update_needed, ui_state.assets_directory, thumbnail_context);
   if (!event_processor->start()) {
     LOG_ERROR("Failed to start EventProcessor");
     return -1;
   }
 
   // Register core services for global access
-  Services::provide(&database, &search_index, event_processor);
+  Services::provide(&database, &search_index, event_processor, &file_watcher, &texture_manager);
   LOG_INFO("Core services registered");
 
   // Initialize 3D preview system
@@ -379,7 +374,6 @@ int run(std::atomic<bool>* shutdown_requested) {
       search_index.clear();
       clear_ui_state(ui_state);
 
-      search_index.set_assets_directory(new_path);
       if (!database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, new_path)) {
         LOG_WARN("Failed to persist assets directory configuration: {}", new_path);
       }
@@ -467,13 +461,13 @@ int run(std::atomic<bool>* shutdown_requested) {
     ImGui::PopStyleVar(3);
 
     // Calculate panel sizes using actual window content area
-    float window_width = ImGui::GetContentRegionAvail().x;
-    float window_height = ImGui::GetContentRegionAvail().y;
+    float content_width = ImGui::GetContentRegionAvail().x;
+    float content_height = ImGui::GetContentRegionAvail().y;
     float WINDOW_MARGIN = 6.0f;
-    float left_width = window_width * 0.75f - WINDOW_MARGIN;
-    float right_width = window_width * 0.25f - WINDOW_MARGIN;
-    float top_height = window_height * 0.20f - WINDOW_MARGIN;
-    float bottom_height = window_height * 0.80f - WINDOW_MARGIN;
+    float left_width = content_width * 0.75f - WINDOW_MARGIN;
+    float right_width = content_width * 0.25f - WINDOW_MARGIN;
+    float top_height = content_height * 0.20f - WINDOW_MARGIN;
+    float bottom_height = content_height * 0.80f - WINDOW_MARGIN;
 
     // ============ TOP LEFT: Search Box ============
     render_search_panel(ui_state, safe_assets, left_width, top_height);

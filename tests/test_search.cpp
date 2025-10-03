@@ -645,8 +645,8 @@ TEST_CASE("filter_assets functionality", "[search]") {
     SearchIndex search_index;
     MockDatabase mock_db;  // Needed for Services
 
-    // Register services for testing (nullptr for EventProcessor - not needed for search tests)
-    Services::provide(&mock_db, &search_index, nullptr);
+    // Register services for testing (nullptr for EventProcessor, FileWatcher, and TextureManager - not needed for search tests)
+    Services::provide(&mock_db, &search_index, nullptr, nullptr, nullptr);
 
     // Manually populate the search index for testing
     {

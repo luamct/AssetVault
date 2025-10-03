@@ -21,10 +21,9 @@ namespace fs = std::filesystem;
 
 EventProcessor::EventProcessor(SafeAssets& safe_assets,
     std::atomic<bool>& search_update_needed,
-    TextureManager& texture_manager,
     const std::string& assets_directory, GLFWwindow* thumbnail_context)
     : safe_assets_(safe_assets), search_update_needed_(search_update_needed),
-    texture_manager_(texture_manager), batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
+    batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
     thumbnail_context_(thumbnail_context), assets_directory_(assets_directory) {
 }
@@ -204,11 +203,11 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
             // Generate thumbnails immediately after processing
             if (file_info.type == AssetType::_3D) {
                 fs::path thumbnail_path = get_thumbnail_path(file_info.relative_path);
-                texture_manager_.generate_3d_model_thumbnail(file_info.path, thumbnail_path);
+                Services::texture_manager().generate_3d_model_thumbnail(file_info.path, thumbnail_path);
             }
             else if (file_info.type == AssetType::_2D && file_info.extension == ".svg") {
                 fs::path thumbnail_path = get_thumbnail_path(file_info.relative_path);
-                texture_manager_.generate_svg_thumbnail(file_info.path, thumbnail_path);
+                Services::texture_manager().generate_svg_thumbnail(file_info.path, thumbnail_path);
             }
 
             // Add asset to database (exceptions prevent reaching this point on failure)
@@ -267,7 +266,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
             paths_to_delete.push_back(path);
 
             // Always queue texture/thumbnail cleanup for this path
-            texture_manager_.queue_texture_cleanup(path);
+            Services::texture_manager().queue_texture_cleanup(path);
 
             auto asset_it = assets.find(path);
             if (asset_it != assets.end()) {

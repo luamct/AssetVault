@@ -24,7 +24,6 @@ class EventProcessor {
 public:
     EventProcessor(SafeAssets& safe_assets,
         std::atomic<bool>& search_update_needed,
-        TextureManager& texture_manager,
         const std::string& assets_directory, GLFWwindow* thumbnail_context = nullptr);
     ~EventProcessor();
 
@@ -86,7 +85,6 @@ private:
     // References to global state
     SafeAssets& safe_assets_;
     std::atomic<bool>& search_update_needed_;
-    TextureManager& texture_manager_;
 
     // Processing thread and synchronization
     std::thread processing_thread_;

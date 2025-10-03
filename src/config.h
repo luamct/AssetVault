@@ -107,7 +107,7 @@ namespace Config {
     inline std::filesystem::path get_data_directory() {
         // Check if we're in testing mode
         if (std::getenv("TESTING")) {
-            return "data";
+            return "build/data";
         }
 
 #ifdef _WIN32

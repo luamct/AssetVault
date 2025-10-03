@@ -36,11 +36,12 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
     // One-time setup: Enable headless mode and configure database
     setenv("TESTING", "1", 1);
 
-    fs::path test_db = fs::path("data") / "assets.db";
+    fs::path data_dir = Config::get_data_directory();
+    fs::path test_db = data_dir / "assets.db";
     if (fs::exists(test_db)) {
         fs::remove(test_db);
     }
-    fs::create_directories("data");
+    fs::create_directories(data_dir);
 
     std::string db_path_str = Config::get_database_path().string();
     std::string assets_directory = test_assets_source.string();
@@ -233,7 +234,7 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             // Check that 3D model thumbnails were created
-            fs::path thumbnail_dir = fs::path("data") / "thumbnails";
+            fs::path thumbnail_dir = Config::get_thumbnail_directory();
             REQUIRE(fs::exists(thumbnail_dir));
 
             bool found_racer_thumb = false;
@@ -270,7 +271,7 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             // Check that SVG thumbnail was created
-            fs::path thumbnail_dir = fs::path("data") / "thumbnails";
+            fs::path thumbnail_dir = Config::get_thumbnail_directory();
             REQUIRE(fs::exists(thumbnail_dir));
 
             bool found_svg_thumb = false;
@@ -298,7 +299,7 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
 
     // One-time teardown: Clean up test environment
     unsetenv("TESTING");
-    if (fs::exists("data")) {
-        fs::remove_all("data");
+    if (fs::exists(data_dir)) {
+        fs::remove_all(data_dir);
     }
 }

@@ -130,10 +130,6 @@ public:
     bool build_from_assets(const std::vector<Asset>& assets);
     bool save_to_database() const;
 
-    void set_assets_directory(const std::string& assets_directory) { 
-      assets_directory_ = assets_directory; 
-    }
-    
     // Asset operations
     virtual void add_asset(uint32_t asset_id, const Asset& asset);
     virtual void remove_asset(uint32_t asset_id);
@@ -157,8 +153,7 @@ public:
 private:
     std::vector<TokenEntry> sorted_tokens_;  // Binary searchable
     std::unordered_map<uint32_t, Asset> asset_cache_;  // Fast ID-to-asset lookup
-    std::string assets_directory_;
-    
+
     // Tokenization
     std::unordered_set<std::string> tokenize_asset(const Asset& asset) const;
     bool is_valid_token(const std::string& token) const;
