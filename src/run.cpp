@@ -193,7 +193,6 @@ int run(std::atomic<bool>* shutdown_requested) {
   Model current_model;  // 3D model preview state
   Camera3D camera;      // 3D camera state for preview controls
   SearchIndex search_index;  // Search index for fast lookups
-  EventProcessor* event_processor = nullptr;  // Initialized after OpenGL context creation
 
   // Initialize database
   std::string db_path = Config::get_database_path().string();
@@ -207,14 +206,10 @@ int run(std::atomic<bool>* shutdown_requested) {
     LOG_INFO("Loaded assets directory from config: {}", ui_state.assets_directory);
   }
 
-  // Debug: Force clear database if flag is set
-  if (Config::DEBUG_FORCE_DB_CLEAR) {
-    LOG_WARN("Forcing database clear for testing...");
+  // Debug: Clean start - clear both database and thumbnails for fresh debugging session
+  if (Config::DEBUG_CLEAN_START) {
+    LOG_WARN("DEBUG_CLEAN_START enabled - clearing database and thumbnails...");
     database.clear_all_assets();
-  }
-
-  // Debug: Force clear thumbnails if flag is set
-  if (Config::DEBUG_FORCE_THUMBNAIL_CLEAR) {
     clear_all_thumbnails();
   }
 
@@ -296,15 +291,15 @@ int run(std::atomic<bool>* shutdown_requested) {
     return -1;
   }
 
-  // Initialize EventProcessor
-  event_processor = new EventProcessor(safe_assets, ui_state.update_needed, ui_state.assets_directory, thumbnail_context);
-  if (!event_processor->start()) {
+  // Initialize EventProcessor (needs thumbnail_context created above)
+  EventProcessor event_processor(safe_assets, ui_state.update_needed, ui_state.assets_directory, thumbnail_context);
+  if (!event_processor.start()) {
     LOG_ERROR("Failed to start EventProcessor");
     return -1;
   }
 
   // Register core services for global access
-  Services::provide(&database, &search_index, event_processor, &file_watcher, &texture_manager);
+  Services::provide(&database, &search_index, &event_processor, &file_watcher, &texture_manager);
   LOG_INFO("Core services registered");
 
   // Initialize 3D preview system
@@ -518,14 +513,7 @@ int run(std::atomic<bool>* shutdown_requested) {
 
   // Stop file watcher and close database
   file_watcher.stop_watching();
-
-  // Cleanup event processor
-  if (event_processor) {
-    event_processor->stop();
-    delete event_processor;
-    event_processor = nullptr;
-  }
-
+  event_processor.stop();
   database.close();
 
   // Destroy shared thumbnail context
