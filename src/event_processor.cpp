@@ -198,7 +198,7 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
     // Single pass: process files and generate thumbnails for 3D assets
     for (const auto& event : events) {
         try {
-            Asset file_info = process_file(event.path, event.timestamp);
+            Asset file_info = process_file(event.path);
 
             // Generate thumbnails immediately after processing
             if (file_info.type == AssetType::_3D) {
@@ -294,7 +294,7 @@ void EventProcessor::process_deleted_events(const std::vector<FileEvent>& events
     Services::database().delete_assets_batch(paths_to_delete);
 }
 
-Asset EventProcessor::process_file(const std::string& full_path, const std::chrono::system_clock::time_point& timestamp) {
+Asset EventProcessor::process_file(const std::string& full_path) {
     fs::path path_obj = fs::u8path(full_path);
 
     // Check if file exists first - throw exception for non-existent files

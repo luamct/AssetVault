@@ -28,7 +28,8 @@ fs::path get_test_files_dir() {
 }
 
 // Simple helper function for test asset management
-void add_test_asset(AssetMap& assets, const fs::path& path) {
+void add_test_asset(SafeAssets& safe_assets, const fs::path& path) {
+    auto [lock, assets] = safe_assets.write();
     Asset asset;
     // Normalize path separators like the real application does
     asset.path = path.generic_u8string();
@@ -41,8 +42,7 @@ void add_test_asset(AssetMap& assets, const fs::path& path) {
 class FileWatcherTestFixture {
 public:
     fs::path test_dir;
-    AssetMap assets;
-    std::mutex assets_mutex;  // Not actually needed for thread safety in tests, but file watcher requires it
+    SafeAssets assets;
     std::shared_ptr<std::vector<FileEvent>> shared_events;  // Thread-safe events storage
     std::unique_ptr<FileWatcher> watcher;
 
@@ -77,7 +77,7 @@ public:
             events_ptr->push_back(event);
             };
 
-        watcher->start_watching(test_dir.string(), event_callback, &assets, &assets_mutex);
+        watcher->start_watching(test_dir.string(), event_callback, &assets);
 
         // Store the shared pointer so we can access events later
         shared_events = events_ptr;

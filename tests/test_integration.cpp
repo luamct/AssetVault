@@ -3,9 +3,16 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <cstdlib>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
+// Windows compatibility for setenv/unsetenv
+#ifdef _WIN32
+#define setenv(name, value, overwrite) _putenv_s(name, value)
+#define unsetenv(name) _putenv_s(name, "")
+#endif
 
 #include "database.h"
 #include "event_processor.h"
