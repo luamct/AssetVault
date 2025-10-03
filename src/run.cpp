@@ -40,13 +40,29 @@
 
 namespace fs = std::filesystem;
 
-// Global shutdown flag removed - now passed as parameter to run()
-
 // File event callback function (runs on background thread)
 // Queues events for unified processing
 void on_file_event(const FileEvent& event) {
   LOG_TRACE("[NEW_EVENT] type = {}, asset = {}", FileWatcher::file_event_type_to_string(event.type), event.path);
   Services::event_processor().queue_event(event);
+}
+
+// Initialize ImGui UI system
+static ImGuiIO* initialize_imgui(GLFWwindow* window) {
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO& io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+  io.IniFilename = nullptr;  // Disable imgui.ini file
+
+  Theme::load_roboto_font(io);
+  Theme::setup_light_fun_theme();
+
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
+  ImGui_ImplOpenGL3_Init("#version 330");
+
+  return &io;
 }
 
 // Perform initial scan and generate events for EventProcessor
@@ -86,7 +102,7 @@ void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db
         current_files.insert(entry.path().generic_u8string());
       }
       catch (const fs::filesystem_error& e) {
-      LOG_WARN("Could not access {}: {}", entry.path().u8string(), e.what());
+        LOG_WARN("Could not access {}: {}", entry.path().u8string(), e.what());
         continue;
       }
     }
@@ -162,7 +178,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   bool headless_mode = std::getenv("TESTING") != nullptr;
 
   Logger::initialize(LogLevel::Debug);
-  LOG_INFO("AssetInventory application starting{}", headless_mode ? " (headless mode)" : "...");
+  LOG_INFO("AssetInventory application starting {}", headless_mode ? " (headless mode)" : "...");
 
   // Initialize application directories (create cache, thumbnail, and data directories)
   Config::initialize_directories();
@@ -177,6 +193,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   Model current_model;  // 3D model preview state
   Camera3D camera;      // 3D camera state for preview controls
   SearchIndex search_index;  // Search index for fast lookups
+  EventProcessor* event_processor = nullptr;  // Initialized after OpenGL context creation
 
   // Initialize database
   std::string db_path = Config::get_database_path().string();
@@ -208,22 +225,10 @@ int run(std::atomic<bool>* shutdown_requested) {
   LOG_INFO("Loaded {} assets from database", db_assets.size());
 
   // Initialize search index from assets
-  LOG_INFO("Initializing search index...");
-  auto index_start = std::chrono::high_resolution_clock::now();
-
   if (!search_index.build_from_assets(db_assets)) {
     LOG_ERROR("Failed to initialize search index");
     return -1;
   }
-
-  auto index_end = std::chrono::high_resolution_clock::now();
-  auto index_duration = std::chrono::duration_cast<std::chrono::milliseconds>(index_end - index_start);
-  LOG_INFO("Search index initialized with {} tokens in {}ms",
-           search_index.get_token_count(), index_duration.count());
-
-  // Register core services for global access (event_processor registered later after creation)
-  Services::provide(&database, &search_index, nullptr);
-  LOG_INFO("Core services registered (EventProcessor will be added after initialization)");
 
   // Initialize GLFW
   LOG_INFO("Initializing GLFW{}...", headless_mode ? " (headless)" : "");
@@ -246,18 +251,13 @@ int run(std::atomic<bool>* shutdown_requested) {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
 
-  // In headless mode, create minimal invisible window
-  if (headless_mode) {
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-  }
+  // Window configuration based on mode
+  glfwWindowHint(GLFW_VISIBLE, headless_mode ? GLFW_FALSE : GLFW_TRUE);
+  int window_width = headless_mode ? 1 : Config::WINDOW_WIDTH;
+  int window_height = headless_mode ? 1 : Config::WINDOW_HEIGHT;
+  const char* window_title = headless_mode ? "Asset Inventory (Headless)" : "Asset Inventory";
 
-  // Create window (visible or invisible depending on headless mode)
-  GLFWwindow* window = glfwCreateWindow(
-    headless_mode ? 1 : Config::WINDOW_WIDTH,
-    headless_mode ? 1 : Config::WINDOW_HEIGHT,
-    headless_mode ? "Asset Inventory (Headless)" : "Asset Inventory",
-    nullptr, nullptr);
-
+  GLFWwindow* window = glfwCreateWindow(window_width, window_height, window_title, nullptr, nullptr);
   if (!window) {
     LOG_ERROR("Failed to create GLFW window");
     glfwTerminate();
@@ -291,28 +291,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   glfwMakeContextCurrent(window);
 
   // Initialize Dear ImGui (skip in headless mode)
-  ImGuiIO* io_ptr = nullptr;
-  if (!headless_mode) {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io_ptr = &io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-
-    // Disable imgui.ini file - we'll handle window positioning in code
-    io.IniFilename = nullptr;
-
-    // Load Roboto font
-    Theme::load_roboto_font(io);
-
-    // Setup light and fun theme
-    Theme::setup_light_fun_theme();
-
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 330");
-  }
+  ImGuiIO* io_ptr = headless_mode ? nullptr : initialize_imgui(window);
 
   // Initialize texture manager
   if (!texture_manager.initialize()) {
@@ -320,7 +299,8 @@ int run(std::atomic<bool>* shutdown_requested) {
     return -1;
   }
 
-  EventProcessor* event_processor = new EventProcessor(safe_assets,
+  // Initialize EventProcessor
+  event_processor = new EventProcessor(safe_assets,
     ui_state.update_needed, texture_manager,
     ui_state.assets_directory, thumbnail_context);
   if (!event_processor->start()) {
@@ -328,9 +308,9 @@ int run(std::atomic<bool>* shutdown_requested) {
     return -1;
   }
 
-  // Update services with EventProcessor
+  // Register core services for global access
   Services::provide(&database, &search_index, event_processor);
-  LOG_INFO("EventProcessor registered with Services");
+  LOG_INFO("Core services registered");
 
   // Initialize 3D preview system
   if (!texture_manager.initialize_preview_system()) {

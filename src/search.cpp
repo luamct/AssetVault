@@ -12,6 +12,7 @@
 #include <regex>
 #include <unordered_set>
 #include <cctype>
+#include <chrono>
 
 // SearchTokenizer Implementation
 SearchTokenizer::SearchTokenizer(const std::string& input)
@@ -724,6 +725,7 @@ void SearchIndex::update_asset(uint32_t asset_id, const Asset& asset) {
 }
 
 bool SearchIndex::build_from_assets(const std::vector<Asset>& assets) {
+  auto start = std::chrono::high_resolution_clock::now();
   LOG_INFO("Building search index from {} assets...", assets.size());
 
   // Clear existing index
@@ -781,7 +783,9 @@ bool SearchIndex::build_from_assets(const std::vector<Asset>& assets) {
   // Sort tokens for binary search
   std::sort(sorted_tokens_.begin(), sorted_tokens_.end());
 
-  LOG_INFO("Search index built: {} tokens for {} assets", sorted_tokens_.size(), assets.size());
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  LOG_INFO("Search index built: {} tokens for {} assets in {}ms", sorted_tokens_.size(), assets.size(), duration.count());
   return true;
 }
 

@@ -50,8 +50,6 @@ void TextureData::cleanup() {
   }
 }
 
-
-
 bool TextureManager::initialize() {
   // Load default texture
   default_texture_ = load_texture("images/texture.png");
