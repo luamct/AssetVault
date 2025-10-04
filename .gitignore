@@ -109,3 +109,4 @@ vcpkg_installed/
 /db
 jgl_demos/
 /thumbnails
+/data_directory
