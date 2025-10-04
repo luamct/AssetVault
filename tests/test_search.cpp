@@ -579,6 +579,49 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
         REQUIRE(results.empty());
     }
 
+    SECTION("Query splitting with underscores") {
+        Asset asset;
+        asset.id = 1;
+        asset.name = "blaster_A.fbx";
+        asset.extension = "fbx";
+        asset.path = "/assets/weapons/blaster_A.fbx";
+        asset.relative_path = "weapons/blaster_A.fbx";
+        asset.size = 1024;
+        asset.last_modified = std::chrono::system_clock::now();
+        asset.type = AssetType::_3D;
+
+        index.add_asset(asset.id, asset);
+
+        // Searching for "blaster_A" should split into ["blaster", "a"] (a is ignored as <=2)
+        // So it should match on "blaster" alone
+        auto results = index.search_prefix("blaster");
+        REQUIRE(!results.empty());
+        REQUIRE(results[0] == asset.id);
+    }
+
+    SECTION("Query splitting with slashes") {
+        Asset asset;
+        asset.id = 1;
+        asset.name = "blaster.fbx";
+        asset.extension = "fbx";
+        asset.path = "/assets/models/blaster.fbx";
+        asset.relative_path = "models/blaster.fbx";
+        asset.size = 1024;
+        asset.last_modified = std::chrono::system_clock::now();
+        asset.type = AssetType::_3D;
+
+        index.add_asset(asset.id, asset);
+
+        // Should match individual tokens
+        auto results = index.search_prefix("models");
+        REQUIRE(!results.empty());
+        REQUIRE(results[0] == asset.id);
+
+        results = index.search_prefix("blaster");
+        REQUIRE(!results.empty());
+        REQUIRE(results[0] == asset.id);
+    }
+
     SECTION("Index statistics work correctly") {
         // Add a few assets
         Asset asset1;
@@ -737,5 +780,23 @@ TEST_CASE("filter_assets functionality", "[search]") {
         // Should initialize loaded range
         REQUIRE(search_state.loaded_start_index == 0);
         REQUIRE(search_state.loaded_end_index <= UIState::LOAD_BATCH_SIZE);
+    }
+
+    SECTION("Query splitting on slashes and underscores") {
+        // Search for "monster_texture" - should split into "monster" and "texture"
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster_texture");
+        filter_assets(search_state, test_assets);
+
+        // Should find the asset with both "monster" and "texture" in its path
+        REQUIRE(search_state.results.size() == 1);
+        REQUIRE(search_state.results[0].name == "monster_texture");
+
+        // Search for "monster/model" - should split into "monster" and "model"
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster/model");
+        filter_assets(search_state, test_assets);
+
+        // Should find the asset with both "monster" and "model" in its path
+        REQUIRE(search_state.results.size() == 1);
+        REQUIRE(search_state.results[0].name == "monster_model");
     }
 }

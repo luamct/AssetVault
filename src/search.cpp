@@ -418,12 +418,24 @@ void filter_assets(UIState& ui_state, const SafeAssets& safe_assets) {
   if (!query.text_query.empty()) {
     // Use search index for text search (O(log n) performance)
     std::vector<std::string> search_terms;
-    std::stringstream ss(to_lowercase(query.text_query));
-    std::string term;
-    while (ss >> term) {
-      if (term.length() > 2) {  // Only use terms longer than 2 characters
-        search_terms.push_back(term);
+    std::string lower_query = to_lowercase(query.text_query);
+
+    // Split on whitespace, slashes, and underscores to match tokenization behavior
+    std::string current_term;
+    for (char c : lower_query) {
+      if (std::isspace(static_cast<unsigned char>(c)) || c == '/' || c == '_') {
+        if (!current_term.empty() && current_term.length() > 2) {
+          search_terms.push_back(current_term);
+        }
+        current_term.clear();
       }
+      else {
+        current_term += c;
+      }
+    }
+    // Add final term
+    if (!current_term.empty() && current_term.length() > 2) {
+      search_terms.push_back(current_term);
     }
 
     if (!search_terms.empty()) {
@@ -687,6 +699,8 @@ void SearchIndex::add_asset(uint32_t asset_id, const Asset& asset) {
       sorted_tokens_.insert(it, std::move(new_entry));
     }
   }
+
+  LOG_DEBUG("Search index: {} unique tokens for {} assets", sorted_tokens_.size(), asset_cache_.size());
 }
 
 void SearchIndex::remove_asset(uint32_t asset_id) {

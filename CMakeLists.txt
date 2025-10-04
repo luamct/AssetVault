@@ -38,6 +38,8 @@ elseif(APPLE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wno-unused-parameter -Wunused-variable -Wunused")
     # Enable shadow warnings but only for our code, not external libraries
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow")
+    # Suppress warnings from external header-only libraries
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-field-initializers")
     # Enable C++17 filesystem support
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 elseif(UNIX AND NOT APPLE)

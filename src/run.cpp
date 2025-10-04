@@ -439,6 +439,7 @@ int run(std::atomic<bool>* shutdown_requested) {
     // P key to print texture cache
     if (ImGui::IsKeyPressed(ImGuiKey_P) && !input_io.WantTextInput) {
       texture_manager.print_texture_cache(ui_state.assets_directory);
+      search_index.debug_print_tokens();
     }
 
     // Create main window that fits perfectly to viewport
