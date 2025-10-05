@@ -28,7 +28,7 @@ public:
     ~EventProcessor();
 
     // Start/stop the background processing thread
-    bool start();
+    bool start(const std::string& assets_directory);
     void stop();
 
     // Add events to the processing queue
@@ -60,9 +60,6 @@ public:
 
     // Check if asset exists at path (thread-safe)
     bool has_asset_at_path(const std::string& path);
-
-    // Update the assets root directory (only call when stopped)
-    void set_assets_directory(const std::string& dir) { assets_directory_ = dir; }
 
     // Clear all pending events from the queue (only call when stopped)
     void clear_queue();

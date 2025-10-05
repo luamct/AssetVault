@@ -32,11 +32,12 @@ EventProcessor::~EventProcessor() {
     stop();
 }
 
-bool EventProcessor::start() {
+bool EventProcessor::start(const std::string& assets_directory) {
     if (running_) {
         return true; // Already running
     }
 
+    assets_directory_ = assets_directory;
     running_ = true;
     processing_thread_ = std::thread(&EventProcessor::process_events, this);
 

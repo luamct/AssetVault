@@ -1,5 +1,9 @@
 #pragma once
 
+#include <string>
+#include "asset.h"  // For SafeAssets
+#include "file_watcher.h"  // For FileEventCallback
+
 // Forward declarations
 class AssetDatabase;
 class SearchIndex;
@@ -48,7 +52,8 @@ public:
 
     // Start all services (calls initialize/start on each service)
     // Must be called after provide()
-    static bool start();
+    // If assets_directory is configured in database, also scans for changes and starts file watcher
+    static bool start(FileEventCallback file_event_callback, SafeAssets* safe_assets);
 
     // Access registered services
     // Will assert if services haven't been provided yet

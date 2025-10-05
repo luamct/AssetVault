@@ -6,7 +6,10 @@
 #include "texture_manager.h"
 #include "audio_manager.h"
 #include "logger.h"
+#include "config.h"
+#include "utils.h"
 #include <cassert>
+#include <vector>
 
 // Static member initialization
 AssetDatabase* Services::database_ = nullptr;
@@ -25,29 +28,77 @@ void Services::provide(AssetDatabase* database, SearchIndex* search_index, Event
     audio_manager_ = audio_manager;
 }
 
-bool Services::start() {
+bool Services::start(FileEventCallback file_event_callback, SafeAssets* safe_assets) {
+    assert(database_ != nullptr && "Services not provided before start()");
+    assert(search_index_ != nullptr && "Services not provided before start()");
     assert(texture_manager_ != nullptr && "Services not provided before start()");
     assert(event_processor_ != nullptr && "Services not provided before start()");
     assert(audio_manager_ != nullptr && "Services not provided before start()");
+    assert(file_watcher_ != nullptr && "Services not provided before start()");
 
+    // Initialize database
+    std::string db_path = Config::get_database_path().string();
+    LOG_INFO("Using database path: {}", db_path);
+    if (!database_->initialize(db_path)) {
+        LOG_ERROR("Failed to initialize database");
+        return false;
+    }
+
+    // Load assets directory from config
+    std::string assets_directory;
+    if (database_->try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, assets_directory)) {
+        LOG_INFO("Loaded assets directory from config: {}", assets_directory);
+    }
+
+    // Debug: Clean start - clear both database and thumbnails
+    if (Config::DEBUG_CLEAN_START) {
+        LOG_WARN("DEBUG_CLEAN_START enabled - clearing database and thumbnails...");
+        database_->clear_all_assets();
+        clear_all_thumbnails();
+    }
+
+    // Get all assets from database for search index
+    auto db_assets = database_->get_all_assets();
+    LOG_INFO("Loaded {} assets from database", db_assets.size());
+
+    // Initialize search index from assets
+    if (!search_index_->build_from_assets(db_assets)) {
+        LOG_ERROR("Failed to initialize search index");
+        return false;
+    }
+
+    // Initialize texture manager
     if (!texture_manager_->initialize()) {
         LOG_ERROR("Failed to initialize texture manager");
         return false;
     }
 
-    if (!event_processor_->start()) {
+    // Start event processor with assets directory
+    if (!event_processor_->start(assets_directory)) {
         LOG_ERROR("Failed to start event processor");
         return false;
     }
 
+    // Initialize 3D preview system
     if (!texture_manager_->initialize_preview_system()) {
         LOG_ERROR("Failed to initialize 3D preview system");
         return false;
     }
 
+    // Initialize audio manager (not critical)
     if (!audio_manager_->initialize()) {
         LOG_WARN("Failed to initialize audio system");
         // Not critical - continue without audio support
+    }
+
+    // Scan for changes and start file watcher if assets directory is configured
+    if (!assets_directory.empty() && safe_assets != nullptr) {
+        scan_for_changes(assets_directory, db_assets, *safe_assets);
+
+        if (!file_watcher_->start_watching(assets_directory, file_event_callback, safe_assets)) {
+            LOG_ERROR("Failed to start file watcher for path: {}", assets_directory);
+            return false;
+        }
     }
 
     return true;

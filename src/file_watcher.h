@@ -79,3 +79,6 @@ class FileWatcherImpl {
   virtual void stop_watching() = 0;
   virtual bool is_watching() const = 0;
 };
+
+// Perform initial scan and generate events for EventProcessor
+void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db_assets, SafeAssets& safe_assets);

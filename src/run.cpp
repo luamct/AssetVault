@@ -65,114 +65,6 @@ static ImGuiIO* initialize_imgui(GLFWwindow* window) {
   return &io;
 }
 
-// Perform initial scan and generate events for EventProcessor
-void scan_for_changes(const std::string& root_path, const std::vector<Asset>& db_assets, SafeAssets& safe_assets) {
-  if (root_path.empty()) {
-    LOG_WARN("scan_for_changes called with empty root path; skipping");
-    return;
-  }
-  auto scan_start = std::chrono::high_resolution_clock::now();
-
-  LOG_INFO("Starting scan for changes...");
-
-  LOG_INFO("Database contains {} assets", db_assets.size());
-  std::unordered_map<std::string, Asset> db_map;
-  for (const auto& asset : db_assets) {
-    db_map[asset.path] = asset;
-  }
-
-  // Phase 1: Get filesystem paths (fast scan)
-  std::unordered_set<std::string> current_files;
-  try {
-    fs::path root(root_path);
-    if (!fs::exists(root) || !fs::is_directory(root)) {
-      LOG_ERROR("Path does not exist or is not a directory: {}", root_path);
-      return;
-    }
-
-    LOG_INFO("Scanning directory: {}", root_path);
-
-    // Single pass: Get all file paths (with early filtering for ignored asset types)
-    for (const auto& entry : fs::recursive_directory_iterator(root)) {
-      try {
-        // Early filtering: skip directories and ignored asset types to reduce processing
-        if (entry.is_directory() || should_skip_asset(entry.path().extension().string())) {
-          continue;
-        }
-        current_files.insert(entry.path().generic_u8string());
-      }
-      catch (const fs::filesystem_error& e) {
-        LOG_WARN("Could not access {}: {}", entry.path().u8string(), e.what());
-        continue;
-      }
-    }
-
-    LOG_INFO("Found {} files and directories", current_files.size());
-  }
-  catch (const fs::filesystem_error& e) {
-    LOG_ERROR("Error scanning directory: {}", e.what());
-    return;
-  }
-
-  // Track what events need to be generated
-  std::vector<FileEvent> events_to_queue;
-
-  // Get current timestamp for all events
-  auto current_time = std::chrono::system_clock::now();
-
-  // Compare filesystem state with database state - only check for new files
-  for (const auto& path : current_files) {
-    auto db_it = db_map.find(path);
-    if (db_it == db_map.end()) {
-      // File not in database - create a Created event
-      FileEvent event(FileEventType::Created, path);
-      event.timestamp = current_time;
-      events_to_queue.push_back(event);
-    }
-  }
-
-  LOG_INFO("Now looking for deleted files");
-
-  // Find files in database that no longer exist on filesystem
-  for (const auto& db_asset : db_assets) {
-    if (current_files.find(db_asset.path) == current_files.end()) {
-      // File no longer exists - create a Deleted event
-      FileEvent event(FileEventType::Deleted, db_asset.path);
-      event.timestamp = current_time;
-      events_to_queue.push_back(event);
-    }
-  }
-
-  auto scan_end = std::chrono::high_resolution_clock::now();
-  auto scan_duration = std::chrono::duration_cast<std::chrono::milliseconds>(scan_end - scan_start);
-
-  LOG_INFO("Filesystem scan completed in {}ms", scan_duration.count());
-  LOG_INFO("Found {} changes to process", events_to_queue.size());
-
-  // Load existing assets from database
-  {
-    auto [lock, assets] = safe_assets.write();
-    // Load existing database assets into assets map
-    for (const auto& asset : db_assets) {
-      assets[asset.path] = asset;
-    }
-    LOG_INFO("Loaded {} existing assets from database", assets.size());
-  }
-
-  // Then queue any detected changes to update from that baseline
-  if (!events_to_queue.empty()) {
-    auto queue_start = std::chrono::high_resolution_clock::now();
-    Services::event_processor().queue_events(events_to_queue);
-    auto queue_end = std::chrono::high_resolution_clock::now();
-    auto queue_duration = std::chrono::duration_cast<std::chrono::milliseconds>(queue_end - queue_start);
-
-    LOG_INFO("Published {} events to EventProcessor in {}ms", events_to_queue.size(), queue_duration.count());
-  }
-  else {
-    LOG_INFO("No changes detected");
-  }
-}
-
 int run(std::atomic<bool>* shutdown_requested) {
   // Check if running in headless mode (via TESTING env var)
   bool headless_mode = std::getenv("TESTING") != nullptr;
@@ -194,34 +86,6 @@ int run(std::atomic<bool>* shutdown_requested) {
   Camera3D camera;      // 3D camera state for preview controls
   SearchIndex search_index;  // Search index for fast lookups
 
-  // Initialize database
-  std::string db_path = Config::get_database_path().string();
-  LOG_INFO("Using database path: {}", db_path);
-  if (!database.initialize(db_path)) {
-    LOG_ERROR("Failed to initialize database");
-    return -1;
-  }
-
-  if (database.try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, ui_state.assets_directory)) {
-    LOG_INFO("Loaded assets directory from config: {}", ui_state.assets_directory);
-  }
-
-  // Debug: Clean start - clear both database and thumbnails for fresh debugging session
-  if (Config::DEBUG_CLEAN_START) {
-    LOG_WARN("DEBUG_CLEAN_START enabled - clearing database and thumbnails...");
-    database.clear_all_assets();
-    clear_all_thumbnails();
-  }
-
-  // Get all assets from database for both search index and initial scan
-  auto db_assets = database.get_all_assets();
-  LOG_INFO("Loaded {} assets from database", db_assets.size());
-
-  // Initialize search index from assets
-  if (!search_index.build_from_assets(db_assets)) {
-    LOG_ERROR("Failed to initialize search index");
-    return -1;
-  }
 
   // Initialize GLFW
   LOG_INFO("Initializing GLFW{}...", headless_mode ? " (headless)" : "");
@@ -289,20 +153,14 @@ int run(std::atomic<bool>* shutdown_requested) {
   Services::provide(&database, &search_index, &event_processor, &file_watcher, &texture_manager, &audio_manager);
   LOG_INFO("Core services registered");
 
-  // Start all services
-  if (!Services::start()) {
+  // Start all services (includes database init, search index build, scanning, and file watcher)
+  if (!Services::start(on_file_event, &safe_assets)) {
     LOG_ERROR("Failed to start services");
     return -1;
   }
 
-  if (!ui_state.assets_directory.empty()) {
-    scan_for_changes(ui_state.assets_directory, db_assets, safe_assets);
-
-    if (!file_watcher.start_watching(ui_state.assets_directory, on_file_event, &safe_assets)) {
-      LOG_ERROR("Failed to start file watcher");
-      return -1;
-    }
-  }
+  // Load assets directory from config
+  database.try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, ui_state.assets_directory);
 
   // Main loop
   if (headless_mode) {
@@ -357,9 +215,8 @@ int run(std::atomic<bool>* shutdown_requested) {
         LOG_WARN("Failed to persist assets directory configuration: {}", new_path);
       }
 
-      // Update event processor directory and restart
-      Services::event_processor().set_assets_directory(ui_state.assets_directory);
-      if (!Services::event_processor().start()) {
+      // Restart event processor with new assets directory
+      if (!Services::event_processor().start(ui_state.assets_directory)) {
         LOG_ERROR("Failed to restart event processor after assets directory change");
       }
 
