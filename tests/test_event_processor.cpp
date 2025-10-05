@@ -41,7 +41,7 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
     EventProcessor processor(safe_assets, search_update, assets_dir);
 
     // Register services for testing
-    Services::provide(&db, &search_idx, &processor, nullptr, &texture_mgr);
+    Services::provide(&db, &search_idx, &processor, nullptr, &texture_mgr, nullptr);
 
     SECTION("Process single created event") {
         // Create a test file
@@ -182,7 +182,7 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
     EventProcessor processor(safe_assets, search_update, assets_dir);
 
     // Register services for testing
-    Services::provide(&db, &search_idx, &processor, nullptr, &texture_mgr);
+    Services::provide(&db, &search_idx, &processor, nullptr, &texture_mgr, nullptr);
 
     SECTION("Generate 3D thumbnails for 3D models") {
         auto fbx_file = create_temp_file(temp_dir, "model.fbx", "3D model data");
@@ -276,7 +276,7 @@ TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
     EventProcessor processor(safe_assets, search_update, assets_dir);
 
     // Register services for testing
-    Services::provide(&db, &search_idx, &processor, nullptr, &texture_mgr);
+    Services::provide(&db, &search_idx, &processor, nullptr, &texture_mgr, nullptr);
 
     SECTION("Delete existing assets") {
         // Pre-populate assets map with test assets

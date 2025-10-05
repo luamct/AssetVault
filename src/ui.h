@@ -104,5 +104,4 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     SafeAssets& safe_assets, float panel_width, float panel_height);
 
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
-    AudioManager& audio_manager, Model& current_model,
-    Camera3D& camera, float panel_width, float panel_height);
+    Model& current_model, Camera3D& camera, float panel_width, float panel_height);

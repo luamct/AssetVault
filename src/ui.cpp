@@ -950,8 +950,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 }
 
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
-  AudioManager& audio_manager, Model& current_model,
-  Camera3D& camera, float panel_width, float panel_height) {
+  Model& current_model, Camera3D& camera, float panel_width, float panel_height) {
   ImGui::BeginChild("AssetPreview", ImVec2(panel_width, panel_height), true);
 
   // Use fixed panel dimensions for stable calculations
@@ -964,8 +963,8 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
   // Handle asset selection changes (by id)
   if ((ui_state.selected_asset ? ui_state.selected_asset->id : 0) != prev_selected_id) {
-    if (prev_selected_type == AssetType::Audio && audio_manager.has_audio_loaded()) {
-      audio_manager.unload_audio();
+    if (prev_selected_type == AssetType::Audio && Services::audio_manager().has_audio_loaded()) {
+      Services::audio_manager().unload_audio();
     }
     prev_selected_id = ui_state.selected_asset ? ui_state.selected_asset->id : 0;
     prev_selected_type = (ui_state.selected_asset.has_value()) ? ui_state.selected_asset->type : AssetType::Unknown;
@@ -1119,26 +1118,26 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::Text("%d", face_count);
       }
     }
-    else if (selected_asset.type == AssetType::Audio && audio_manager.is_initialized()) {
+    else if (selected_asset.type == AssetType::Audio && Services::audio_manager().is_initialized()) {
       // Audio handling for sound assets
 
       // Load the audio file if it's different from the currently loaded one
       const std::string asset_path = selected_asset.path;
-      const std::string current_file = audio_manager.get_current_file();
+      const std::string current_file = Services::audio_manager().get_current_file();
 
       if (asset_path != current_file) {
         LOG_DEBUG("Main: Audio file changed from '{}' to '{}'", current_file, asset_path);
-        bool loaded = audio_manager.load_audio(asset_path);
+        bool loaded = Services::audio_manager().load_audio(asset_path);
         if (loaded) {
           // Set initial volume to match our slider default
-          audio_manager.set_volume(0.5f);
+          Services::audio_manager().set_volume(0.5f);
           // Auto-play if enabled
           if (ui_state.auto_play_audio) {
-            audio_manager.play();
+            Services::audio_manager().play();
           }
         }
         else {
-          LOG_DEBUG("Main: Failed to load audio, current_file is now '{}'", audio_manager.get_current_file());
+          LOG_DEBUG("Main: Failed to load audio, current_file is now '{}'", Services::audio_manager().get_current_file());
         }
       }
 
@@ -1167,10 +1166,10 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       ImGui::Spacing();
 
       // Audio controls - single row layout
-      if (audio_manager.has_audio_loaded()) {
-        float duration = audio_manager.get_duration();
-        float position = audio_manager.get_position();
-        bool is_playing = audio_manager.is_playing();
+      if (Services::audio_manager().has_audio_loaded()) {
+        float duration = Services::audio_manager().get_duration();
+        float position = Services::audio_manager().get_position();
+        bool is_playing = Services::audio_manager().is_playing();
 
         // Format time helper lambda
         auto format_time = [](float seconds) -> std::string {
@@ -1199,10 +1198,10 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
         if (ImGui::ImageButton("##PlayPause", (ImTextureID) (intptr_t) icon_texture, ImVec2(button_size, button_size))) {
           if (is_playing) {
-            audio_manager.pause();
+            Services::audio_manager().pause();
           }
           else {
-            audio_manager.play();
+            Services::audio_manager().play();
           }
         }
 
@@ -1233,7 +1232,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
         if (seek_changed) {
           seeking = true;
-          audio_manager.set_position(seek_position);
+          Services::audio_manager().set_position(seek_position);
         }
 
         // Reset seeking flag when not actively dragging
@@ -1264,7 +1263,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::SetCursorPosY(baseline_y + button_size * 0.5f);
 
         if (audio_seek_bar("##VolumeBar", &audio_volume, 0.0f, 1.0f, volume_width, volume_height)) {
-          audio_manager.set_volume(audio_volume);
+          Services::audio_manager().set_volume(audio_volume);
         }
 
         // Show percentage on hover

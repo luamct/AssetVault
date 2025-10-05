@@ -6,6 +6,7 @@ class SearchIndex;
 class EventProcessor;
 class FileWatcher;
 class TextureManager;
+class AudioManager;
 
 // Services - Central registry for application-wide singleton services
 //
@@ -43,7 +44,11 @@ class Services {
 public:
     // Register core services at application startup
     // Must be called before any service accessor methods are used
-    static void provide(AssetDatabase* database, SearchIndex* search_index, EventProcessor* event_processor, FileWatcher* file_watcher, TextureManager* texture_manager);
+    static void provide(AssetDatabase* database, SearchIndex* search_index, EventProcessor* event_processor, FileWatcher* file_watcher, TextureManager* texture_manager, AudioManager* audio_manager);
+
+    // Start all services (calls initialize/start on each service)
+    // Must be called after provide()
+    static bool start();
 
     // Access registered services
     // Will assert if services haven't been provided yet
@@ -52,6 +57,7 @@ public:
     static EventProcessor& event_processor();
     static FileWatcher& file_watcher();
     static TextureManager& texture_manager();
+    static AudioManager& audio_manager();
 
 private:
     static AssetDatabase* database_;
@@ -59,4 +65,5 @@ private:
     static EventProcessor* event_processor_;
     static FileWatcher* file_watcher_;
     static TextureManager* texture_manager_;
+    static AudioManager* audio_manager_;
 };

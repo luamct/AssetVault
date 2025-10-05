@@ -282,36 +282,17 @@ int run(std::atomic<bool>* shutdown_requested) {
   // Switch back to main context
   glfwMakeContextCurrent(window);
 
-  // Initialize Dear ImGui (skip in headless mode)
-  ImGuiIO* io_ptr = headless_mode ? nullptr : initialize_imgui(window);
-
-  // Initialize texture manager
-  if (!texture_manager.initialize()) {
-    LOG_ERROR("Failed to initialize texture manager");
-    return -1;
-  }
-
   // Initialize EventProcessor (needs thumbnail_context created above)
   EventProcessor event_processor(safe_assets, ui_state.update_needed, ui_state.assets_directory, thumbnail_context);
-  if (!event_processor.start()) {
-    LOG_ERROR("Failed to start EventProcessor");
-    return -1;
-  }
 
   // Register core services for global access
-  Services::provide(&database, &search_index, &event_processor, &file_watcher, &texture_manager);
+  Services::provide(&database, &search_index, &event_processor, &file_watcher, &texture_manager, &audio_manager);
   LOG_INFO("Core services registered");
 
-  // Initialize 3D preview system
-  if (!texture_manager.initialize_preview_system()) {
-    LOG_WARN("Failed to initialize 3D preview system");
+  // Start all services
+  if (!Services::start()) {
+    LOG_ERROR("Failed to start services");
     return -1;
-  }
-
-  // Initialize audio manager
-  if (!audio_manager.initialize()) {
-    LOG_WARN("Failed to initialize audio system");
-    // Not critical - continue without audio support
   }
 
   if (!ui_state.assets_directory.empty()) {
@@ -334,6 +315,9 @@ int run(std::atomic<bool>* shutdown_requested) {
     LOG_INFO("Headless mode: shutdown signal received");
   }
   else {
+    // Initialize Dear ImGui (skip in headless mode)
+    ImGuiIO* io_ptr = initialize_imgui(window);
+
     // UI mode: full rendering loop
     double last_time = glfwGetTime();
     LOG_INFO("Entering main rendering loop");
@@ -426,11 +410,11 @@ int run(std::atomic<bool>* shutdown_requested) {
     if (ImGui::IsKeyPressed(ImGuiKey_Space) && !input_io.WantTextInput) {
       if (ui_state.selected_asset.has_value()) {
         const Asset& sel = *ui_state.selected_asset;
-        if (sel.type == AssetType::Audio && audio_manager.has_audio_loaded()) {
-          if (audio_manager.is_playing()) {
-            audio_manager.pause();
+        if (sel.type == AssetType::Audio && Services::audio_manager().has_audio_loaded()) {
+          if (Services::audio_manager().is_playing()) {
+            Services::audio_manager().pause();
           } else {
-            audio_manager.play();
+            Services::audio_manager().play();
           }
         }
       }
@@ -477,7 +461,7 @@ int run(std::atomic<bool>* shutdown_requested) {
 
     // ============ BOTTOM RIGHT: Preview Panel ============
     ImGui::SameLine();
-    render_preview_panel(ui_state, texture_manager, audio_manager, current_model, camera, right_width, bottom_height);
+    render_preview_panel(ui_state, texture_manager, current_model, camera, right_width, bottom_height);
 
     ImGui::End();
 
@@ -496,10 +480,8 @@ int run(std::atomic<bool>* shutdown_requested) {
     }  // End of UI mode main loop
   }  // End of headless/UI conditional
 
-  // Cleanup audio manager
-  audio_manager.cleanup();
-
-  // Cleanup texture manager
+  // Cleanup services
+  Services::audio_manager().cleanup();
   texture_manager.cleanup();
 
   // Cleanup 3D preview resources
