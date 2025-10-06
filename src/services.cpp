@@ -95,13 +95,46 @@ bool Services::start(FileEventCallback file_event_callback, SafeAssets* safe_ass
     if (!assets_directory.empty() && safe_assets != nullptr) {
         scan_for_changes(assets_directory, db_assets, *safe_assets);
 
-        if (!file_watcher_->start_watching(assets_directory, file_event_callback, safe_assets)) {
+        if (!file_watcher_->start(assets_directory, file_event_callback, safe_assets)) {
             LOG_ERROR("Failed to start file watcher for path: {}", assets_directory);
             return false;
         }
     }
 
     return true;
+}
+
+void Services::stop(SafeAssets* safe_assets) {
+    // Stop services in reverse order of startup
+
+    // Stop file watcher first to prevent new events
+    file_watcher_->stop();
+
+    // Stop event processor to finish/discard pending events
+    event_processor_->stop();
+
+    // Clear assets and data if requested (for restart scenario)
+    if (safe_assets != nullptr) {
+        // Clear assets from memory
+        {
+            auto [lock, assets] = safe_assets->write();
+            assets.clear();
+        }
+
+        // Clear database
+        if (!database_->clear_all_assets()) {
+            LOG_WARN("Failed to clear assets table");
+        }
+
+        // Clear search index
+        search_index_->clear();
+
+        LOG_INFO("Services stopped and data cleared (restart scenario)");
+    } else {
+        // Final shutdown - close database connection
+        database_->close();
+        LOG_INFO("All services stopped (final shutdown)");
+    }
 }
 
 AssetDatabase& Services::database() {

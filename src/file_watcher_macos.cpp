@@ -131,7 +131,6 @@ public:
     // Start timer thread for processing pending events
     timer_thread = std::thread(&MacOSFileWatcher::timer_loop, this);
 
-
     LOG_INFO("Started watching directory: {}", path);
     return true;
   }

@@ -61,14 +61,14 @@ public:
     ~FileWatcherTestFixture() {
         // Clean up - ensure file watcher is completely stopped before destruction
         if (watcher) {
-            watcher->stop_watching();
+            watcher->stop();
             // Give time for all callbacks to complete and threads to shut down
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         fs::remove_all(test_dir);
     }
 
-    void start_watching() {
+    void start() {
         // Create a thread-safe callback using a shared pointer to the events vector
         // This ensures the callback data stays alive even if the test fixture is destroyed
         auto events_ptr = std::make_shared<std::vector<FileEvent>>();
@@ -77,7 +77,7 @@ public:
             events_ptr->push_back(event);
             };
 
-        watcher->start_watching(test_dir.string(), event_callback, &assets);
+        watcher->start(test_dir.string(), event_callback, &assets);
 
         // Store the shared pointer so we can access events later
         shared_events = events_ptr;
@@ -140,7 +140,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         fs::copy_file(source_file, external_file);
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
         fixture.clear_events();
 
         // Action: Move file into watched directory
@@ -194,7 +194,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         fs::copy(test_files_dir, external_dir, fs::copy_options::recursive);
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
         fixture.clear_events();
 
         // Action: Move directory into watched area
@@ -240,7 +240,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         add_test_asset(fixture.assets, internal_file);
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
         fixture.clear_events();
 
         // Action: Move file out of watched directory
@@ -299,7 +299,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         }
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
 
         // Give file watcher time to settle
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -348,7 +348,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         add_test_asset(fixture.assets, old_file);
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
         fixture.clear_events();
 
         // Action: Rename file within watched directory
@@ -414,7 +414,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         }
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
         fixture.clear_events();
 #
         // Action: Rename directory within watched area
@@ -472,7 +472,7 @@ TEST_CASE("[Windows] Files and directories copied into watched directory", "[fil
         auto source_file = get_test_files_dir() / "single_file.png";
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
         fixture.clear_events();
 
         // Action: Copy file into watched directory
@@ -522,7 +522,7 @@ TEST_CASE("[Windows] Files and directories copied into watched directory", "[fil
         fs::copy(test_files_dir, source_dir, fs::copy_options::recursive);
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
         fixture.clear_events();
 
         // Action: Copy entire directory into watched area
@@ -575,7 +575,7 @@ TEST_CASE("[Windows] Directory and file deletion operations", "[file_watcher_win
         add_test_asset(fixture.assets, file);
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
 
         // Wait for initial events to settle
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -649,7 +649,7 @@ TEST_CASE("[Windows] Directory and file deletion operations", "[file_watcher_win
         }
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
 
         // Delete the entire directory
         fs::remove_all(test_delete_dir);
@@ -701,7 +701,7 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         add_test_asset(fixture.assets, file);
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
 
         // Wait for initial events to settle and clear any creation events from the copy
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -752,7 +752,7 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         add_test_asset(fixture.assets, file);
 
         // Start watching
-        fixture.start_watching();
+        fixture.start();
 
         // Wait for initial events to settle and clear any creation events from the copy
         std::this_thread::sleep_for(std::chrono::milliseconds(200));

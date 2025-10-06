@@ -193,22 +193,9 @@ int run(std::atomic<bool>* shutdown_requested) {
       const std::string new_path = ui_state.assets_path_selected;
       ui_state.assets_directory = new_path;
       
-      // Stop file watcher, event processor and clear pending events
-      file_watcher.stop_watching();
-      Services::event_processor().stop();
-      Services::event_processor().clear_queue();
+      // Stop all services and clear all data
+      Services::stop(&safe_assets);
 
-      // Clear assets from memory and database
-      {
-        auto [lock, assets] = safe_assets.write();
-        assets.clear();
-      }
-
-      if (!database.clear_all_assets()) {
-        LOG_WARN("Failed to clear assets table before reinitializing assets directory");
-      }
-
-      search_index.clear();
       clear_ui_state(ui_state);
 
       if (!database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, new_path)) {
@@ -222,7 +209,7 @@ int run(std::atomic<bool>* shutdown_requested) {
 
       scan_for_changes(ui_state.assets_directory, std::vector<Asset>(), safe_assets);
 
-      if (!file_watcher.start_watching(ui_state.assets_directory, on_file_event, &safe_assets)) {
+      if (!file_watcher.start(ui_state.assets_directory, on_file_event, &safe_assets)) {
         LOG_ERROR("Failed to start file watcher for path: {}", ui_state.assets_directory);
       }
     }
@@ -351,10 +338,8 @@ int run(std::atomic<bool>* shutdown_requested) {
     ImGui::DestroyContext();
   }
 
-  // Stop file watcher and close database
-  file_watcher.stop_watching();
-  event_processor.stop();
-  database.close();
+  // Stop all services
+  Services::stop();
 
   // Destroy shared thumbnail context
   glfwDestroyWindow(thumbnail_context);

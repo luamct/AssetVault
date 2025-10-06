@@ -32,7 +32,7 @@ class AudioManager;
 //   Services::database().insert_asset(asset);
 //   auto results = Services::search_index().search_terms(terms);
 //   Services::event_processor().queue_event(event);
-//   Services::file_watcher().start_watching(path, callback);
+//   Services::file_watcher().start(path, callback);
 //   Services::texture_manager().load_texture(path);
 //
 //   // In tests:
@@ -54,6 +54,10 @@ public:
     // Must be called after provide()
     // If assets_directory is configured in database, also scans for changes and starts file watcher
     static bool start(FileEventCallback file_event_callback, SafeAssets* safe_assets);
+
+    // Stop all services (calls stop/close on each service)
+    // If safe_assets is provided, also clears assets from memory, database, and search index
+    static void stop(SafeAssets* safe_assets = nullptr);
 
     // Access registered services
     // Will assert if services haven't been provided yet

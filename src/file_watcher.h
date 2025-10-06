@@ -44,10 +44,10 @@ class FileWatcher {
   ~FileWatcher();
 
   // Start watching a directory
-  bool start_watching(const std::string& path, FileEventCallback callback, SafeAssets* assets = nullptr);
+  bool start(const std::string& path, FileEventCallback callback, SafeAssets* assets = nullptr);
 
   // Stop watching
-  void stop_watching();
+  void stop();
 
   // Check if currently watching
   bool is_watching() const;

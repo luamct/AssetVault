@@ -47,7 +47,7 @@ bool EventProcessor::start(const std::string& assets_directory) {
 
 void EventProcessor::stop() {
     if (!running_) {
-        return; // Already stopped
+        return;
     }
 
     running_ = false;
@@ -56,6 +56,9 @@ void EventProcessor::stop() {
     if (processing_thread_.joinable()) {
         processing_thread_.join();
     }
+
+    // Clear any remaining events in the queue
+    clear_queue();
 
     LOG_INFO("EventProcessor stopped. Total processed: {}", processed_count_.load());
 }
