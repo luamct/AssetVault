@@ -69,7 +69,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   // Check if running in headless mode (via TESTING env var)
   bool headless_mode = std::getenv("TESTING") != nullptr;
 
-  Logger::initialize(LogLevel::Debug);
+  Logger::initialize(LogLevel::Info);
   LOG_INFO("AssetInventory application starting {}", headless_mode ? " (headless mode)" : "...");
 
   // Initialize application directories (create cache, thumbnail, and data directories)
@@ -188,32 +188,6 @@ int run(std::atomic<bool>* shutdown_requested) {
 
       glfwPollEvents();
 
-    if (ui_state.assets_directory_changed) {
-      ui_state.assets_directory_changed = false;
-      const std::string new_path = ui_state.assets_path_selected;
-      ui_state.assets_directory = new_path;
-      
-      // Stop all services and clear all data
-      Services::stop(&safe_assets);
-
-      clear_ui_state(ui_state);
-
-      if (!database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, new_path)) {
-        LOG_WARN("Failed to persist assets directory configuration: {}", new_path);
-      }
-
-      // Restart event processor with new assets directory
-      if (!Services::event_processor().start(ui_state.assets_directory)) {
-        LOG_ERROR("Failed to restart event processor after assets directory change");
-      }
-
-      scan_for_changes(ui_state.assets_directory, std::vector<Asset>(), safe_assets);
-
-      if (!file_watcher.start(ui_state.assets_directory, on_file_event, &safe_assets)) {
-        LOG_ERROR("Failed to start file watcher for path: {}", ui_state.assets_directory);
-      }
-    }
-
     // Development shortcut: ESC to close app
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -298,7 +272,7 @@ int run(std::atomic<bool>* shutdown_requested) {
 
     // ============ TOP RIGHT: Progress and Messages ============
     ImGui::SameLine();
-    render_progress_panel(ui_state, right_width, top_height);
+    render_progress_panel(ui_state, safe_assets, right_width, top_height);
 
     // ============ BOTTOM LEFT: Search Results ============
     render_asset_grid(ui_state, texture_manager, safe_assets, left_width, bottom_height);

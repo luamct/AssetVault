@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <exception>
 #include <filesystem>
 #include <mutex>
@@ -65,24 +66,28 @@ struct TextureParameters {
     }
 };
 
+// Memory cleanup strategy for TextureData
+enum class OnDestroy {
+    NONE,       // Don't free (data is managed elsewhere)
+    FREE,       // Use free() - allocated with malloc/calloc
+    STBI_FREE   // Use stbi_image_free() - allocated by stb_image
+};
+
 // Intermediate texture data representation (separates data loading from OpenGL creation)
 struct TextureData {
     unsigned char* data;
     int width;
     int height;
-    int channels;
     GLenum format;
-    std::string source_info; // for debugging
-    bool is_stbi_data; // Track whether data was allocated by stbi or malloc
+    OnDestroy on_destroy; // How to free memory on destruction
 
     // Constructor
-    TextureData() : data(nullptr), width(0), height(0), channels(0), format(GL_RGB), is_stbi_data(true) {}
+    TextureData() : data(nullptr), width(0), height(0), format(GL_RGB), on_destroy(OnDestroy::STBI_FREE) {}
 
     // Move constructor
     TextureData(TextureData&& other) noexcept
         : data(other.data), width(other.width), height(other.height),
-          channels(other.channels), format(other.format), source_info(std::move(other.source_info)),
-          is_stbi_data(other.is_stbi_data) {
+          format(other.format), on_destroy(other.on_destroy) {
         other.data = nullptr; // Transfer ownership
     }
 
@@ -93,10 +98,8 @@ struct TextureData {
             data = other.data;
             width = other.width;
             height = other.height;
-            channels = other.channels;
             format = other.format;
-            source_info = std::move(other.source_info);
-            is_stbi_data = other.is_stbi_data;
+            on_destroy = other.on_destroy;
             other.data = nullptr; // Transfer ownership
         }
         return *this;
@@ -119,6 +122,27 @@ private:
     void cleanup(); // Implementation in .cpp file
 };
 
+// Animated asset data (GIFs, sprite sheets, etc.)
+struct AnimationData {
+  std::vector<unsigned int> frame_textures;  // OpenGL texture ID for each frame
+  std::vector<int> frame_delays;             // Delay for each frame in milliseconds (stb_image returns ms, not centiseconds)
+  int width;                                 // Frame width
+  int height;                                // Frame height
+  mutable int current_frame_index;
+  mutable std::chrono::steady_clock::time_point animation_start_time;
+
+  AnimationData() : width(0), height(0), current_frame_index(0),
+    animation_start_time(std::chrono::steady_clock::now()) {}
+
+  ~AnimationData(); // Implementation in .cpp file
+
+  // Disable copy (move-only type)
+  AnimationData(const AnimationData&) = delete;
+  AnimationData& operator=(const AnimationData&) = delete;
+  AnimationData(AnimationData&&) = default;
+  AnimationData& operator=(AnimationData&&) = default;
+};
+
 // Texture cache entry structure
 struct TextureCacheEntry {
   unsigned int texture_id;          // The owned texture ID for this specific asset (deleted during cleanup)
@@ -130,7 +154,7 @@ struct TextureCacheEntry {
   bool loaded;                       // Whether texture is successfully loaded
 
   TextureCacheEntry() : texture_id(0), default_texture_id(0), width(0), height(0), retry_count(0), loaded(false) {}
-  
+
   /**
    * Returns the texture ID for rendering: default_texture_id if set, otherwise texture_id.
    * Prevents shared type icons from being deleted during asset cleanup.
@@ -153,7 +177,7 @@ public:
   // Asset texture management
   unsigned int load_texture(const char* filename);
   unsigned int load_texture(const char* filename, int* out_width, int* out_height);
-  TextureCacheEntry get_asset_texture(const Asset& asset);
+  const TextureCacheEntry& get_asset_texture(const Asset& asset);
   const std::string& u8_path(const Asset& asset);
   void load_type_textures();
   void cleanup_texture_cache(const std::string& path);
@@ -181,6 +205,8 @@ public:
   // SVG thumbnail generation
   virtual void generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path);
 
+  // Animated GIF loading (on-demand, for preview panel)
+  std::unique_ptr<AnimationData> load_animated_gif(const std::string& filepath);
 
   // Texture cache cleanup (thread-safe)
   virtual void queue_texture_cleanup(const std::string& file_path);

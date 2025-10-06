@@ -561,19 +561,18 @@ void render_search_panel(
 namespace {
   bool g_request_assets_path_popup = false;
 
-  void render_assets_directory_modal(UIState& ui_state) {
+  bool render_assets_directory_modal(UIState& ui_state) {
+    bool directory_changed = false;
     if (g_request_assets_path_popup) {
       ImGui::OpenPopup("Select Assets Directory");
       g_request_assets_path_popup = false;
 
-      // Initialize selected path if not already set
-      if (ui_state.assets_path_selected.empty()) {
-        if (!ui_state.assets_directory.empty()) {
-          ui_state.assets_path_selected = ui_state.assets_directory;
-        }
-        else {
-          ui_state.assets_path_selected = get_home_directory();
-        }
+      // Initialize to current assets directory if set, otherwise home directory
+      if (!ui_state.assets_directory.empty()) {
+        ui_state.assets_path_selected = ui_state.assets_directory;
+      }
+      else {
+        ui_state.assets_path_selected = get_home_directory();
       }
     }
 
@@ -669,7 +668,7 @@ namespace {
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
               ui_state.assets_path_selected = entry.path().generic_u8string();
               LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
-              ui_state.assets_directory_changed = true;
+              directory_changed = true;
               ImGui::CloseCurrentPopup();
             }
           }
@@ -683,7 +682,7 @@ namespace {
       if (ImGui::Button("Select", ImVec2(160.0f, 0.0f))) {
         if (!ui_state.assets_path_selected.empty()) {
           LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
-          ui_state.assets_directory_changed = true;
+          directory_changed = true;
         }
         ImGui::CloseCurrentPopup();
       }
@@ -697,10 +696,12 @@ namespace {
     if (popup_style_pushed) {
       ImGui::PopStyleColor();
     }
+
+    return directory_changed;
   }
 }
 
-void render_progress_panel(UIState& ui_state,
+void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
   float panel_width, float panel_height) {
   ImGui::BeginChild("ProgressRegion", ImVec2(panel_width, panel_height), true);
 
@@ -765,15 +766,42 @@ void render_progress_panel(UIState& ui_state,
   button_pos.y = std::max(button_pos.y, ImGui::GetCursorPosY());
   ImGui::SetCursorPos(button_pos);
   if (ImGui::Button("Assets Path", ImVec2(150.0f, 0.0f))) {
-    if (ui_state.assets_path_selected.empty()) {
-      ui_state.assets_path_selected = get_home_directory();
-    }
     g_request_assets_path_popup = true;
   }
 
   ImGui::EndChild();
 
-  render_assets_directory_modal(ui_state);
+  // Handle assets directory change
+  if (render_assets_directory_modal(ui_state)) {
+    const std::string new_path = ui_state.assets_path_selected;
+    ui_state.assets_directory = new_path;
+
+    // Stop all services and clear all data
+    Services::stop(&safe_assets);
+
+    clear_ui_state(ui_state);
+
+    if (!Services::database().upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, new_path)) {
+      LOG_WARN("Failed to persist assets directory configuration: {}", new_path);
+    }
+
+    // Restart event processor with new assets directory
+    if (!Services::event_processor().start(ui_state.assets_directory)) {
+      LOG_ERROR("Failed to restart event processor after assets directory change");
+    }
+
+    scan_for_changes(ui_state.assets_directory, std::vector<Asset>(), safe_assets);
+
+    // File event callback to queue events for processing
+    auto file_event_callback = [](const FileEvent& event) {
+      LOG_TRACE("[NEW_EVENT] type = {}, asset = {}", FileWatcher::file_event_type_to_string(event.type), event.path);
+      Services::event_processor().queue_event(event);
+    };
+
+    if (!Services::file_watcher().start(ui_state.assets_directory, file_event_callback, &safe_assets)) {
+      LOG_ERROR("Failed to start file watcher for path: {}", ui_state.assets_directory);
+    }
+  }
 }
 
 void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
@@ -851,7 +879,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     ImGui::BeginGroup();
 
     // Load texture (all items in loop are visible now)
-    TextureCacheEntry texture_entry = texture_manager.get_asset_texture(ui_state.results[i]);
+    const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(ui_state.results[i]);
 
     // Calculate display size based on asset type
     ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
@@ -1142,7 +1170,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       }
 
       // Display audio icon in preview area
-      TextureCacheEntry audio_entry = texture_manager.get_asset_texture(selected_asset);
+      const TextureCacheEntry& audio_entry = texture_manager.get_asset_texture(selected_asset);
       if (audio_entry.get_texture_id() != 0) {
         float icon_dim = Config::ICON_SCALE * std::min(avail_width, avail_height);
         ImVec2 icon_size(icon_dim, icon_dim);
@@ -1285,9 +1313,103 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       // Common asset information
       render_common_asset_info(selected_asset, ui_state);
     }
+    else if (selected_asset.extension == ".gif") {
+      // Animated GIF Preview - load on-demand (similar to 3D models)
+      // Check if we need to load the animation
+      if (!ui_state.current_animation || ui_state.current_animation_path != selected_asset.path) {
+        LOG_DEBUG("[UI] Loading animated GIF on-demand: {}", selected_asset.path);
+        ui_state.current_animation = texture_manager.load_animated_gif(selected_asset.path);
+        ui_state.current_animation_path = selected_asset.path;
+      }
+
+      if (ui_state.current_animation && !ui_state.current_animation->frame_textures.empty()) {
+        // Calculate current frame based on elapsed time
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          now - ui_state.current_animation->animation_start_time).count();
+
+        // Note: stb_image returns delays in milliseconds (despite GIF spec using centiseconds)
+        const int DEFAULT_FRAME_DELAY = 100; // 100ms default for frames with 0 delay
+
+        // Calculate total animation duration in milliseconds
+        int total_delay = 0;
+        for (int delay : ui_state.current_animation->frame_delays) {
+          total_delay += (delay > 0) ? delay : DEFAULT_FRAME_DELAY;
+        }
+
+        // Find current frame based on accumulated delays
+        int current_frame = 0;
+        if (total_delay > 0) {
+          // Loop animation
+          int time_in_loop = static_cast<int>(elapsed_ms % total_delay);
+
+          // Find which frame corresponds to this time
+          int accumulated = 0;
+          for (size_t i = 0; i < ui_state.current_animation->frame_delays.size(); i++) {
+            int frame_delay = (ui_state.current_animation->frame_delays[i] > 0)
+              ? ui_state.current_animation->frame_delays[i]
+              : DEFAULT_FRAME_DELAY;
+            accumulated += frame_delay;
+            if (time_in_loop < accumulated) {
+              current_frame = static_cast<int>(i);
+              break;
+            }
+          }
+        }
+
+        // Calculate preview size
+        ImVec2 preview_size(avail_width, avail_height);
+        if (ui_state.current_animation->width > 0 && ui_state.current_animation->height > 0) {
+          preview_size = calculate_thumbnail_size(
+            ui_state.current_animation->width,
+            ui_state.current_animation->height,
+            avail_width, avail_height,
+            Config::MAX_PREVIEW_UPSCALE_FACTOR
+          );
+        }
+
+        // Center the preview image in the panel
+        ImVec2 container_pos = ImGui::GetCursorScreenPos();
+        float image_x_offset = (avail_width - preview_size.x) * 0.5f;
+        float image_y_offset = (avail_height - preview_size.y) * 0.5f;
+        ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+        ImGui::SetCursorScreenPos(image_pos);
+
+        // Draw border around the image
+        ImVec2 border_min = image_pos;
+        ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
+        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
+
+        // Display current frame
+        unsigned int frame_texture = ui_state.current_animation->frame_textures[current_frame];
+        ImGui::Image((ImTextureID) (intptr_t) frame_texture, preview_size);
+
+        // Restore cursor for info below
+        ImGui::SetCursorScreenPos(container_pos);
+        ImGui::Dummy(ImVec2(0, avail_height + 10));
+      }
+
+      ImGui::Spacing();
+      ImGui::Separator();
+      ImGui::Spacing();
+
+      // Common asset information
+      render_common_asset_info(selected_asset, ui_state);
+
+      // GIF-specific information (dimensions)
+      if (ui_state.current_animation) {
+        ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
+        ImGui::SameLine();
+        ImGui::Text("%dx%d", ui_state.current_animation->width, ui_state.current_animation->height);
+
+        ImGui::TextColored(Theme::TEXT_LABEL, "Frames: ");
+        ImGui::SameLine();
+        ImGui::Text("%zu", ui_state.current_animation->frame_textures.size());
+      }
+    }
     else {
-      // 2D Preview for non-model assets
-      TextureCacheEntry preview_entry = texture_manager.get_asset_texture(selected_asset);
+      // 2D Preview for non-GIF assets
+      const TextureCacheEntry& preview_entry = texture_manager.get_asset_texture(selected_asset);
       if (preview_entry.get_texture_id() != 0) {
         ImVec2 preview_size(avail_width, avail_height);
 
@@ -1315,6 +1437,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
         ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
+        // Display static image
         ImGui::Image((ImTextureID) (intptr_t) preview_entry.get_texture_id(), preview_size);
 
         // Restore cursor for info below

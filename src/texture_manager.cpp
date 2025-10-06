@@ -41,12 +41,26 @@ TextureManager::~TextureManager() {
 // TextureData cleanup implementation
 void TextureData::cleanup() {
   if (data) {
-    if (is_stbi_data) {
-      stbi_image_free(data);
-    } else {
-      free(data);
+    switch (on_destroy) {
+      case OnDestroy::STBI_FREE:
+        stbi_image_free(data);
+        break;
+      case OnDestroy::FREE:
+        free(data);
+        break;
+      case OnDestroy::NONE:
+        // Don't free - memory managed elsewhere
+        break;
     }
     data = nullptr;
+  }
+}
+
+// AnimationData destructor implementation
+AnimationData::~AnimationData() {
+  // Cleanup all frame textures
+  if (!frame_textures.empty()) {
+    glDeleteTextures(static_cast<GLsizei>(frame_textures.size()), frame_textures.data());
   }
 }
 
@@ -104,6 +118,101 @@ void TextureManager::cleanup_all_textures() {
   if (speaker_icon_ != 0) glDeleteTextures(1, &speaker_icon_);
 }
 
+std::unique_ptr<AnimationData> TextureManager::load_animated_gif(const std::string& filepath) {
+  LOG_TRACE("[GIF] Loading animated GIF: {}", filepath);
+
+  // Read file into memory
+  FILE* file = fopen(filepath.c_str(), "rb");
+  if (!file) {
+    LOG_WARN("[GIF] Failed to open file: {}", filepath);
+    return nullptr;
+  }
+
+  // Get file size
+  fseek(file, 0, SEEK_END);
+  long file_size = ftell(file);
+  fseek(file, 0, SEEK_SET);
+
+  if (file_size <= 0) {
+    LOG_WARN("[GIF] Invalid file size: {}", filepath);
+    fclose(file);
+    return nullptr;
+  }
+
+  // Read file data
+  std::vector<unsigned char> file_data(file_size);
+  size_t bytes_read = fread(file_data.data(), 1, file_size, file);
+  fclose(file);
+
+  if (bytes_read != static_cast<size_t>(file_size)) {
+    LOG_WARN("[GIF] Failed to read complete file: {}", filepath);
+    return nullptr;
+  }
+
+  // Load GIF frames using stb_image
+  int* delays = nullptr;
+  int width = 0, height = 0, frame_count = 0, channels = 0;
+  unsigned char* frames_data = stbi_load_gif_from_memory(
+    file_data.data(),
+    static_cast<int>(file_size),
+    &delays,
+    &width, &height, &frame_count,
+    &channels,
+    4  // Force RGBA
+  );
+
+  if (!frames_data || frame_count == 0) {
+    LOG_WARN("[GIF] Failed to load GIF frames: {}", filepath);
+    if (delays) free(delays);
+    return nullptr;
+  }
+
+  LOG_INFO("[GIF] Loaded {} frames ({}x{}) from {}", frame_count, width, height, filepath);
+
+  // Create AnimationData
+  auto anim_data = std::make_unique<AnimationData>();
+  anim_data->width = width;
+  anim_data->height = height;
+  anim_data->frame_delays.assign(delays, delays + frame_count);
+
+  // Log delay values for debugging
+  std::string delay_str;
+  for (int i = 0; i < frame_count; i++) {
+    delay_str += std::to_string(delays[i]);
+    if (i < frame_count - 1) delay_str += ", ";
+  }
+  LOG_DEBUG("[GIF] Frame delays (milliseconds): [{}]", delay_str);
+
+  // Free the delays array allocated by stbi
+  free(delays);
+
+  // Create OpenGL texture for each frame using unified texture system
+  const int frame_size = width * height * 4; // RGBA
+  TextureParameters ui_params = TextureParameters::ui_texture(); // Use UI texture params (nearest neighbor, no blur)
+
+  for (int i = 0; i < frame_count; i++) {
+    unsigned char* frame_data = frames_data + (i * frame_size);
+
+    // Create TextureData for this frame
+    TextureData texture_data;
+    texture_data.data = frame_data;
+    texture_data.width = width;
+    texture_data.height = height;
+    texture_data.format = GL_RGBA;
+    texture_data.on_destroy = OnDestroy::NONE; // Part of frames_data buffer, freed manually later
+
+    // Create OpenGL texture using unified method (applies UI filtering for sharp pixels)
+    unsigned int texture_id = create_opengl_texture(texture_data, ui_params);
+    anim_data->frame_textures.push_back(texture_id);
+  }
+
+  // Free the frames data allocated by stbi
+  stbi_image_free(frames_data);
+
+  LOG_DEBUG("[GIF] Created {} OpenGL textures for animated GIF: {}", frame_count, filepath);
+  return anim_data;
+}
+
 unsigned int TextureManager::load_texture(const char* filename) {
   int width, height;
   return load_texture(filename, &width, &height);
@@ -112,7 +221,6 @@ unsigned int TextureManager::load_texture(const char* filename) {
 unsigned int TextureManager::load_texture(const char* filename, int* out_width, int* out_height) {
   // For the load_texture function, we need to force RGBA format (like the original implementation)
   TextureData texture_data;
-  texture_data.source_info = "file (forced RGBA): " + std::string(filename);
 
   int width, height, channels;
   unsigned char* data = stbi_load(filename, &width, &height, &channels, 4); // Force RGBA
@@ -125,9 +233,8 @@ unsigned int TextureManager::load_texture(const char* filename, int* out_width, 
   texture_data.data = data;
   texture_data.width = width;
   texture_data.height = height;
-  texture_data.channels = 4; // Forced to RGBA
   texture_data.format = GL_RGBA;
-  texture_data.is_stbi_data = true;
+  // on_destroy defaults to STBI_FREE (correct for stbi_load)
 
   // Return dimensions if requested
   if (out_width) *out_width = width;
@@ -162,7 +269,7 @@ void TextureManager::load_type_textures() {
   }
 }
 
-TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
+const TextureCacheEntry& TextureManager::get_asset_texture(const Asset& asset) {
   std::lock_guard<std::mutex> lock(cleanup_mutex_);
   const auto& asset_path = asset.path;
 
@@ -257,7 +364,7 @@ TextureCacheEntry TextureManager::get_asset_texture(const Asset& asset) {
     }
   }
   else {
-    // Load regular texture using stb_image
+    // Load regular texture using stb_image (GIFs load first frame automatically)
     texture_id = load_texture(asset.path.c_str(), &width, &height);
     if (texture_id != 0) {
       LOG_TRACE("[TextureManager] 2D asset '{}': texture loaded, texture_id: {}, size: {}x{}",
@@ -571,7 +678,6 @@ unsigned int TextureManager::load_embedded_texture(const aiTexture* ai_texture) 
 
 TextureData TextureManager::load_texture_data_from_file(const std::string& filepath) {
   TextureData texture_data;
-  texture_data.source_info = "file: " + filepath;
 
   int width, height, channels;
   unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &channels, 0);
@@ -584,7 +690,6 @@ TextureData TextureManager::load_texture_data_from_file(const std::string& filep
   texture_data.data = data;
   texture_data.width = width;
   texture_data.height = height;
-  texture_data.channels = channels;
 
   // Set format based on channels
   if (channels == 1) {
@@ -606,7 +711,6 @@ TextureData TextureManager::load_texture_data_from_file(const std::string& filep
 
 TextureData TextureManager::load_texture_data_from_memory(const unsigned char* data, int size, const std::string& source_info) {
   TextureData texture_data;
-  texture_data.source_info = source_info;
 
   if (!data || size <= 0) {
     LOG_WARN("[TEXTURE_DATA] Invalid input data for memory texture loading");
@@ -624,7 +728,6 @@ TextureData TextureManager::load_texture_data_from_memory(const unsigned char* d
   texture_data.data = decoded_data;
   texture_data.width = width;
   texture_data.height = height;
-  texture_data.channels = channels;
 
   // Set format based on channels
   if (channels == 1) {
@@ -652,8 +755,6 @@ TextureData TextureManager::load_texture_data_from_assimp(const aiTexture* ai_te
     return texture_data; // Return invalid texture data
   }
 
-  texture_data.source_info = "assimp embedded: " + std::string(ai_texture->achFormatHint);
-
   LOG_TRACE("[TEXTURE_DATA] Loading embedded texture, height: {}, format: '{}'",
             ai_texture->mHeight, ai_texture->achFormatHint);
 
@@ -675,7 +776,6 @@ TextureData TextureManager::load_texture_data_from_assimp(const aiTexture* ai_te
     texture_data.data = data;
     texture_data.width = width;
     texture_data.height = height;
-    texture_data.channels = channels;
 
     // Set format based on channels
     if (channels == 1) {
@@ -707,9 +807,8 @@ TextureData TextureManager::load_texture_data_from_assimp(const aiTexture* ai_te
     texture_data.data = copied_data;
     texture_data.width = ai_texture->mWidth;
     texture_data.height = ai_texture->mHeight;
-    texture_data.channels = 4; // ARGB32
     texture_data.format = GL_BGRA; // Assimp uses BGRA format for uncompressed data
-    texture_data.is_stbi_data = false; // This data was allocated with malloc
+    texture_data.on_destroy = OnDestroy::FREE; // Allocated with malloc
 
     LOG_TRACE("[TEXTURE_DATA] Copied uncompressed embedded texture {}x{} (ARGB32, format: BGRA)",
               ai_texture->mWidth, ai_texture->mHeight);
@@ -720,7 +819,6 @@ TextureData TextureManager::load_texture_data_from_assimp(const aiTexture* ai_te
 
 TextureData TextureManager::create_solid_color_data(float r, float g, float b) {
   TextureData texture_data;
-  texture_data.source_info = "solid color: (" + std::to_string(r) + ", " + std::to_string(g) + ", " + std::to_string(b) + ")";
 
   // Create a 1x1 texture with the specified color
   unsigned char* color_data = static_cast<unsigned char*>(malloc(3)); // RGB = 3 bytes
@@ -736,9 +834,8 @@ TextureData TextureManager::create_solid_color_data(float r, float g, float b) {
   texture_data.data = color_data;
   texture_data.width = 1;
   texture_data.height = 1;
-  texture_data.channels = 3;
   texture_data.format = GL_RGB;
-  texture_data.is_stbi_data = false; // This data was allocated with malloc
+  texture_data.on_destroy = OnDestroy::FREE; // Allocated with malloc
 
   LOG_TRACE("[TEXTURE_DATA] Created solid color data: RGB({}, {}, {})", r, g, b);
 
@@ -769,8 +866,8 @@ unsigned int TextureManager::create_opengl_texture(const TextureData& data, cons
     glGenerateMipmap(GL_TEXTURE_2D);
   }
 
-  LOG_TRACE("[OPENGL_TEXTURE] Created OpenGL texture ID {} from {} ({}x{}, format: {}, mipmaps: {})",
-            texture_id, data.source_info, data.width, data.height, data.format, params.generate_mipmaps);
+  LOG_TRACE("[OPENGL_TEXTURE] Created OpenGL texture ID {} ({}x{}, format: {}, mipmaps: {})",
+            texture_id, data.width, data.height, data.format, params.generate_mipmaps);
 
   return texture_id;
 }

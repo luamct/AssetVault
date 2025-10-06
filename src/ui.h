@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <atomic>
 #include <chrono>
@@ -18,6 +19,7 @@ class SearchIndex;
 struct Asset;
 struct Model;
 struct Camera3D;
+struct AnimationData;
 
 // UI state structure
 struct UIState {
@@ -38,7 +40,6 @@ struct UIState {
 
   // Asset path state
   std::string assets_path_selected;
-  bool assets_directory_changed = false;
   std::string assets_directory;
 
   // Fast membership check for current results (IDs only)
@@ -51,6 +52,10 @@ struct UIState {
 
   // Model preview state
   int model_preview_row = -1;    // Which row has the expanded preview
+
+  // Animation preview state (loaded on-demand, similar to 3D models)
+  std::unique_ptr<AnimationData> current_animation;
+  std::string current_animation_path;  // Track which animation is loaded to detect asset changes
 
   // Audio playback settings
   bool auto_play_audio = true;
@@ -97,7 +102,7 @@ void render_search_panel(UIState& ui_state,
     const SafeAssets& safe_assets,
     float panel_width, float panel_height);
 
-void render_progress_panel(UIState& ui_state,
+void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
     float panel_width, float panel_height);
 
 void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
