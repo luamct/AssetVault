@@ -86,7 +86,6 @@ int run(std::atomic<bool>* shutdown_requested) {
   Camera3D camera;      // 3D camera state for preview controls
   SearchIndex search_index;  // Search index for fast lookups
 
-
   // Initialize GLFW
   LOG_INFO("Initializing GLFW{}...", headless_mode ? " (headless)" : "");
   if (!glfwInit()) {
@@ -315,9 +314,16 @@ int run(std::atomic<bool>* shutdown_requested) {
   // Stop all services
   Services::stop();
 
-  // Destroy shared thumbnail context
-  glfwDestroyWindow(thumbnail_context);
-  glfwDestroyWindow(window);
+  // Destroy windows
+  if (thumbnail_context) {
+    glfwDestroyWindow(thumbnail_context);
+    thumbnail_context = nullptr;
+  }
+  if (window) {
+    glfwDestroyWindow(window);
+    window = nullptr;
+  }
+
   glfwTerminate();
 
   return 0;

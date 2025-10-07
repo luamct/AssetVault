@@ -322,6 +322,7 @@ elseif(PLATFORM_MACOS)
 endif()
 
 add_test(NAME IntegrationTests COMMAND IntegrationTest)
+set_tests_properties(IntegrationTests PROPERTIES WORKING_DIRECTORY $<TARGET_FILE_DIR:IntegrationTest>)
 
 # Copy resources for IntegrationTest
 add_custom_command(TARGET IntegrationTest POST_BUILD
