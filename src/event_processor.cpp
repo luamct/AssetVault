@@ -306,9 +306,9 @@ Asset EventProcessor::process_file(const std::string& full_path) {
         throw std::runtime_error("File does not exist: " + full_path);
     }
 
-    // Basic file information (path is already normalized)
+    // Basic file information - normalize path to forward slashes for cross-platform consistency
     Asset asset;
-    asset.path = full_path;
+    asset.path = path_obj.generic_u8string();  // Use generic_u8string() for normalized forward slashes
     asset.relative_path = get_relative_path(asset.path, assets_directory_);
     asset.name = path_obj.filename().u8string();
     // File-specific information

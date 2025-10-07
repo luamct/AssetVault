@@ -49,7 +49,7 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
 
         // Create FileEvent
         std::vector<FileEvent> events = {
-            FileEvent(FileEventType::Created, test_file.string())
+            FileEvent(FileEventType::Created, test_file.generic_u8string())
         };
 
         // Process the events directly
@@ -61,7 +61,7 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
         const Asset& asset = db.inserted_assets[0];
 
         // Verify basic properties
-        REQUIRE(asset.path == normalize_path_separators(test_file.string()));
+        REQUIRE(asset.path == test_file.generic_u8string());
         REQUIRE(asset.name == "test_model.fbx");
         REQUIRE(asset.extension == ".fbx");
         REQUIRE(asset.type == AssetType::_3D);
@@ -69,7 +69,7 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
 
         // Verify 3D thumbnail was generated
         REQUIRE(texture_mgr.generated_3d_thumbnails.size() == 1);
-        REQUIRE(texture_mgr.generated_3d_thumbnails[0].model_path == test_file.string());
+        REQUIRE(texture_mgr.generated_3d_thumbnails[0].model_path == test_file.generic_u8string());
 
         // Verify asset was added to search index
         REQUIRE(search_idx.added_assets.size() == 1);
@@ -92,11 +92,11 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
         auto russian_file = create_temp_file(temp_dir, "файл.mp3", "Russian audio"); // Russian filename
 
         std::vector<FileEvent> events = {
-            FileEvent(FileEventType::Created, fbx_file.string()),
-            FileEvent(FileEventType::Created, png_file.string()),
-            FileEvent(FileEventType::Created, svg_file.string()),
-            FileEvent(FileEventType::Created, utf8_file.string()),
-            FileEvent(FileEventType::Created, russian_file.string())
+            FileEvent(FileEventType::Created, fbx_file.generic_u8string()),
+            FileEvent(FileEventType::Created, png_file.generic_u8string()),
+            FileEvent(FileEventType::Created, svg_file.generic_u8string()),
+            FileEvent(FileEventType::Created, utf8_file.generic_u8string()),
+            FileEvent(FileEventType::Created, russian_file.generic_u8string())
         };
 
         // Process all events
@@ -107,11 +107,11 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
 
         // Verify correct types
         std::map<std::string, AssetType> expected_types = {
-            {fbx_file.string(), AssetType::_3D},
-            {png_file.string(), AssetType::_2D},
-            {svg_file.string(), AssetType::_2D},
-            {utf8_file.string(), AssetType::_3D},
-            {russian_file.string(), AssetType::Audio}
+            {fbx_file.generic_u8string(), AssetType::_3D},
+            {png_file.generic_u8string(), AssetType::_2D},
+            {svg_file.generic_u8string(), AssetType::_2D},
+            {utf8_file.generic_u8string(), AssetType::_3D},
+            {russian_file.generic_u8string(), AssetType::Audio}
         };
 
         for (const auto& asset : db.inserted_assets) {
@@ -125,12 +125,12 @@ TEST_CASE("process_created_events functionality", "[process_created_events]") {
         for (const auto& thumb : texture_mgr.generated_3d_thumbnails) {
             generated_3d_paths.insert(thumb.model_path);
         }
-        REQUIRE(generated_3d_paths.count(fbx_file.string()) == 1);
-        REQUIRE(generated_3d_paths.count(utf8_file.string()) == 1);
+        REQUIRE(generated_3d_paths.count(fbx_file.generic_u8string()) == 1);
+        REQUIRE(generated_3d_paths.count(utf8_file.generic_u8string()) == 1);
 
         // Verify SVG thumbnail was generated only for SVG
         REQUIRE(texture_mgr.generated_svg_thumbnails.size() == 1);
-        REQUIRE(texture_mgr.generated_svg_thumbnails[0].svg_path == svg_file.string());
+        REQUIRE(texture_mgr.generated_svg_thumbnails[0].svg_path == svg_file.generic_u8string());
     }
 
     SECTION("Process non-existent file with retry") {
@@ -189,8 +189,8 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
         auto obj_file = create_temp_file(temp_dir, "model.obj", "OBJ model data");
 
         std::vector<FileEvent> events = {
-            FileEvent(FileEventType::Created, fbx_file.string()),
-            FileEvent(FileEventType::Created, obj_file.string())
+            FileEvent(FileEventType::Created, fbx_file.generic_u8string()),
+            FileEvent(FileEventType::Created, obj_file.generic_u8string())
         };
 
         processor.process_created_events(events);
@@ -203,8 +203,8 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
             generated_paths.insert(thumb.model_path);
         }
 
-        REQUIRE(generated_paths.count(fbx_file.string()) == 1);
-        REQUIRE(generated_paths.count(obj_file.string()) == 1);
+        REQUIRE(generated_paths.count(fbx_file.generic_u8string()) == 1);
+        REQUIRE(generated_paths.count(obj_file.generic_u8string()) == 1);
     }
 
     SECTION("No thumbnails for non-3D assets") {
@@ -212,8 +212,8 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
         auto txt_file = create_temp_file(temp_dir, "doc.txt", "text content");
 
         std::vector<FileEvent> events = {
-            FileEvent(FileEventType::Created, png_file.string()),
-            FileEvent(FileEventType::Created, txt_file.string())
+            FileEvent(FileEventType::Created, png_file.generic_u8string()),
+            FileEvent(FileEventType::Created, txt_file.generic_u8string())
         };
 
         processor.process_created_events(events);
@@ -233,8 +233,8 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
         auto svg2_file = create_temp_file(temp_dir, "logo.svg", "<svg><circle r='10'/></svg>");
 
         std::vector<FileEvent> events = {
-            FileEvent(FileEventType::Created, svg1_file.string()),
-            FileEvent(FileEventType::Created, svg2_file.string())
+            FileEvent(FileEventType::Created, svg1_file.generic_u8string()),
+            FileEvent(FileEventType::Created, svg2_file.generic_u8string())
         };
 
         processor.process_created_events(events);
@@ -247,8 +247,8 @@ TEST_CASE("process_created_events thumbnail generation", "[process_created_event
             generated_svg_paths.insert(svg_thumb.svg_path);
         }
 
-        REQUIRE(generated_svg_paths.count(svg1_file.string()) == 1);
-        REQUIRE(generated_svg_paths.count(svg2_file.string()) == 1);
+        REQUIRE(generated_svg_paths.count(svg1_file.generic_u8string()) == 1);
+        REQUIRE(generated_svg_paths.count(svg2_file.generic_u8string()) == 1);
 
         // No 3D thumbnails should be generated
         REQUIRE(texture_mgr.generated_3d_thumbnails.size() == 0);

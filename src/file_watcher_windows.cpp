@@ -246,8 +246,9 @@ private:
     // Convert path to normalized UTF-8 string for consistent handling
     std::string path = full_path.generic_u8string();
 
-    // For Deleted events, process immediately
-    if (raw_type == FileEventType::Deleted) {
+    // For real Deleted events (file doesn't exist), process immediately
+    // For modified files (marked as Deleted but file exists), debounce them
+    if (raw_type == FileEventType::Deleted && !fs::exists(full_path)) {
       if (callback) {
         FileEvent event(raw_type, path);
         callback(event);

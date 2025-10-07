@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 project(AssetInventory VERSION 1.0.0 LANGUAGES C CXX)
 
+# ============================================================================
+# Project Configuration
+# ============================================================================
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,6 +56,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
+# ============================================================================
+# Dependencies
+# ============================================================================
+
 # Find required system packages
 find_package(OpenGL REQUIRED)
 
@@ -64,7 +72,9 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(Catch2 CONFIG REQUIRED)
 find_package(lunasvg CONFIG REQUIRED)
 
-# SQLite is now managed by vcpkg with features: fts5, json1, dbstat
+# ============================================================================
+# External Libraries (source-built)
+# ============================================================================
 
 # Add GLAD (OpenGL Loading Library) - compiled from source
 set(GLAD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/glad)
@@ -97,7 +107,7 @@ else()
     message(FATAL_ERROR "File watcher not implemented for this platform")
 endif()
 
-# Platform-specific definitions (still needed for other parts)
+# Platform-specific definitions
 if(PLATFORM_WINDOWS)
     add_definitions(
         -DWIN32_LEAN_AND_MEAN
@@ -111,25 +121,47 @@ elseif(PLATFORM_MACOS)
     add_definitions(-DIMGUI_IMPL_OPENGL_LOADER_GLAD)
 endif()
 
-# Main executable
-add_executable(AssetInventory
-    src/main.cpp
+# ============================================================================
+# Core Library
+# ============================================================================
+
+# Core library - shared by main executable and all tests
+add_library(AssetInventoryCore STATIC
     src/run.cpp
     src/asset.cpp
     src/database.cpp
     src/services.cpp
-    src/utils.cpp
-    src/3d.cpp
-    src/texture_manager.cpp
     src/event_processor.cpp
+    src/search.cpp
+    src/texture_manager.cpp
+    src/3d.cpp
+    src/utils.cpp
+    src/ui.cpp
     src/audio_manager.cpp
     src/stb_vorbis_impl.cpp
-    src/search.cpp
-    src/ui.cpp
     ${FILE_WATCHER_SOURCES}
 )
 
-# Disable warnings for external library files
+target_include_directories(AssetInventoryCore PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/external
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/backends
+)
+
+target_link_libraries(AssetInventoryCore PUBLIC
+    unofficial::sqlite3::sqlite3
+    spdlog::spdlog
+    glfw
+    assimp::assimp
+    glm::glm
+    lunasvg::lunasvg
+    imgui
+    glad
+)
+
+# Disable warnings for external library files in core
 if(APPLE OR (UNIX AND NOT APPLE))
     set_source_files_properties(src/stb_vorbis_impl.cpp PROPERTIES
         COMPILE_FLAGS "-Wno-shadow"
@@ -138,6 +170,26 @@ if(APPLE OR (UNIX AND NOT APPLE))
         COMPILE_FLAGS "-Wno-deprecated-declarations"
     )
 endif()
+
+# Common test configuration
+set(TEST_INCLUDE_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
+set(TEST_LIBRARIES
+    AssetInventoryCore
+    Catch2::Catch2WithMain
+)
+
+# ============================================================================
+# Main Executable
+# ============================================================================
+
+# Main executable - only main.cpp, links to AssetInventoryCore for everything else
+add_executable(AssetInventory
+    src/main.cpp
+)
 
 # Configure for app bundle on macOS
 if(PLATFORM_MACOS)
@@ -160,16 +212,11 @@ target_include_directories(AssetInventory PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/external
 )
 
-# Link libraries
+# Link libraries - AssetInventoryCore provides most dependencies
 target_link_libraries(AssetInventory PRIVATE
+    AssetInventoryCore
     OpenGL::GL
-    unofficial::sqlite3::sqlite3
-    imgui
-    assimp::assimp
-    glad
-    glm::glm
-    spdlog::spdlog
-    lunasvg::lunasvg
+    glfw
 )
 
 # Platform-specific system libraries
@@ -196,41 +243,11 @@ elseif(PLATFORM_MACOS)
     )
 endif()
 
-# Create a shared library for test utilities to avoid recompilation
-add_library(AssetInventoryCore STATIC
-    src/run.cpp
-    src/asset.cpp
-    src/database.cpp
-    src/services.cpp
-    src/event_processor.cpp
-    src/search.cpp
-    src/texture_manager.cpp
-    src/3d.cpp
-    src/utils.cpp
-    src/ui.cpp
-    src/audio_manager.cpp
-    src/stb_vorbis_impl.cpp
-    ${FILE_WATCHER_SOURCES}
-    external/glad/src/glad.c
-)
+# ============================================================================
+# Tests
+# ============================================================================
 
-target_include_directories(AssetInventoryCore PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/external
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/backends
-)
-
-target_link_libraries(AssetInventoryCore PUBLIC
-    unofficial::sqlite3::sqlite3
-    spdlog::spdlog
-    glfw
-    assimp::assimp
-    glm::glm
-    lunasvg::lunasvg
-    imgui
-)
+enable_testing()
 
 # Unit test executable
 add_executable(SearchTest
@@ -238,168 +255,52 @@ add_executable(SearchTest
     tests/test_helpers.cpp
 )
 
-# Include directories for test
-target_include_directories(SearchTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/external
-    ${GLAD_DIR}/include
-    ${IMGUI_DIR}
-)
-
-# Link libraries for test
-target_link_libraries(SearchTest PRIVATE 
-    AssetInventoryCore
-    glad 
-    assimp::assimp
-    glm::glm
-    Catch2::Catch2WithMain
-)
-
-# Platform-specific libraries for SearchTest
+target_include_directories(SearchTest PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(SearchTest PRIVATE ${TEST_LIBRARIES})
 if(PLATFORM_WINDOWS)
-    target_link_libraries(SearchTest PRIVATE 
-        legacy_stdio_definitions
-        kernel32 user32 shell32 uuid ole32 oleaut32 advapi32 ws2_32
-    )
+    target_link_libraries(SearchTest PRIVATE legacy_stdio_definitions)
 endif()
+add_test(NAME SearchTests COMMAND SearchTest)
 
 # Platform-specific file watcher test executables
 if(PLATFORM_MACOS)
-    add_executable(FileWatcherMacOSTest
-        tests/test_file_watcher_macos.cpp
-        tests/test_helpers.cpp
-        ${FILE_WATCHER_SOURCES}
-    )
-
-    # Include directories for macOS file watcher test
-    target_include_directories(FileWatcherMacOSTest PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/external
-        ${GLAD_DIR}/include
-        ${IMGUI_DIR}
-    )
-
-    # Link libraries for macOS file watcher test
+    add_executable(FileWatcherMacOSTest tests/test_file_watcher_macos.cpp tests/test_helpers.cpp)
+    target_include_directories(FileWatcherMacOSTest PRIVATE ${TEST_INCLUDE_DIRS})
     target_link_libraries(FileWatcherMacOSTest PRIVATE
-        AssetInventoryCore
-        glad
-        assimp::assimp
-        glm::glm
-        Catch2::Catch2WithMain
+        ${TEST_LIBRARIES}
         ${COREFOUNDATION_LIBRARY}
         ${CORESERVICES_LIBRARY}
     )
+    add_test(NAME FileWatcherMacOSTests COMMAND FileWatcherMacOSTest)
 elseif(WIN32)
-    add_executable(FileWatcherWindowsTest
-        tests/test_file_watcher_windows.cpp
-        tests/test_helpers.cpp
-        ${FILE_WATCHER_SOURCES}
-    )
-
-    # Include directories for Windows file watcher test
-    target_include_directories(FileWatcherWindowsTest PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/external
-        ${GLAD_DIR}/include
-        ${IMGUI_DIR}
-    )
-
-    # Link libraries for Windows file watcher test
-    target_link_libraries(FileWatcherWindowsTest PRIVATE
-        AssetInventoryCore
-        glad
-        assimp::assimp
-        glm::glm
-        Catch2::Catch2WithMain
-    )
-    
+    add_executable(FileWatcherWindowsTest tests/test_file_watcher_windows.cpp tests/test_helpers.cpp)
+    target_include_directories(FileWatcherWindowsTest PRIVATE ${TEST_INCLUDE_DIRS})
+    target_link_libraries(FileWatcherWindowsTest PRIVATE ${TEST_LIBRARIES})
     add_test(NAME FileWatcherWindowsTests COMMAND FileWatcherWindowsTest)
 endif()
 
-# Enable testing
-enable_testing()
-add_test(NAME SearchTests COMMAND SearchTest)
-
-# Add Database test executable
-add_executable(DbTest
-    tests/test_db.cpp
-)
-
-target_include_directories(DbTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-)
-
-target_link_libraries(DbTest PRIVATE
-    AssetInventoryCore
-    Catch2::Catch2WithMain
-)
-
+# Database test executable
+add_executable(DbTest tests/test_db.cpp)
+target_include_directories(DbTest PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(DbTest PRIVATE ${TEST_LIBRARIES})
 add_test(NAME DbTests COMMAND DbTest)
 
-
 # Add EventProcessor test executable
-add_executable(EventProcessorTest
-    tests/test_event_processor.cpp
-    tests/test_helpers.cpp
-)
-
-target_include_directories(EventProcessorTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-)
-
-target_link_libraries(EventProcessorTest PRIVATE
-    AssetInventoryCore
-    Catch2::Catch2WithMain
-)
-
+add_executable(EventProcessorTest tests/test_event_processor.cpp tests/test_helpers.cpp)
+target_include_directories(EventProcessorTest PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(EventProcessorTest PRIVATE ${TEST_LIBRARIES})
 add_test(NAME EventProcessorTests COMMAND EventProcessorTest)
 
 # Add Utils test executable
-add_executable(UtilsTest
-    tests/test_utils.cpp
-    tests/test_helpers.cpp
-)
-
-target_include_directories(UtilsTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-)
-
-target_link_libraries(UtilsTest PRIVATE
-    AssetInventoryCore
-    Catch2::Catch2WithMain
-)
-
+add_executable(UtilsTest tests/test_utils.cpp tests/test_helpers.cpp)
+target_include_directories(UtilsTest PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(UtilsTest PRIVATE ${TEST_LIBRARIES})
 add_test(NAME UtilsTests COMMAND UtilsTest)
 
 # Add Integration test executable
-add_executable(IntegrationTest
-    tests/test_integration.cpp
-    tests/test_helpers.cpp
-)
-
-target_include_directories(IntegrationTest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/external
-    ${GLAD_DIR}/include
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
-)
-
-target_link_libraries(IntegrationTest PRIVATE
-    AssetInventoryCore
-    imgui
-    glad
-    assimp::assimp
-    glm::glm
-    Catch2::Catch2WithMain
-)
+add_executable(IntegrationTest tests/test_integration.cpp tests/test_helpers.cpp)
+target_include_directories(IntegrationTest PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(IntegrationTest PRIVATE ${TEST_LIBRARIES})
 
 # Define MAX_FRAMES_TESTS for integration testing
 target_compile_definitions(IntegrationTest PRIVATE MAX_FRAMES_TESTS=60)
@@ -434,10 +335,6 @@ add_custom_command(TARGET IntegrationTest POST_BUILD
     $<TARGET_FILE_DIR:IntegrationTest>/images
 )
 
-if(PLATFORM_MACOS)
-    add_test(NAME FileWatcherMacOSTests COMMAND FileWatcherMacOSTest)
-endif()
-
 # Set compiler warnings for our code
 if(MSVC)
     target_compile_options(AssetInventory PRIVATE
@@ -471,7 +368,9 @@ add_custom_command(TARGET AssetInventory POST_BUILD
     $<IF:$<BOOL:${PLATFORM_MACOS}>,$<TARGET_BUNDLE_DIR:AssetInventory>/Contents/Resources,$<TARGET_FILE_DIR:AssetInventory>>/images
 )
 
-# Distribution packaging configuration
+# ============================================================================
+# Installation & Packaging
+# ============================================================================
 if(PLATFORM_MACOS)
     # Install app bundle
     install(TARGETS AssetInventory
