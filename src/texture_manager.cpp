@@ -557,7 +557,7 @@ void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
   // Log performance metrics in single line
   auto end_total = end_write;
   auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
-  LOG_INFO("[THUMBNAIL] {} - Total: {:.1f}ms (IO: {:.1f}ms, GPU: {:.1f}ms, Write: {:.1f}ms)",
+  LOG_DEBUG("[THUMBNAIL] {} - Total: {:.1f}ms (IO: {:.1f}ms, GPU: {:.1f}ms, Write: {:.1f}ms)",
     filename, total_duration.count() / 1000.0, io_duration.count() / 1000.0,
     gpu_duration.count() / 1000.0, write_duration.count() / 1000.0);
 
