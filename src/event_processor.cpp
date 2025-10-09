@@ -14,6 +14,7 @@
 #include "logger.h"
 #include "search.h"
 #include "texture_manager.h"
+#include "3d.h"
 #include "utils.h"
 #include "services.h"
 
@@ -335,16 +336,8 @@ bool EventProcessor::setup_thumbnail_opengl_context() {
     // Make the thumbnail context current for this thread
     glfwMakeContextCurrent(thumbnail_context_);
 
-    // Set up OpenGL state for proper 3D rendering (match main context configuration)
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-    glFrontFace(GL_CCW);
-
-    // Enable blending for transparency
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // Set up OpenGL state for 3D rendering (shared with preview viewport)
+    setup_3d_rendering_state();
 
     LOG_DEBUG("OpenGL context set up for thumbnail generation thread");
     return true;

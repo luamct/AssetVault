@@ -1025,8 +1025,8 @@ bool TextureManager::initialize_preview_system() {
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-  // Enable depth testing
-  glEnable(GL_DEPTH_TEST);
+  // Set up OpenGL state for 3D rendering (shared with thumbnail generation)
+  setup_3d_rendering_state();
 
   preview_initialized_ = true;
   LOG_INFO("3D preview initialized successfully!");

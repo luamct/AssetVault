@@ -66,19 +66,19 @@ struct Model {
 
 // Camera state for 3D preview interaction
 struct Camera3D {
-  float rotation_x = 30.0f;  // Initial rotation around X axis (up/down)
-  float rotation_y = 45.0f;  // Initial rotation around Y axis (left/right)
-  float zoom = 1.0f;          // Zoom factor (1.0 = default)
-  
+  float rotation_x = 30.0f;   // Initial rotation around X axis (up/down)
+  float rotation_y = -45.0f;  // Initial rotation around Y axis (left/right)
+  float zoom = 1.0f;           // Zoom factor (1.0 = default)
+
   // Mouse interaction state
   bool is_dragging = false;
   float last_mouse_x = 0.0f;
   float last_mouse_y = 0.0f;
-  
+
   // Reset to default view
   void reset() {
     rotation_x = 30.0f;
-    rotation_y = 45.0f;
+    rotation_y = -45.0f;
     zoom = 1.0f;
   }
 };
@@ -93,3 +93,6 @@ const Model& get_current_model(const Model& current_model);
 
 // Material functions (now using TextureManager)
 void load_model_materials(const aiScene* scene, const std::string& model_path, Model& model, TextureManager& texture_manager);
+
+// OpenGL state setup for consistent 3D rendering across contexts
+void setup_3d_rendering_state();

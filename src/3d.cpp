@@ -806,3 +806,16 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
   // Unbind framebuffer
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
+void setup_3d_rendering_state() {
+  // Enable depth testing for proper 3D rendering
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS);
+
+  // Enable blending for transparency support
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  // Note: Face culling is NOT enabled to handle models with inconsistent winding order
+  // Some models have inverted normals or mixed winding, so we render all faces
+}
