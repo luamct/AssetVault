@@ -2,6 +2,7 @@
 #include "logger.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 
 // Enable OGG/Vorbis support with stb_vorbis
 // Include stb_vorbis header so miniaudio can detect it
@@ -33,6 +34,12 @@ AudioManager::~AudioManager() {
 bool AudioManager::initialize() {
   if (initialized_) {
     return true;
+  }
+
+  // Skip audio initialization in headless/test mode (no audio device available)
+  if (std::getenv("TESTING")) {
+    LOG_INFO("Skipping audio initialization in test mode (no audio device required)");
+    return true; // Return success but don't actually initialize
   }
 
   // Allocate engine

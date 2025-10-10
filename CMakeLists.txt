@@ -115,8 +115,7 @@ endif()
 
 # Drag-and-drop sources - native implementations only
 if(PLATFORM_WINDOWS)
-    # Windows implementation not yet available
-    set(DRAG_DROP_SOURCES)
+    set(DRAG_DROP_SOURCES src/drag_drop_windows.cpp)
 elseif(PLATFORM_MACOS)
     set(DRAG_DROP_SOURCES src/drag_drop_macos.mm)
 else()
