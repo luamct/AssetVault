@@ -38,3 +38,9 @@ std::vector<std::filesystem::path> find_assets_under_directory(const std::map<st
 // Thumbnail management utility functions
 // Clear all thumbnails from the configured thumbnail directory
 void clear_all_thumbnails();
+
+// Drag-and-drop utility functions
+// Find related files that should be included when dragging an asset
+// For example: MTL files for OBJ models, texture files for 3D models, etc.
+// Returns vector of absolute file paths (always includes the main file)
+std::vector<std::string> find_related_files(const Asset& asset);

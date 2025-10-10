@@ -91,6 +91,11 @@ void cleanup_model(Model& model);
 void set_current_model(Model& current_model, const Model& model);
 const Model& get_current_model(const Model& current_model);
 
+// Extract texture paths referenced by a 3D model
+// Returns vector of texture paths (relative to model directory) used by the model
+// Useful for drag-and-drop to include all necessary texture files
+std::vector<std::string> extract_model_texture_paths(const std::string& model_path);
+
 // Material functions (now using TextureManager)
 void load_model_materials(const aiScene* scene, const std::string& model_path, Model& model, TextureManager& texture_manager);
 

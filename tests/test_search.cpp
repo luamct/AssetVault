@@ -689,7 +689,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
     MockDatabase mock_db;  // Needed for Services
 
     // Register services for testing (nullptr for services not needed for search tests)
-    Services::provide(&mock_db, &search_index, nullptr, nullptr, nullptr, nullptr);
+    Services::provide(&mock_db, &search_index, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     // Manually populate the search index for testing
     {

@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
-project(AssetInventory VERSION 1.0.0 LANGUAGES C CXX)
+
+# Enable Objective-C++ for macOS platform features (drag-and-drop, etc.)
+if(APPLE)
+    project(AssetInventory VERSION 1.0.0 LANGUAGES C CXX OBJCXX)
+else()
+    project(AssetInventory VERSION 1.0.0 LANGUAGES C CXX)
+endif()
 
 # ============================================================================
 # Project Configuration
@@ -107,6 +113,17 @@ else()
     message(FATAL_ERROR "File watcher not implemented for this platform")
 endif()
 
+# Drag-and-drop sources - native implementations only
+if(PLATFORM_WINDOWS)
+    # Windows implementation not yet available
+    set(DRAG_DROP_SOURCES)
+elseif(PLATFORM_MACOS)
+    set(DRAG_DROP_SOURCES src/drag_drop_macos.mm)
+else()
+    # Linux implementation not yet available
+    set(DRAG_DROP_SOURCES)
+endif()
+
 # Platform-specific definitions
 if(PLATFORM_WINDOWS)
     add_definitions(
@@ -140,6 +157,7 @@ add_library(AssetInventoryCore STATIC
     src/audio_manager.cpp
     src/stb_vorbis_impl.cpp
     ${FILE_WATCHER_SOURCES}
+    ${DRAG_DROP_SOURCES}
 )
 
 target_include_directories(AssetInventoryCore PUBLIC

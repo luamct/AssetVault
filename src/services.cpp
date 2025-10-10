@@ -5,6 +5,7 @@
 #include "file_watcher.h"
 #include "texture_manager.h"
 #include "audio_manager.h"
+#include "drag_drop.h"
 #include "logger.h"
 #include "config.h"
 #include "utils.h"
@@ -18,14 +19,16 @@ EventProcessor* Services::event_processor_ = nullptr;
 FileWatcher* Services::file_watcher_ = nullptr;
 TextureManager* Services::texture_manager_ = nullptr;
 AudioManager* Services::audio_manager_ = nullptr;
+DragDropManager* Services::drag_drop_manager_ = nullptr;
 
-void Services::provide(AssetDatabase* database, SearchIndex* search_index, EventProcessor* event_processor, FileWatcher* file_watcher, TextureManager* texture_manager, AudioManager* audio_manager) {
+void Services::provide(AssetDatabase* database, SearchIndex* search_index, EventProcessor* event_processor, FileWatcher* file_watcher, TextureManager* texture_manager, AudioManager* audio_manager, DragDropManager* drag_drop_manager) {
     database_ = database;
     search_index_ = search_index;
     event_processor_ = event_processor;
     file_watcher_ = file_watcher;
     texture_manager_ = texture_manager;
     audio_manager_ = audio_manager;
+    drag_drop_manager_ = drag_drop_manager;
 }
 
 bool Services::start(FileEventCallback file_event_callback, SafeAssets* safe_assets) {
@@ -165,4 +168,9 @@ TextureManager& Services::texture_manager() {
 AudioManager& Services::audio_manager() {
     assert(audio_manager_ != nullptr && "AudioManager service not provided! Call Services::provide() first.");
     return *audio_manager_;
+}
+
+DragDropManager& Services::drag_drop_manager() {
+    assert(drag_drop_manager_ != nullptr && "DragDropManager service not provided! Call Services::provide() first.");
+    return *drag_drop_manager_;
 }

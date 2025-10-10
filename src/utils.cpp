@@ -2,6 +2,7 @@
 #include "config.h"
 #include "asset.h"
 #include "logger.h"
+#include "3d.h"
 
 #include <algorithm>
 #include <cctype>
@@ -9,6 +10,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <set>
 #include <vector>
 #include <cstdlib>
 
@@ -208,4 +210,57 @@ void clear_all_thumbnails() {
   catch (const fs::filesystem_error& e) {
     LOG_ERROR("Failed to delete thumbnails: {}", e.what());
   }
+}
+
+std::vector<std::string> find_related_files(const Asset& asset) {
+  std::vector<std::string> related_files;
+
+  // Always include the main file
+  related_files.push_back(asset.path);
+
+  fs::path asset_path = fs::u8path(asset.path);
+  fs::path parent_dir = asset_path.parent_path();
+  std::string extension = to_lowercase(asset.extension);
+  std::string stem = asset_path.stem().string();
+
+  // For OBJ files, include the corresponding MTL file if it exists
+  if (extension == ".obj") {
+    fs::path mtl_path = parent_dir / (stem + ".mtl");
+    if (fs::exists(mtl_path)) {
+      related_files.push_back(mtl_path.string());
+    }
+  }
+
+  // For 3D models, extract texture paths from the model file itself
+  if (asset.type == AssetType::_3D) {
+    // Use 3d.cpp function to extract actual texture paths referenced by the model
+    std::vector<std::string> texture_paths = extract_model_texture_paths(asset.path);
+
+    // Collect unique top-level directories/files to include
+    std::set<std::string> top_level_items;
+
+    for (const auto& tex_path : texture_paths) {
+      fs::path rel_path = fs::u8path(tex_path);
+
+      // Get the first component of the path (top-level directory or file)
+      auto it = rel_path.begin();
+      if (it != rel_path.end()) {
+        std::string top_level = it->string();
+
+        // Build absolute path for the top-level item
+        fs::path full_path = parent_dir / top_level;
+
+        if (fs::exists(full_path)) {
+          top_level_items.insert(full_path.string());
+        }
+      }
+    }
+
+    // Add all unique top-level items
+    for (const auto& item : top_level_items) {
+      related_files.push_back(item);
+    }
+  }
+
+  return related_files;
 }

@@ -37,6 +37,7 @@
 #include "logger.h"
 #include "ui.h"
 #include "services.h"
+#include "drag_drop.h"
 
 namespace fs = std::filesystem;
 
@@ -148,8 +149,15 @@ int run(std::atomic<bool>* shutdown_requested) {
   // Initialize EventProcessor (needs thumbnail_context created above)
   EventProcessor event_processor(safe_assets, ui_state.update_needed, ui_state.assets_directory, thumbnail_context);
 
+  // Initialize drag-and-drop manager (platform-specific)
+  DragDropManager* drag_drop_manager = create_drag_drop_manager();
+  if (!drag_drop_manager || !drag_drop_manager->initialize(window)) {
+    LOG_ERROR("Failed to initialize drag-and-drop manager");
+    return -1;
+  }
+
   // Register core services for global access
-  Services::provide(&database, &search_index, &event_processor, &file_watcher, &texture_manager, &audio_manager);
+  Services::provide(&database, &search_index, &event_processor, &file_watcher, &texture_manager, &audio_manager, drag_drop_manager);
   LOG_INFO("Core services registered");
 
   // Start all services (includes database init, search index build, scanning, and file watcher)
@@ -313,6 +321,12 @@ int run(std::atomic<bool>* shutdown_requested) {
 
   // Stop all services
   Services::stop();
+
+  // Cleanup drag-and-drop manager
+  if (drag_drop_manager) {
+    delete drag_drop_manager;
+    drag_drop_manager = nullptr;
+  }
 
   // Destroy windows
   if (thumbnail_context) {

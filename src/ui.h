@@ -60,6 +60,9 @@ struct UIState {
   // Audio playback settings
   bool auto_play_audio = true;
 
+  // Drag-and-drop state (track if drag is in progress to prevent multiple initiations)
+  bool drag_initiated = false;
+
   // Type filter toggle states
   bool type_filter_2d = false;
   bool type_filter_3d = false;

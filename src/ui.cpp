@@ -11,6 +11,7 @@
 #include "search.h"
 #include "logger.h"
 #include "services.h"
+#include "drag_drop.h"
 #include <vector>
 #include <sstream>
 #include <algorithm>
@@ -922,13 +923,34 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_TRANSPARENT);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
 
-    // Display thumbnail image
+    // Display thumbnail image p
     ImGui::SetCursorScreenPos(image_pos);
     if (ImGui::ImageButton(
       ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.get_texture_id(), display_size)) {
       ui_state.selected_asset_index = static_cast<int>(i);
       ui_state.selected_asset = ui_state.results[i];
       LOG_DEBUG("Selected: {}", ui_state.results[i].name);
+    }
+
+    // Handle drag-and-drop to external applications (Finder, Explorer, etc.)
+    // Only initiate drag once per gesture to avoid multiple drag sessions
+    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 5.0f)) {
+      if (!ui_state.drag_initiated) {
+        // Get mouse position for drag origin
+        ImVec2 mouse_pos = ImGui::GetMousePos();
+
+        // Find all related files to include in the drag (e.g., MTL for OBJ, textures for 3D models)
+        std::vector<std::string> files_to_drag = find_related_files(ui_state.results[i]);
+
+        // Start drag operation with all related files
+        if (Services::drag_drop_manager().is_supported()) {
+          if (Services::drag_drop_manager().begin_file_drag(files_to_drag, mouse_pos)) {
+            LOG_DEBUG("Started drag for: {} (with {} related file(s))",
+                      ui_state.results[i].name, files_to_drag.size());
+            ui_state.drag_initiated = true;  // Mark drag as initiated
+          }
+        }
+      }
     }
 
     // Handle right-click context menu
@@ -972,6 +994,11 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
   // End inner scrolling region (grid)
   ImGui::EndChild();
+
+  // Reset drag state when mouse button is released
+  if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    ui_state.drag_initiated = false;
+  }
 
   // End outer container
   ImGui::EndChild();

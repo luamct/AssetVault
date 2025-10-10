@@ -3,6 +3,7 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <set>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -818,4 +819,90 @@ void setup_3d_rendering_state() {
 
   // Note: Face culling is NOT enabled to handle models with inconsistent winding order
   // Some models have inverted normals or mixed winding, so we render all faces
+}
+
+std::vector<std::string> extract_model_texture_paths(const std::string& model_path) {
+  std::vector<std::string> texture_paths;
+
+  // Use Assimp to load the model and extract texture paths
+  Assimp::Importer importer;
+  const aiScene* scene = importer.ReadFile(
+    model_path,
+    aiProcess_Triangulate | aiProcess_FlipUVs
+  );
+
+  if (!scene || !scene->mRootNode || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)) {
+    LOG_WARN("[TEXTURE_EXTRACT] Failed to load model for texture extraction: {}", model_path);
+    return texture_paths;
+  }
+
+  // Get model directory for resolving relative paths
+  std::filesystem::path model_file_path = std::filesystem::u8path(model_path);
+  std::string basepath = model_file_path.parent_path().string();
+  if (!basepath.empty() && basepath.back() != std::filesystem::path::preferred_separator) {
+    basepath += std::filesystem::path::preferred_separator;
+  }
+
+  // Set of unique texture paths (to avoid duplicates)
+  std::set<std::string> unique_textures;
+
+  // All texture types to check
+  const std::vector<aiTextureType> texture_types = {
+    aiTextureType_DIFFUSE,
+    aiTextureType_SPECULAR,
+    aiTextureType_AMBIENT,
+    aiTextureType_EMISSIVE,
+    aiTextureType_HEIGHT,
+    aiTextureType_NORMALS,
+    aiTextureType_SHININESS,
+    aiTextureType_OPACITY,
+    aiTextureType_DISPLACEMENT,
+    aiTextureType_LIGHTMAP,
+    aiTextureType_REFLECTION,
+    aiTextureType_BASE_COLOR,
+    aiTextureType_NORMAL_CAMERA,
+    aiTextureType_EMISSION_COLOR,
+    aiTextureType_METALNESS,
+    aiTextureType_DIFFUSE_ROUGHNESS,
+    aiTextureType_AMBIENT_OCCLUSION
+  };
+
+  // Iterate through all materials
+  for (unsigned int m = 0; m < scene->mNumMaterials; m++) {
+    const aiMaterial* material = scene->mMaterials[m];
+
+    // Check each texture type
+    for (aiTextureType tex_type : texture_types) {
+      unsigned int tex_count = material->GetTextureCount(tex_type);
+
+      for (unsigned int t = 0; t < tex_count; t++) {
+        aiString texture_path;
+        if (material->GetTexture(tex_type, t, &texture_path) == AI_SUCCESS) {
+          std::string tex_path_str = trim_string(texture_path.C_Str());
+
+          // Skip empty paths and embedded textures (referenced as *0, *1, etc.)
+          if (tex_path_str.empty() || tex_path_str[0] == '*') {
+            continue;
+          }
+
+          // Normalize path separators to forward slashes
+          std::replace(tex_path_str.begin(), tex_path_str.end(), '\\', '/');
+
+          // Check if texture file exists (relative to model directory)
+          std::string full_path = basepath + tex_path_str;
+          if (std::filesystem::exists(full_path)) {
+            unique_textures.insert(tex_path_str);
+          }
+        }
+      }
+    }
+  }
+
+  // Convert set to vector
+  texture_paths.assign(unique_textures.begin(), unique_textures.end());
+
+  LOG_DEBUG("[TEXTURE_EXTRACT] Found {} texture reference(s) in model: {}",
+            texture_paths.size(), model_path);
+
+  return texture_paths;
 }
