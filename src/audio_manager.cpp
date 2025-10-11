@@ -59,6 +59,7 @@ bool AudioManager::initialize() {
   engineConfig.sampleRate = 0; // 0 = use device default
 
   // Initialize miniaudio engine with custom config
+  LOG_INFO("[Audio] About to call ma_engine_init (this will initialize COM on Windows)");
   ma_result result = ma_engine_init(&engineConfig, engine_);
   if (result != MA_SUCCESS) {
     LOG_ERROR("Failed to initialize audio engine. Error: {}", static_cast<int>(result));
@@ -68,6 +69,7 @@ bool AudioManager::initialize() {
   }
 
   initialized_ = true;
+  LOG_INFO("[Audio] Audio engine initialized successfully (COM should now be initialized by miniaudio)");
   return true;
 }
 

@@ -12,6 +12,8 @@
 #include <imgui.h>
 #include <vector>
 #include <string>
+#include <algorithm>
+#include <filesystem>
 
 // Helper function to convert UTF-8 string to wide string (UTF-16)
 static std::wstring utf8_to_wstring(const std::string& utf8_str) {
@@ -21,6 +23,13 @@ static std::wstring utf8_to_wstring(const std::string& utf8_str) {
     std::wstring wstr(size_needed, 0);
     MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), (int)utf8_str.size(), &wstr[0], size_needed);
     return wstr;
+}
+
+// Helper function to convert forward slashes to backslashes for Windows paths
+static std::string to_windows_path(const std::string& path) {
+    std::string windows_path = path;
+    std::replace(windows_path.begin(), windows_path.end(), '/', '\\');
+    return windows_path;
 }
 
 // Simple IDataObject implementation for file drag-and-drop
@@ -61,20 +70,29 @@ public:
 
     // IDataObject methods
     HRESULT STDMETHODCALLTYPE GetData(FORMATETC* pformatetc, STGMEDIUM* pmedium) override {
+        LOG_INFO("[DragDrop] GetData called: cfFormat={}, tymed={}", pformatetc->cfFormat, pformatetc->tymed);
+        LOG_INFO("[DragDrop] Expected: cfFormat={}, tymed={}", format_.cfFormat, format_.tymed);
+
         if (pformatetc->cfFormat == format_.cfFormat &&
             (pformatetc->tymed & format_.tymed)) {
             pmedium->tymed = format_.tymed;
             pmedium->hGlobal = medium_.hGlobal;
             pmedium->pUnkForRelease = nullptr;
+            LOG_INFO("[DragDrop] GetData returning S_OK");
             return S_OK;
         }
+        LOG_INFO("[DragDrop] GetData returning DV_E_FORMATETC (format mismatch)");
         return DV_E_FORMATETC;
     }
 
     HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* pformatetc) override {
+        LOG_INFO("[DragDrop] QueryGetData called: cfFormat={}, tymed={}", pformatetc->cfFormat, pformatetc->tymed);
+
         if (pformatetc->cfFormat == format_.cfFormat) {
+            LOG_INFO("[DragDrop] QueryGetData returning S_OK");
             return S_OK;
         }
+        LOG_INFO("[DragDrop] QueryGetData returning DV_E_FORMATETC (format mismatch)");
         return DV_E_FORMATETC;
     }
 
@@ -171,7 +189,7 @@ public:
 
     ~WindowsDragDropManager() override {
         if (com_initialized_) {
-            CoUninitialize();
+            OleUninitialize();
         }
     }
 
@@ -181,15 +199,20 @@ public:
             return false;
         }
 
-        // Initialize COM library
-        // Use CoInitializeEx with COINIT_APARTMENTTHREADED for better compatibility
-        HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-        if (FAILED(hr) && hr != RPC_E_CHANGED_MODE && hr != S_FALSE) {
-            LOG_ERROR("[DragDrop] Failed to initialize COM: 0x{:08X}", hr);
+        // Initialize OLE library (which includes COM + drag-drop support)
+        // OleInitialize internally calls CoInitializeEx, so we use it instead
+        HRESULT hr = OleInitialize(NULL);
+        LOG_INFO("[DragDrop] OleInitialize returned: 0x{:08X} (S_OK=0x0, S_FALSE=0x1)",
+                 static_cast<unsigned int>(hr));
+
+        if (FAILED(hr) && hr != S_FALSE) {
+            LOG_ERROR("[DragDrop] Failed to initialize OLE: 0x{:08X}", static_cast<unsigned int>(hr));
             return false;
         }
-        // Only mark as initialized if we actually initialized it (not if it was already initialized)
-        com_initialized_ = (hr == S_OK || hr == S_FALSE);
+        // Only mark as initialized if WE actually initialized it (S_OK), not if already initialized (S_FALSE)
+        com_initialized_ = (hr == S_OK);
+        LOG_INFO("[DragDrop] OLE initialization: hr=0x{:08X}, will_uninit={}",
+                 static_cast<unsigned int>(hr), com_initialized_);
 
         // Get native Windows window from GLFW
         hwnd_ = glfwGetWin32Window(window);
@@ -214,11 +237,29 @@ public:
             return false;
         }
 
+        // OLE should already be initialized from initialize() call
+        // No need to re-initialize for each drag operation
+
+        // Log and verify paths we're about to drag
+        LOG_INFO("[DragDrop] Dragging {} file(s):", file_paths.size());
+        for (const auto& path : file_paths) {
+            std::string windows_path = to_windows_path(path);
+            bool exists = std::filesystem::exists(windows_path);
+            LOG_INFO("[DragDrop]   Original: {}", path);
+            LOG_INFO("[DragDrop]   Windows:  {} (exists={})", windows_path, exists);
+
+            if (!exists) {
+                LOG_ERROR("[DragDrop] File does not exist: {}", windows_path);
+                return false;
+            }
+        }
+
         // Calculate total size needed for DROPFILES structure
         // DROPFILES header + (path + null terminator) for each file + final null terminator
         size_t total_size = sizeof(DROPFILES);
         for (const auto& path : file_paths) {
-            std::wstring wpath = utf8_to_wstring(path);
+            std::string windows_path = to_windows_path(path);
+            std::wstring wpath = utf8_to_wstring(windows_path);
             total_size += (wpath.length() + 1) * sizeof(wchar_t);
         }
         total_size += sizeof(wchar_t); // Final null terminator
@@ -248,7 +289,8 @@ public:
         // Copy file paths after DROPFILES structure
         wchar_t* file_list = (wchar_t*)((BYTE*)drop_files + sizeof(DROPFILES));
         for (const auto& path : file_paths) {
-            std::wstring wpath = utf8_to_wstring(path);
+            std::string windows_path = to_windows_path(path);
+            std::wstring wpath = utf8_to_wstring(windows_path);
             wcscpy_s(file_list, wpath.length() + 1, wpath.c_str());
             file_list += wpath.length() + 1;
         }
@@ -275,9 +317,14 @@ public:
         // Create drop source
         IDropSource* drop_source = new DropSource();
 
+        // Check if COM is still initialized before calling DoDragDrop
+        LOG_INFO("[DragDrop] About to call DoDragDrop, com_initialized_={}", com_initialized_);
+
         // Perform drag-and-drop operation
         DWORD effect;
         HRESULT hr = DoDragDrop(data_object, drop_source, DROPEFFECT_COPY, &effect);
+
+        LOG_INFO("[DragDrop] DoDragDrop returned: 0x{:08X}", static_cast<unsigned int>(hr));
 
         // Cleanup
         drop_source->Release();
