@@ -18,7 +18,7 @@ namespace Config {
     // Font settings
     constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";
     constexpr float FONT_SIZE = 18.0f;
-    
+
     // =============================================================================
     // WINDOW & UI LAYOUT
     // =============================================================================

@@ -1,310 +1,501 @@
 #include "drag_drop.h"
 #include "logger.h"
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
+#include <objbase.h>
+#include <objidl.h>
+#include <shellapi.h>
 #include <shlobj.h>
-#include <ole2.h>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
-#include <imgui.h>
-#include <vector>
+#include <cstring>
 #include <string>
+#include <vector>
 
-// Helper function to convert UTF-8 string to wide string (UTF-16)
-static std::wstring utf8_to_wstring(const std::string& utf8_str) {
-    if (utf8_str.empty()) return std::wstring();
+namespace {
 
-    int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), (int)utf8_str.size(), NULL, 0);
-    std::wstring wstr(size_needed, 0);
-    MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), (int)utf8_str.size(), &wstr[0], size_needed);
-    return wstr;
+HGLOBAL duplicate_global_handle(HGLOBAL source) {
+  if (!source) {
+    return nullptr;
+  }
+
+  const SIZE_T size = ::GlobalSize(source);
+  if (size == 0) {
+    return nullptr;
+  }
+
+  HGLOBAL destination = ::GlobalAlloc(GMEM_MOVEABLE, size);
+  if (!destination) {
+    return nullptr;
+  }
+
+  void* source_data = ::GlobalLock(source);
+  void* destination_data = ::GlobalLock(destination);
+
+  if (!source_data || !destination_data) {
+    if (destination_data) {
+      ::GlobalUnlock(destination);
+    }
+    if (source_data) {
+      ::GlobalUnlock(source);
+    }
+    ::GlobalFree(destination);
+    return nullptr;
+  }
+
+  std::memcpy(destination_data, source_data, size);
+
+  ::GlobalUnlock(destination);
+  ::GlobalUnlock(source);
+  return destination;
 }
 
-// Simple IDataObject implementation for file drag-and-drop
-class FileDataObject : public IDataObject {
-private:
-    LONG ref_count_;
-    FORMATETC format_;
-    STGMEDIUM medium_;
+bool format_matches(const FORMATETC& requested, const FORMATETC& available) {
+  return requested.cfFormat == available.cfFormat &&
+         (requested.tymed & available.tymed) != 0 &&
+         requested.dwAspect == available.dwAspect &&
+         requested.lindex == available.lindex;
+}
 
+class ScopedOleInitializer {
 public:
-    FileDataObject(FORMATETC* fmt, STGMEDIUM* med) : ref_count_(1) {
-        format_ = *fmt;
-        medium_ = *med;
-    }
+  ScopedOleInitializer()
+    : result_(::OleInitialize(nullptr)) {}
 
-    // IUnknown methods
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        if (riid == IID_IUnknown || riid == IID_IDataObject) {
-            *ppv = this;
-            AddRef();
-            return S_OK;
-        }
-        *ppv = nullptr;
-        return E_NOINTERFACE;
+  ~ScopedOleInitializer() {
+    if (SUCCEEDED(result_)) {
+      ::OleUninitialize();
     }
+  }
 
-    ULONG STDMETHODCALLTYPE AddRef() override {
-        return InterlockedIncrement(&ref_count_);
-    }
+  HRESULT result() const { return result_; }
+  bool succeeded() const { return SUCCEEDED(result_); }
 
-    ULONG STDMETHODCALLTYPE Release() override {
-        LONG count = InterlockedDecrement(&ref_count_);
-        if (count == 0) {
-            delete this;
-        }
-        return count;
-    }
-
-    // IDataObject methods
-    HRESULT STDMETHODCALLTYPE GetData(FORMATETC* pformatetc, STGMEDIUM* pmedium) override {
-        if (pformatetc->cfFormat == format_.cfFormat &&
-            (pformatetc->tymed & format_.tymed)) {
-            pmedium->tymed = format_.tymed;
-            pmedium->hGlobal = medium_.hGlobal;
-            pmedium->pUnkForRelease = nullptr;
-            return S_OK;
-        }
-        return DV_E_FORMATETC;
-    }
-
-    HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* pformatetc) override {
-        if (pformatetc->cfFormat == format_.cfFormat) {
-            return S_OK;
-        }
-        return DV_E_FORMATETC;
-    }
-
-    HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC*, STGMEDIUM*) override {
-        return E_NOTIMPL;
-    }
-
-    HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC*, FORMATETC* pformatetcOut) override {
-        pformatetcOut->ptd = nullptr;
-        return E_NOTIMPL;
-    }
-
-    HRESULT STDMETHODCALLTYPE SetData(FORMATETC*, STGMEDIUM*, BOOL) override {
-        return E_NOTIMPL;
-    }
-
-    HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD, IEnumFORMATETC**) override {
-        return E_NOTIMPL;
-    }
-
-    HRESULT STDMETHODCALLTYPE DAdvise(FORMATETC*, DWORD, IAdviseSink*, DWORD*) override {
-        return OLE_E_ADVISENOTSUPPORTED;
-    }
-
-    HRESULT STDMETHODCALLTYPE DUnadvise(DWORD) override {
-        return OLE_E_ADVISENOTSUPPORTED;
-    }
-
-    HRESULT STDMETHODCALLTYPE EnumDAdvise(IEnumSTATDATA**) override {
-        return OLE_E_ADVISENOTSUPPORTED;
-    }
+private:
+  HRESULT result_;
 };
 
-// IDropSource implementation - provides feedback during drag operation
-class DropSource : public IDropSource {
-private:
-    LONG ref_count_;
-
+class SimpleDropSource final : public IDropSource {
 public:
-    DropSource() : ref_count_(1) {}
+  SimpleDropSource()
+    : ref_count_(1) {}
 
-    // IUnknown methods
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        if (riid == IID_IUnknown || riid == IID_IDropSource) {
-            *ppv = this;
-            AddRef();
-            return S_OK;
-        }
-        *ppv = nullptr;
-        return E_NOINTERFACE;
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject) override {
+    if (!ppvObject) {
+      return E_POINTER;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() override {
-        return InterlockedIncrement(&ref_count_);
+    if (riid == IID_IUnknown || riid == IID_IDropSource) {
+      *ppvObject = static_cast<IDropSource*>(this);
+      AddRef();
+      return S_OK;
     }
 
-    ULONG STDMETHODCALLTYPE Release() override {
-        LONG count = InterlockedDecrement(&ref_count_);
-        if (count == 0) {
-            delete this;
-        }
-        return count;
+    *ppvObject = nullptr;
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override {
+    return static_cast<ULONG>(::InterlockedIncrement(&ref_count_));
+  }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG ref = static_cast<ULONG>(::InterlockedDecrement(&ref_count_));
+    if (ref == 0) {
+      delete this;
+    }
+    return ref;
+  }
+
+  HRESULT STDMETHODCALLTYPE QueryContinueDrag(BOOL escape_pressed, DWORD key_state) override {
+    if (escape_pressed) {
+      return DRAGDROP_S_CANCEL;
+    }
+    if ((key_state & MK_LBUTTON) == 0) {
+      return DRAGDROP_S_DROP;
+    }
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE GiveFeedback(DWORD) override {
+    return DRAGDROP_S_USEDEFAULTCURSORS;
+  }
+
+private:
+  LONG ref_count_;
+};
+
+struct StoredData {
+  FORMATETC format{};
+  STGMEDIUM medium{};
+};
+
+class FileDropDataObject final : public IDataObject {
+public:
+  explicit FileDropDataObject(const std::vector<std::wstring>& files)
+    : ref_count_(1) {
+    initialize_formats(files);
+  }
+
+  ~FileDropDataObject() {
+    for (auto& entry : stored_data_) {
+      ::ReleaseStgMedium(&entry.medium);
+    }
+  }
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject) override {
+    if (!ppvObject) {
+      return E_POINTER;
     }
 
-    // IDropSource methods
-    HRESULT STDMETHODCALLTYPE QueryContinueDrag(BOOL fEscapePressed, DWORD grfKeyState) override {
-        if (fEscapePressed) {
-            return DRAGDROP_S_CANCEL;
+    if (riid == IID_IUnknown || riid == IID_IDataObject) {
+      *ppvObject = static_cast<IDataObject*>(this);
+      AddRef();
+      return S_OK;
+    }
+
+    *ppvObject = nullptr;
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override {
+    return static_cast<ULONG>(::InterlockedIncrement(&ref_count_));
+  }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG ref = static_cast<ULONG>(::InterlockedDecrement(&ref_count_));
+    if (ref == 0) {
+      delete this;
+    }
+    return ref;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetData(FORMATETC* format, STGMEDIUM* medium) override {
+    if (!format || !medium) {
+      return E_INVALIDARG;
+    }
+
+    for (const auto& entry : stored_data_) {
+      if (format_matches(*format, entry.format)) {
+        if (entry.medium.tymed != TYMED_HGLOBAL) {
+          return DV_E_TYMED;
         }
 
-        // Continue drag if left mouse button is pressed
-        if (!(grfKeyState & MK_LBUTTON)) {
-            return DRAGDROP_S_DROP;
+        HGLOBAL copy = duplicate_global_handle(entry.medium.hGlobal);
+        if (!copy) {
+          return STG_E_MEDIUMFULL;
         }
 
+        medium->tymed = TYMED_HGLOBAL;
+        medium->hGlobal = copy;
+        medium->pUnkForRelease = nullptr;
         return S_OK;
+      }
     }
 
-    HRESULT STDMETHODCALLTYPE GiveFeedback(DWORD dwEffect) override {
-        // Use default cursor feedback
-        return DRAGDROP_S_USEDEFAULTCURSORS;
-    }
-};
+    return DV_E_FORMATETC;
+  }
 
-// Windows implementation of DragDropManager
-class WindowsDragDropManager : public DragDropManager {
+  HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC*, STGMEDIUM*) override {
+    return DATA_E_FORMATETC;
+  }
+
+  HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* format) override {
+    if (!format) {
+      return E_INVALIDARG;
+    }
+
+    for (const auto& entry : stored_data_) {
+      if (format_matches(*format, entry.format)) {
+        return S_OK;
+      }
+    }
+
+    return DV_E_FORMATETC;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC*, FORMATETC* result) override {
+    if (!result) {
+      return E_POINTER;
+    }
+    result->ptd = nullptr;
+    return DATA_S_SAMEFORMATETC;
+  }
+
+  HRESULT STDMETHODCALLTYPE SetData(FORMATETC*, STGMEDIUM*, BOOL) override {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD direction, IEnumFORMATETC** enum_format) override {
+    if (!enum_format) {
+      return E_POINTER;
+    }
+
+    if (direction != DATADIR_GET) {
+      return E_NOTIMPL;
+    }
+
+    std::vector<FORMATETC> formats;
+    formats.reserve(stored_data_.size());
+    for (const auto& entry : stored_data_) {
+      formats.push_back(entry.format);
+    }
+
+    return ::SHCreateStdEnumFmtEtc(static_cast<UINT>(formats.size()), formats.data(), enum_format);
+  }
+
+  HRESULT STDMETHODCALLTYPE DAdvise(FORMATETC*, DWORD, IAdviseSink*, DWORD*) override {
+    return OLE_E_ADVISENOTSUPPORTED;
+  }
+
+  HRESULT STDMETHODCALLTYPE DUnadvise(DWORD) override {
+    return OLE_E_ADVISENOTSUPPORTED;
+  }
+
+  HRESULT STDMETHODCALLTYPE EnumDAdvise(IEnumSTATDATA**) override {
+    return OLE_E_ADVISENOTSUPPORTED;
+  }
+
 private:
-    HWND hwnd_;
-    bool initialized_;
-    bool com_initialized_;
-
-public:
-    WindowsDragDropManager() : hwnd_(nullptr), initialized_(false), com_initialized_(false) {}
-
-    ~WindowsDragDropManager() override {
-        if (com_initialized_) {
-            CoUninitialize();
-        }
+  static HGLOBAL create_hdrop_payload(const std::vector<std::wstring>& files) {
+    SIZE_T total_chars = 0;
+    for (const auto& file : files) {
+      total_chars += file.length() + 1;
     }
 
-    bool initialize(GLFWwindow* window) override {
-        if (!window) {
-            LOG_ERROR("[DragDrop] Invalid GLFW window");
-            return false;
-        }
+    const SIZE_T payload_bytes = (total_chars + 1) * sizeof(wchar_t);
+    const SIZE_T total_size = sizeof(DROPFILES) + payload_bytes;
 
-        // Initialize COM library
-        // Use CoInitializeEx with COINIT_APARTMENTTHREADED for better compatibility
-        HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-        if (FAILED(hr) && hr != RPC_E_CHANGED_MODE && hr != S_FALSE) {
-            LOG_ERROR("[DragDrop] Failed to initialize COM: 0x{:08X}", hr);
-            return false;
-        }
-        // Only mark as initialized if we actually initialized it (not if it was already initialized)
-        com_initialized_ = (hr == S_OK || hr == S_FALSE);
-
-        // Get native Windows window from GLFW
-        hwnd_ = glfwGetWin32Window(window);
-        if (!hwnd_) {
-            LOG_ERROR("[DragDrop] Failed to get HWND from GLFW window");
-            return false;
-        }
-
-        initialized_ = true;
-        LOG_INFO("[DragDrop] Windows drag-and-drop initialized successfully");
-        return true;
+    HGLOBAL handle = ::GlobalAlloc(GMEM_MOVEABLE, total_size);
+    if (!handle) {
+      return nullptr;
     }
 
-    bool begin_file_drag(const std::vector<std::string>& file_paths, const ImVec2& drag_origin) override {
-        if (!initialized_) {
-            LOG_WARN("[DragDrop] DragDropManager not initialized");
-            return false;
-        }
-
-        if (file_paths.empty()) {
-            LOG_WARN("[DragDrop] No files to drag");
-            return false;
-        }
-
-        // Calculate total size needed for DROPFILES structure
-        // DROPFILES header + (path + null terminator) for each file + final null terminator
-        size_t total_size = sizeof(DROPFILES);
-        for (const auto& path : file_paths) {
-            std::wstring wpath = utf8_to_wstring(path);
-            total_size += (wpath.length() + 1) * sizeof(wchar_t);
-        }
-        total_size += sizeof(wchar_t); // Final null terminator
-
-        // Allocate global memory for file list
-        HGLOBAL hglobal = GlobalAlloc(GHND, total_size);
-        if (!hglobal) {
-            LOG_ERROR("[DragDrop] Failed to allocate global memory");
-            return false;
-        }
-
-        // Lock memory and fill in DROPFILES structure
-        DROPFILES* drop_files = (DROPFILES*)GlobalLock(hglobal);
-        if (!drop_files) {
-            GlobalFree(hglobal);
-            LOG_ERROR("[DragDrop] Failed to lock global memory");
-            return false;
-        }
-
-        // Initialize DROPFILES structure
-        drop_files->pFiles = sizeof(DROPFILES);
-        drop_files->pt.x = (LONG)drag_origin.x;
-        drop_files->pt.y = (LONG)drag_origin.y;
-        drop_files->fNC = FALSE;
-        drop_files->fWide = TRUE; // Use Unicode (UTF-16)
-
-        // Copy file paths after DROPFILES structure
-        wchar_t* file_list = (wchar_t*)((BYTE*)drop_files + sizeof(DROPFILES));
-        for (const auto& path : file_paths) {
-            std::wstring wpath = utf8_to_wstring(path);
-            wcscpy_s(file_list, wpath.length() + 1, wpath.c_str());
-            file_list += wpath.length() + 1;
-        }
-        *file_list = L'\0'; // Double null terminator
-
-        GlobalUnlock(hglobal);
-
-        // Set up format and medium for CF_HDROP
-        FORMATETC format = {0};
-        format.cfFormat = CF_HDROP;
-        format.ptd = NULL;
-        format.dwAspect = DVASPECT_CONTENT;
-        format.lindex = -1;
-        format.tymed = TYMED_HGLOBAL;
-
-        STGMEDIUM medium = {0};
-        medium.tymed = TYMED_HGLOBAL;
-        medium.hGlobal = hglobal;
-        medium.pUnkForRelease = NULL;
-
-        // Create our custom data object
-        IDataObject* data_object = new FileDataObject(&format, &medium);
-
-        // Create drop source
-        IDropSource* drop_source = new DropSource();
-
-        // Perform drag-and-drop operation
-        DWORD effect;
-        HRESULT hr = DoDragDrop(data_object, drop_source, DROPEFFECT_COPY, &effect);
-
-        // Cleanup
-        drop_source->Release();
-        data_object->Release();
-
-        // Check result - DRAGDROP_S_CANCEL and DRAGDROP_S_DROP are both success codes
-        if (hr == DRAGDROP_S_DROP) {
-            LOG_DEBUG("[DragDrop] Drag completed - file(s) dropped successfully");
-            return true;
-        } else if (hr == DRAGDROP_S_CANCEL) {
-            LOG_DEBUG("[DragDrop] Drag cancelled by user");
-            return true; // Not an error, user just cancelled
-        } else if (FAILED(hr)) {
-            LOG_ERROR("[DragDrop] DoDragDrop failed: 0x{:X}", static_cast<unsigned int>(hr));
-            return false;
-        }
-
-        LOG_DEBUG("[DragDrop] Started drag for {} file(s)", file_paths.size());
-        return true;
+    auto* drop_files = static_cast<DROPFILES*>(::GlobalLock(handle));
+    if (!drop_files) {
+      ::GlobalFree(handle);
+      return nullptr;
     }
 
-    bool is_supported() const override {
-        return true; // Windows always supports drag-and-drop
+    drop_files->pFiles = sizeof(DROPFILES);
+    drop_files->pt = {0, 0};
+    drop_files->fNC = FALSE;
+    drop_files->fWide = TRUE;
+
+    auto* dest = reinterpret_cast<wchar_t*>(reinterpret_cast<BYTE*>(drop_files) + sizeof(DROPFILES));
+    for (const auto& file : files) {
+      std::memcpy(dest, file.c_str(), (file.length() + 1) * sizeof(wchar_t));
+      dest += file.length() + 1;
     }
+    *dest = L'\0';
+
+    ::GlobalUnlock(handle);
+    return handle;
+  }
+
+  static HGLOBAL create_drop_effect_payload(DWORD effect) {
+    HGLOBAL handle = ::GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD));
+    if (!handle) {
+      return nullptr;
+    }
+
+    auto* value = static_cast<DWORD*>(::GlobalLock(handle));
+    if (!value) {
+      ::GlobalFree(handle);
+      return nullptr;
+    }
+
+    *value = effect;
+    ::GlobalUnlock(handle);
+    return handle;
+  }
+
+  void initialize_formats(const std::vector<std::wstring>& files) {
+    const HGLOBAL file_payload = create_hdrop_payload(files);
+    if (!file_payload) {
+      LOG_ERROR("[DragDrop] Failed to allocate HDROP payload");
+      return;
+    }
+
+    StoredData file_data{};
+    file_data.format.cfFormat = CF_HDROP;
+    file_data.format.ptd = nullptr;
+    file_data.format.dwAspect = DVASPECT_CONTENT;
+    file_data.format.lindex = -1;
+    file_data.format.tymed = TYMED_HGLOBAL;
+
+    file_data.medium.tymed = TYMED_HGLOBAL;
+    file_data.medium.hGlobal = file_payload;
+    file_data.medium.pUnkForRelease = nullptr;
+    stored_data_.push_back(file_data);
+
+    static const CLIPFORMAT preferred_effect_format =
+      static_cast<CLIPFORMAT>(::RegisterClipboardFormatW(L"Preferred DropEffect"));
+
+    const HGLOBAL effect_payload = create_drop_effect_payload(DROPEFFECT_COPY);
+    if (effect_payload) {
+      StoredData effect_data{};
+      effect_data.format.cfFormat = preferred_effect_format;
+      effect_data.format.ptd = nullptr;
+      effect_data.format.dwAspect = DVASPECT_CONTENT;
+      effect_data.format.lindex = -1;
+      effect_data.format.tymed = TYMED_HGLOBAL;
+
+      effect_data.medium.tymed = TYMED_HGLOBAL;
+      effect_data.medium.hGlobal = effect_payload;
+      effect_data.medium.pUnkForRelease = nullptr;
+      stored_data_.push_back(effect_data);
+    } else {
+      LOG_WARN("[DragDrop] Failed to allocate preferred drop effect payload");
+    }
+  }
+
+  LONG ref_count_;
+  std::vector<StoredData> stored_data_;
 };
 
-// Factory function implementation for Windows
+std::wstring utf8_to_wide(const std::string& input) {
+  if (input.empty()) {
+    return std::wstring();
+  }
+
+  const int required = ::MultiByteToWideChar(CP_UTF8, 0, input.c_str(), -1, nullptr, 0);
+  if (required <= 0) {
+    return std::wstring();
+  }
+
+  std::wstring output(static_cast<size_t>(required - 1), L'\0');
+  ::MultiByteToWideChar(CP_UTF8, 0, input.c_str(), -1, output.data(), required);
+  return output;
+}
+
+class WindowsDragDropManager final : public DragDropManager {
+public:
+  WindowsDragDropManager()
+    : hwnd_(nullptr)
+    , initialized_(false) {}
+
+  bool initialize(GLFWwindow* window) override {
+    if (!window) {
+      LOG_ERROR("[DragDrop] Invalid GLFW window");
+      return false;
+    }
+
+    hwnd_ = glfwGetWin32Window(window);
+    if (!hwnd_) {
+      LOG_ERROR("[DragDrop] Failed to retrieve HWND from GLFW window");
+      return false;
+    }
+
+    initialized_ = true;
+    LOG_INFO("[DragDrop] Windows drag-and-drop initialized successfully");
+    return true;
+  }
+
+  bool begin_file_drag(const std::vector<std::string>& file_paths, const ImVec2& /*drag_origin*/) override {
+    if (!initialized_) {
+      LOG_WARN("[DragDrop] DragDropManager not initialized");
+      return false;
+    }
+
+    if (file_paths.empty()) {
+      LOG_WARN("[DragDrop] No files to drag");
+      return false;
+    }
+
+    std::vector<std::wstring> wide_paths;
+    wide_paths.reserve(file_paths.size());
+
+    for (const auto& path : file_paths) {
+      std::wstring wide = utf8_to_wide(path);
+      if (wide.empty()) {
+        LOG_WARN("[DragDrop] Failed to convert path to wide string: {}", path);
+        continue;
+      }
+      wide_paths.push_back(wide);
+    }
+
+    if (wide_paths.empty()) {
+      LOG_ERROR("[DragDrop] No valid file paths to drag");
+      return false;
+    }
+
+    ScopedOleInitializer ole;
+    if (!ole.succeeded()) {
+      if (ole.result() == RPC_E_CHANGED_MODE) {
+        LOG_ERROR("[DragDrop] COM already initialized with incompatible threading model");
+      } else {
+        LOG_ERROR("[DragDrop] OleInitialize failed: HRESULT=0x{:08X}", static_cast<unsigned int>(ole.result()));
+      }
+      return false;
+    }
+
+    auto* data_object = new FileDropDataObject(wide_paths);
+    if (!data_object) {
+      LOG_ERROR("[DragDrop] Failed to allocate data object");
+      return false;
+    }
+
+    if (wide_paths.size() != file_paths.size()) {
+      LOG_DEBUG("[DragDrop] Dragging {} of {} requested path(s)", wide_paths.size(), file_paths.size());
+    }
+
+    auto* drop_source = new SimpleDropSource();
+    if (!drop_source) {
+      data_object->Release();
+      LOG_ERROR("[DragDrop] Failed to allocate drop source");
+      return false;
+    }
+
+    FORMATETC format_check{};
+    format_check.cfFormat = CF_HDROP;
+    format_check.ptd = nullptr;
+    format_check.dwAspect = DVASPECT_CONTENT;
+    format_check.lindex = -1;
+    format_check.tymed = TYMED_HGLOBAL;
+
+    if (data_object->QueryGetData(&format_check) != S_OK) {
+      LOG_ERROR("[DragDrop] Failed to prepare drag payload");
+      drop_source->Release();
+      data_object->Release();
+      return false;
+    }
+
+    DWORD effect = DROPEFFECT_COPY;
+    HRESULT drag_result = ::DoDragDrop(data_object, drop_source, DROPEFFECT_COPY, &effect);
+    drop_source->Release();
+    data_object->Release();
+
+    if (drag_result == DRAGDROP_S_DROP) {
+      LOG_DEBUG("[DragDrop] Drag completed with drop");
+      return true;
+    }
+    if (drag_result == DRAGDROP_S_CANCEL) {
+      LOG_DEBUG("[DragDrop] Drag cancelled by user");
+      return true;
+    }
+
+    LOG_ERROR("[DragDrop] DoDragDrop failed: HRESULT=0x{:08X}", static_cast<unsigned int>(drag_result));
+    return false;
+  }
+
+  bool is_supported() const override {
+    return true;
+  }
+
+private:
+  HWND hwnd_;
+  bool initialized_;
+};
+
+}  // namespace
+
 DragDropManager* create_drag_drop_manager() {
-    return new WindowsDragDropManager();
+  return new WindowsDragDropManager();
 }

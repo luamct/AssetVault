@@ -4,6 +4,12 @@
 #include <cctype>
 #include <cstdlib>
 
+#ifdef _WIN32
+#include <objbase.h>
+#undef MA_COINIT_VALUE
+#define MA_COINIT_VALUE COINIT_APARTMENTTHREADED
+#endif
+
 // Enable OGG/Vorbis support with stb_vorbis
 // Include stb_vorbis header so miniaudio can detect it
 #define STB_VORBIS_HEADER_ONLY
