@@ -27,6 +27,7 @@ void clear_ui_state(UIState& ui_state) {
   ui_state.loaded_end_index = 0;
   ui_state.selected_asset.reset();
   ui_state.selected_asset_index = -1;
+  ui_state.selected_asset_ids.clear();
   ui_state.model_preview_row = -1;
   ui_state.pending_search = false;
   ui_state.update_needed = true;
@@ -935,17 +936,46 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       ImGuiIO& io = ImGui::GetIO();
       // Check for Cmd (macOS) or Ctrl (Windows/Linux) modifier
       bool modifier_pressed = io.KeySuper || io.KeyCtrl;
+      uint32_t clicked_id = ui_state.results[i].id;
 
-      // If modifier is pressed and clicking on currently selected item, deselect
-      if (modifier_pressed && ui_state.selected_asset_index == static_cast<int>(i)) {
-        ui_state.selected_asset_index = -1;
-        ui_state.selected_asset.reset();
-        LOG_DEBUG("Deselected: {}", ui_state.results[i].name);
+      if (modifier_pressed) {
+        // Multi-selection mode: toggle the clicked asset
+        if (ui_state.selected_asset_ids.count(clicked_id)) {
+          // Asset is already selected, remove it
+          ui_state.selected_asset_ids.erase(clicked_id);
+          LOG_DEBUG("Removed from selection: {}", ui_state.results[i].name);
+
+          // If we removed the currently previewed asset, update preview to another selected asset
+          if (ui_state.selected_asset && ui_state.selected_asset->id == clicked_id) {
+            if (!ui_state.selected_asset_ids.empty()) {
+              // Find first selected asset to preview
+              for (const auto& result : ui_state.results) {
+                if (ui_state.selected_asset_ids.count(result.id)) {
+                  ui_state.selected_asset = result;
+                  ui_state.selected_asset_index = static_cast<int>(&result - &ui_state.results[0]);
+                  break;
+                }
+              }
+            } else {
+              // No more selected assets
+              ui_state.selected_asset.reset();
+              ui_state.selected_asset_index = -1;
+            }
+          }
+        } else {
+          // Asset not selected, add it
+          ui_state.selected_asset_ids.insert(clicked_id);
+          ui_state.selected_asset_index = static_cast<int>(i);
+          ui_state.selected_asset = ui_state.results[i];
+          LOG_DEBUG("Added to selection: {}", ui_state.results[i].name);
+        }
       } else {
-        // Normal selection
+        // Normal click: clear all selections and select only this asset
+        ui_state.selected_asset_ids.clear();
+        ui_state.selected_asset_ids.insert(clicked_id);
         ui_state.selected_asset_index = static_cast<int>(i);
         ui_state.selected_asset = ui_state.results[i];
-        LOG_DEBUG("Selected: {}", ui_state.results[i].name);
+        LOG_DEBUG("Selected (single): {}", ui_state.results[i].name);
       }
     }
 
@@ -962,24 +992,37 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         // Get mouse position for drag origin
         ImVec2 mouse_pos = ImGui::GetMousePos();
 
-        // Find all related files to include in the drag (e.g., MTL for OBJ, textures for 3D models)
-        std::vector<std::string> files_to_drag = find_related_files(ui_state.results[i]);
+        std::vector<std::string> files_to_drag;
 
-        // Start drag operation with all related files
+        // If multiple assets are selected, drag all selected assets
+        if (ui_state.selected_asset_ids.size() > 1) {
+          // Collect all selected assets and their related files
+          for (const auto& result : ui_state.results) {
+            if (ui_state.selected_asset_ids.count(result.id)) {
+              std::vector<std::string> related = find_related_files(result);
+              files_to_drag.insert(files_to_drag.end(), related.begin(), related.end());
+            }
+          }
+          LOG_DEBUG("Started drag for {} selected assets (with {} total file(s))",
+                    ui_state.selected_asset_ids.size(), files_to_drag.size());
+        } else {
+          // Single asset: find all related files (e.g., MTL for OBJ, textures for 3D models)
+          files_to_drag = find_related_files(ui_state.results[i]);
+          LOG_DEBUG("Started drag for: {} (with {} related file(s))",
+                    ui_state.results[i].name, files_to_drag.size());
+        }
+
+        // Start drag operation with all files
         if (Services::drag_drop_manager().is_supported()) {
           if (Services::drag_drop_manager().begin_file_drag(files_to_drag, mouse_pos)) {
-            LOG_DEBUG("Started drag for: {} (with {} related file(s))",
-                      ui_state.results[i].name, files_to_drag.size());
             ui_state.drag_initiated = true;  // Mark drag as initiated
           }
         }
       }
     }
 
-    // Handle right-click context menu
+    // Handle right-click context menu (no selection change)
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-      ui_state.selected_asset_index = static_cast<int>(i);
-      ui_state.selected_asset = ui_state.results[i];
       ImGui::OpenPopup(("AssetContextMenu##" + std::to_string(i)).c_str());
     }
 
@@ -988,8 +1031,11 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
     ImGui::PopStyleColor(3);
 
+    // Check if this asset is selected (for visual highlights)
+    bool is_selected = ui_state.selected_asset_ids.count(ui_state.results[i].id) > 0;
+
     // Draw selection highlight border around the actual thumbnail bounds if this asset is selected
-    if (i == ui_state.selected_asset_index) {
+    if (is_selected) {
       ImGui::GetWindowDrawList()->AddRect(
         thumbnail_min,
         thumbnail_max,
@@ -1009,7 +1055,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     float text_x_offset = (Config::THUMBNAIL_SIZE - text_size.x) * 0.5f;
 
     // Draw blue background for selected text (similar to OS file explorers)
-    if (i == ui_state.selected_asset_index) {
+    if (is_selected) {
       ImVec2 text_bg_min(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN);
       ImVec2 text_bg_max(container_pos.x + Config::THUMBNAIL_SIZE,
                          text_bg_min.y + Config::TEXT_HEIGHT);
@@ -1024,7 +1070,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + text_x_offset);
 
     // Use white text for selected items, normal text color otherwise
-    if (i == ui_state.selected_asset_index) {
+    if (is_selected) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
       ImGui::TextWrapped("%s", truncated_name.c_str());
       ImGui::PopStyleColor();
@@ -1048,6 +1094,13 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     else {
       ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets match your search.");
     }
+  }
+
+  // Deselect all when clicking on grid background (not on any asset)
+  if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsAnyItemHovered()) {
+    ui_state.selected_asset_ids.clear();
+    ui_state.selected_asset_index = -1;
+    ui_state.selected_asset.reset();
   }
 
   // End inner scrolling region (grid)
@@ -1091,7 +1144,18 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
     }
   }
 
-  // If selected id is no longer present, clear selection entirely
+  // Clean up selected_asset_ids: remove any IDs that are no longer in results
+  std::vector<uint32_t> ids_to_remove;
+  for (uint32_t id : ui_state.selected_asset_ids) {
+    if (ui_state.results_ids.find(id) == ui_state.results_ids.end()) {
+      ids_to_remove.push_back(id);
+    }
+  }
+  for (uint32_t id : ids_to_remove) {
+    ui_state.selected_asset_ids.erase(id);
+  }
+
+  // If the preview asset is no longer in results, clear it
   if (ui_state.selected_asset &&
       ui_state.results_ids.find(ui_state.selected_asset->id) == ui_state.results_ids.end()) {
     ui_state.selected_asset_index = -1;

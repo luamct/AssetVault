@@ -35,8 +35,11 @@ struct UIState {
 
   // UI state
   std::vector<Asset> results;
-  int selected_asset_index = -1; // -1 means no selection
-  std::optional<Asset> selected_asset; // Copy used for stable preview/audio
+
+  // Multiple selection support
+  std::unordered_set<uint32_t> selected_asset_ids;  // IDs of all selected assets (for fast lookup)
+  int selected_asset_index = -1; // Index of most recently selected asset (-1 means no selection)
+  std::optional<Asset> selected_asset; // Most recently selected asset (for preview/audio)
 
   // Asset path state
   std::string assets_path_selected;
