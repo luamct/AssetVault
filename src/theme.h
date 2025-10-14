@@ -87,6 +87,10 @@ namespace Theme {
   constexpr ImVec4 TAB_UNFOCUSED_1 = ImVec4(0.90f, 0.95f, 1.00f, 0.80f); // Unfocused tab
   constexpr ImVec4 TAB_UNFOCUSED_2 = ImVec4(0.85f, 0.90f, 0.95f, 0.90f); // Unfocused active tab
 
+  // === SELECTION RECTANGLE COLORS (Area/Rubber-band Selection) ===
+  constexpr ImU32 SELECTION_FILL_U32 = IM_COL32(100, 150, 255, 50);   // Light blue fill with transparency
+  constexpr ImU32 SELECTION_BORDER_U32 = IM_COL32(100, 150, 255, 200); // Darker blue border
+
   // Note: For OpenGL calls, access ImVec4 components directly:
   // Theme::BACKGROUND_LIGHT_BLUE_1.x, .y, .z, .w
 

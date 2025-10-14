@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "imgui.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -65,6 +66,12 @@ struct UIState {
 
   // Drag-and-drop state (track if drag is in progress to prevent multiple initiations)
   bool drag_initiated = false;
+
+  // Area selection state (rubber band selection)
+  bool drag_select_started = false;  // True if clicked on background (initiates selection)
+  bool drag_select_active = false;   // True after minimum drag distance (shows rectangle)
+  ImVec2 drag_select_start;
+  ImVec2 drag_select_end;
 
   // Type filter toggle states
   bool type_filter_2d = false;

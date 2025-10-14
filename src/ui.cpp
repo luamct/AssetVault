@@ -16,6 +16,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <chrono>
 #include <iomanip>
 #include <filesystem>
@@ -862,6 +863,9 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Save current cursor position
   ImVec2 grid_start_pos = ImGui::GetCursorPos();
 
+  // Get grid start position in screen coordinates BEFORE reserving space
+  ImVec2 grid_screen_start = ImGui::GetCursorScreenPos();
+
   // Reserve space for the entire loaded content
   ImGui::Dummy(ImVec2(0, total_content_height));
 
@@ -1096,11 +1100,97 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     }
   }
 
-  // Deselect all when clicking on grid background (not on any asset)
-  if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsAnyItemHovered()) {
-    ui_state.selected_asset_ids.clear();
-    ui_state.selected_asset_index = -1;
-    ui_state.selected_asset.reset();
+  // Handle area selection (rubber band selection)
+  bool is_window_hovered = ImGui::IsWindowHovered();
+  bool is_item_hovered = ImGui::IsAnyItemHovered();
+  ImGuiIO& io = ImGui::GetIO();
+  bool modifier_pressed = io.KeySuper || io.KeyCtrl;
+
+  // Start drag selection when clicking on background
+  if (is_window_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !is_item_hovered) {
+    ui_state.drag_select_started = true;
+    ui_state.drag_select_start = ImGui::GetMousePos();
+    ui_state.drag_select_end = ui_state.drag_select_start;
+    ui_state.drag_select_active = false; // Will activate after minimum drag distance
+  }
+
+  // Update drag selection while dragging
+  if (ui_state.drag_select_started && ImGui::IsMouseDown(ImGuiMouseButton_Left) && is_window_hovered) {
+    ImVec2 current_pos = ImGui::GetMousePos();
+    float drag_distance = std::sqrt(
+      std::pow(current_pos.x - ui_state.drag_select_start.x, 2) +
+      std::pow(current_pos.y - ui_state.drag_select_start.y, 2)
+    );
+
+    // Activate drag selection after minimum distance (5 pixels) to show rectangle
+    if (drag_distance > 5.0f && !ui_state.drag_select_active) {
+      ui_state.drag_select_active = true;
+    }
+    if (ui_state.drag_select_active) {
+      ui_state.drag_select_end = current_pos;
+    }
+  }
+
+  // Draw selection rectangle
+  if (ui_state.drag_select_active) {
+    ImVec2 rect_min(
+      std::min(ui_state.drag_select_start.x, ui_state.drag_select_end.x),
+      std::min(ui_state.drag_select_start.y, ui_state.drag_select_end.y)
+    );
+    ImVec2 rect_max(
+      std::max(ui_state.drag_select_start.x, ui_state.drag_select_end.x),
+      std::max(ui_state.drag_select_start.y, ui_state.drag_select_end.y)
+    );
+
+    // Draw filled rectangle with transparency
+    ImGui::GetWindowDrawList()->AddRectFilled(rect_min, rect_max, Theme::SELECTION_FILL_U32, 0.0f);
+
+    // Draw border
+    ImGui::GetWindowDrawList()->AddRect(rect_min, rect_max, Theme::SELECTION_BORDER_U32, 0.0f, 0, 1.5f);
+  }
+
+  // Complete selection on mouse release (handles both clicks and drags)
+  if (ui_state.drag_select_started && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+    ImVec2 rect_min(
+      std::min(ui_state.drag_select_start.x, ui_state.drag_select_end.x),
+      std::min(ui_state.drag_select_start.y, ui_state.drag_select_end.y)
+    );
+    ImVec2 rect_max(
+      std::max(ui_state.drag_select_start.x, ui_state.drag_select_end.x),
+      std::max(ui_state.drag_select_start.y, ui_state.drag_select_end.y)
+    );
+
+    // Clear selection if not holding modifier
+    if (!modifier_pressed) {
+      ui_state.selected_asset_ids.clear();
+    }
+
+    // Calculate which grid cells intersect with the selection rectangle
+    // Convert screen coordinates to grid coordinates
+    float cell_width = Config::THUMBNAIL_SIZE + Config::GRID_SPACING;
+    float cell_height = item_height + Config::GRID_SPACING;
+
+    int first_col = std::max(0, static_cast<int>((rect_min.x - grid_screen_start.x) / cell_width));
+    int last_col = std::min(columns - 1, static_cast<int>((rect_max.x - grid_screen_start.x) / cell_width));
+    int first_row = std::max(0, static_cast<int>((rect_min.y - grid_screen_start.y) / cell_height));
+    int last_row = static_cast<int>((rect_max.y - grid_screen_start.y) / cell_height);
+
+    // Select all assets in intersecting grid cells
+    for (int row = first_row; row <= last_row; row++) {
+      for (int col = first_col; col <= last_col; col++) {
+        int index = row * columns + col;
+        if (index >= 0 && index < static_cast<int>(ui_state.results.size())) {
+          ui_state.selected_asset_ids.insert(ui_state.results[index].id);
+          // Update preview to last selected asset
+          ui_state.selected_asset_index = index;
+          ui_state.selected_asset = ui_state.results[index];
+        }
+      }
+    }
+
+    // Reset flags
+    ui_state.drag_select_started = false;
+    ui_state.drag_select_active = false;
   }
 
   // End inner scrolling region (grid)
