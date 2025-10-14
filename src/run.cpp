@@ -169,6 +169,18 @@ int run(std::atomic<bool>* shutdown_requested) {
   // Load assets directory from config
   database.try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, ui_state.assets_directory);
 
+  // If the saved directory no longer exists, reset it (behave as if never set)
+  if (!ui_state.assets_directory.empty()) {
+    std::error_code ec;
+    if (!std::filesystem::exists(ui_state.assets_directory, ec) ||
+        !std::filesystem::is_directory(ui_state.assets_directory, ec)) {
+      LOG_WARN("Saved assets directory no longer exists: {}. Resetting to unset state.", ui_state.assets_directory);
+      ui_state.assets_directory.clear();
+      // Clear from database as well
+      database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, "");
+    }
+  }
+
   // Main loop
   if (headless_mode) {
     // Headless mode: just wait for shutdown signal
