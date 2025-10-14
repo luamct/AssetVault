@@ -33,9 +33,10 @@ namespace Config {
 
     // Grid layout
     constexpr float THUMBNAIL_SIZE = 240.0f;
-    constexpr float GRID_SPACING = 30.0f;
-    constexpr float TEXT_MARGIN = 20.0f;         // Space below thumbnail for text positioning
+    constexpr float GRID_SPACING = 15.0f;
+    constexpr float TEXT_MARGIN = 10.0f;         // Space below thumbnail for text positioning
     constexpr float TEXT_HEIGHT = 20.0f;         // Height reserved for text
+    constexpr float TEXT_MAX_LENGTH = 30.0f;         // Where to truncated the asset names
     constexpr float ICON_SCALE = 0.5f;           // Icon occupies 50% of the thumbnail area
 
     // 3D model thumbnail generation

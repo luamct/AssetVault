@@ -821,9 +821,9 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Calculate grid layout upfront since all items have the same size
   float available_width = panel_width - 20.0f;                     // Account for padding
   float item_height = Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN + Config::TEXT_HEIGHT; // Full item height including text
-  // Add GRID_SPACING to available width since we don't need spacing after the
-  // last item
-  int columns = static_cast<int>((available_width + Config::GRID_SPACING) / (Config::THUMBNAIL_SIZE + Config::GRID_SPACING));
+  // Each item takes THUMBNAIL_SIZE + GRID_SPACING (spacing after each item, including last one)
+  // This ensures GRID_SPACING at the end of each row to avoid scrollbar overlap
+  int columns = static_cast<int>(available_width / (Config::THUMBNAIL_SIZE + Config::GRID_SPACING));
   if (columns < 1)
     columns = 1;
 
@@ -922,15 +922,38 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_TRANSPARENT);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
+    // Remove frame padding so ImageButton is exactly display_size (no extra space added)
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
 
-    // Display thumbnail image p
+    // Display thumbnail image - now exactly matches our grid sizing
     ImGui::SetCursorScreenPos(image_pos);
     if (ImGui::ImageButton(
-      ("##Thumbnail" + std::to_string(i)).c_str(), (ImTextureID) (intptr_t) texture_entry.get_texture_id(), display_size)) {
-      ui_state.selected_asset_index = static_cast<int>(i);
-      ui_state.selected_asset = ui_state.results[i];
-      LOG_DEBUG("Selected: {}", ui_state.results[i].name);
+      ("##Thumbnail" + std::to_string(i)).c_str(),
+      (ImTextureID) (intptr_t) texture_entry.get_texture_id(),
+      display_size)) {
+
+      ImGuiIO& io = ImGui::GetIO();
+      // Check for Cmd (macOS) or Ctrl (Windows/Linux) modifier
+      bool modifier_pressed = io.KeySuper || io.KeyCtrl;
+
+      // If modifier is pressed and clicking on currently selected item, deselect
+      if (modifier_pressed && ui_state.selected_asset_index == static_cast<int>(i)) {
+        ui_state.selected_asset_index = -1;
+        ui_state.selected_asset.reset();
+        LOG_DEBUG("Deselected: {}", ui_state.results[i].name);
+      } else {
+        // Normal selection
+        ui_state.selected_asset_index = static_cast<int>(i);
+        ui_state.selected_asset = ui_state.results[i];
+        LOG_DEBUG("Selected: {}", ui_state.results[i].name);
+      }
     }
+
+    ImGui::PopStyleVar();  // Restore frame padding
+
+    // Get the actual rendered bounds of the ImageButton for the selection border
+    ImVec2 thumbnail_min = ImGui::GetItemRectMin();
+    ImVec2 thumbnail_max = ImGui::GetItemRectMax();
 
     // Handle drag-and-drop to external applications (Finder, Explorer, etc.)
     // Only initiate drag once per gesture to avoid multiple drag sessions
@@ -965,14 +988,49 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
     ImGui::PopStyleColor(3);
 
+    // Draw selection highlight border around the actual thumbnail bounds if this asset is selected
+    if (i == ui_state.selected_asset_index) {
+      ImGui::GetWindowDrawList()->AddRect(
+        thumbnail_min,
+        thumbnail_max,
+        Theme::ToImU32(Theme::ACCENT_BLUE_1),
+        4.0f,  // Corner rounding
+        0,     // Flags
+        3.0f   // Border thickness
+      );
+    }
+
     // Position text at the bottom of the container
     ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN));
 
-    // Asset name below thumbnail
-    std::string truncated_name = truncate_filename(ui_state.results[i].name);
-    ImGui::SetCursorPosX(
-      ImGui::GetCursorPosX() + (Config::THUMBNAIL_SIZE - ImGui::CalcTextSize(truncated_name.c_str()).x) * 0.5f);
-    ImGui::TextWrapped("%s", truncated_name.c_str());
+    // Asset name below thumbnail with selection highlight
+    std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
+    ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
+    float text_x_offset = (Config::THUMBNAIL_SIZE - text_size.x) * 0.5f;
+
+    // Draw blue background for selected text (similar to OS file explorers)
+    if (i == ui_state.selected_asset_index) {
+      ImVec2 text_bg_min(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN);
+      ImVec2 text_bg_max(container_pos.x + Config::THUMBNAIL_SIZE,
+                         text_bg_min.y + Config::TEXT_HEIGHT);
+      ImGui::GetWindowDrawList()->AddRectFilled(
+        text_bg_min,
+        text_bg_max,
+        Theme::ToImU32(Theme::ACCENT_BLUE_1),
+        2.0f  // Slight rounding for the text background
+      );
+    }
+
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + text_x_offset);
+
+    // Use white text for selected items, normal text color otherwise
+    if (i == ui_state.selected_asset_index) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+      ImGui::TextWrapped("%s", truncated_name.c_str());
+      ImGui::PopStyleColor();
+    } else {
+      ImGui::TextWrapped("%s", truncated_name.c_str());
+    }
 
     ImGui::EndGroup();
   }

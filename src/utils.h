@@ -11,7 +11,7 @@
 struct Asset;
 
 // String utility functions
-std::string truncate_filename(const std::string& filename, size_t max_length = 20);
+std::string truncate_filename(const std::string& filename, size_t max_length);
 std::string to_lowercase(const std::string& str);
 std::string trim_string(const std::string& str);
 
