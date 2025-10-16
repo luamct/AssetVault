@@ -41,6 +41,16 @@ struct Mesh {
   std::string name;            // Mesh name (for debugging)
 };
 
+// Bone data structure for skeletal animation
+struct Bone {
+  std::string name;                  // Bone name
+  glm::mat4 offset_matrix;           // Transforms from mesh space to bone space
+  glm::mat4 local_transform;         // Local transformation relative to parent
+  glm::mat4 global_transform;        // World space transformation
+  int parent_index;                  // Index of parent bone (-1 for root)
+  std::vector<int> child_indices;    // Indices of child bones
+};
+
 // Model data structure
 struct Model {
   // Geometry data
@@ -53,6 +63,10 @@ struct Model {
   // Multi-material support
   std::vector<Material> materials; // All materials in this model
   std::vector<Mesh> meshes;        // All meshes with material associations
+
+  // Skeletal data
+  std::vector<Bone> bones;         // Bone hierarchy for skeletal animation
+  bool has_skeleton = false;       // True if model contains skeletal data
 
   // Bounds
   aiVector3D min_bounds;
@@ -101,3 +115,6 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
 
 // OpenGL state setup for consistent 3D rendering across contexts
 void setup_3d_rendering_state();
+
+// Skeleton rendering for models with bone data
+void render_skeleton(const Model& model, const Camera3D& camera, TextureManager& texture_manager);

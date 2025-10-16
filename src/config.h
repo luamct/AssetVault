@@ -47,6 +47,12 @@ namespace Config {
     constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;  // Degrees per pixel (was 0.5, now 1/3 of that)
     constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;            // Zoom multiplier per scroll wheel notch
 
+    // 3D skeleton rendering filters
+    constexpr bool SKELETON_HIDE_CTRL_BONES = true;   // Skip bones with "Ctrl" suffix (animation controls)
+    constexpr bool SKELETON_HIDE_IK_BONES = true;     // Skip bones with "IK" in name (inverse kinematics targets)
+    constexpr bool SKELETON_HIDE_ROLL_BONES = true;   // Skip bones with "Roll" in name (helper bones)
+    constexpr bool SKELETON_HIDE_ROOT_CHILDREN = true; // Skip bones directly parented to "Root" (world anchor)
+
     // Preview panel layout
     constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;     // Margin from window right edge
     constexpr float PREVIEW_INTERNAL_PADDING = 30.0f; // Internal padding within preview panel

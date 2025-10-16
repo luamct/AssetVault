@@ -999,6 +999,99 @@ bool TextureManager::initialize_preview_system() {
   glDeleteShader(vertex_shader);
   glDeleteShader(fragment_shader);
 
+  // ============================================
+  // Create skeleton shader (directional lighting with flat shading)
+  // ============================================
+  const char* skeleton_vertex_source = R"(
+    #version 330 core
+    layout (location = 0) in vec3 aPos;
+    layout (location = 1) in vec3 aNormal;
+    layout (location = 2) in vec2 aTexCoord;
+
+    uniform mat4 model;
+    uniform mat4 view;
+    uniform mat4 projection;
+
+    out vec3 FragPos;
+    flat out vec3 Normal;  // Flat shading - no interpolation
+    out vec2 TexCoord;
+
+    void main()
+    {
+        FragPos = vec3(model * vec4(aPos, 1.0));
+        Normal = mat3(transpose(inverse(model))) * aNormal;
+        TexCoord = aTexCoord;
+        gl_Position = projection * view * vec4(FragPos, 1.0);
+    }
+  )";
+
+  const char* skeleton_fragment_source = R"(
+    #version 330 core
+    in vec3 FragPos;
+    flat in vec3 Normal;  // Flat shading - no interpolation
+    in vec2 TexCoord;
+
+    uniform vec3 lightDir;  // Directional light direction
+    uniform vec3 lightColor;
+    uniform vec3 materialColor;
+    uniform vec3 emissiveColor;
+
+    out vec4 FragColor;
+
+    void main()
+    {
+        vec3 norm = normalize(Normal);
+
+        // Ambient lighting
+        float ambientStrength = 0.3;
+        vec3 ambient = ambientStrength * lightColor;
+
+        // Directional diffuse lighting (uniform across surfaces with same normal)
+        float diff = max(dot(norm, -lightDir), 0.0);
+        vec3 diffuse = diff * lightColor * 0.7;
+
+        vec3 result = (ambient + diffuse) * materialColor + emissiveColor;
+        FragColor = vec4(result, 1.0);
+    }
+  )";
+
+  // Compile skeleton vertex shader
+  unsigned int skeleton_vertex = glCreateShader(GL_VERTEX_SHADER);
+  glShaderSource(skeleton_vertex, 1, &skeleton_vertex_source, nullptr);
+  glCompileShader(skeleton_vertex);
+  glGetShaderiv(skeleton_vertex, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    glGetShaderInfoLog(skeleton_vertex, 512, nullptr, info_log);
+    LOG_ERROR("SHADER::SKELETON_VERTEX::COMPILATION_FAILED: {}", info_log);
+    return false;
+  }
+
+  unsigned int skeleton_fragment = glCreateShader(GL_FRAGMENT_SHADER);
+  glShaderSource(skeleton_fragment, 1, &skeleton_fragment_source, nullptr);
+  glCompileShader(skeleton_fragment);
+  glGetShaderiv(skeleton_fragment, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    glGetShaderInfoLog(skeleton_fragment, 512, nullptr, info_log);
+    LOG_ERROR("SHADER::SKELETON_FRAGMENT::COMPILATION_FAILED: {}", info_log);
+    return false;
+  }
+
+  // Create skeleton shader program
+  skeleton_shader_ = glCreateProgram();
+  glAttachShader(skeleton_shader_, skeleton_vertex);
+  glAttachShader(skeleton_shader_, skeleton_fragment);
+  glLinkProgram(skeleton_shader_);
+  glGetProgramiv(skeleton_shader_, GL_LINK_STATUS, &success);
+  if (!success) {
+    glGetProgramInfoLog(skeleton_shader_, 512, nullptr, info_log);
+    LOG_ERROR("SHADER::SKELETON_PROGRAM::LINKING_FAILED: {}", info_log);
+    return false;
+  }
+
+  // Clean up skeleton shaders
+  glDeleteShader(skeleton_vertex);
+  glDeleteShader(skeleton_fragment);
+
   // Create framebuffer
   glGenFramebuffers(1, &preview_framebuffer_);
   glBindFramebuffer(GL_FRAMEBUFFER, preview_framebuffer_);
@@ -1036,6 +1129,7 @@ bool TextureManager::initialize_preview_system() {
 void TextureManager::cleanup_preview_system() {
   if (preview_initialized_) {
     glDeleteProgram(preview_shader_);
+    glDeleteProgram(skeleton_shader_);
     glDeleteTextures(1, &preview_texture_);
     glDeleteTextures(1, &preview_depth_texture_);
     glDeleteFramebuffers(1, &preview_framebuffer_);

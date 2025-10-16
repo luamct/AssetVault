@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <algorithm>
 #include <set>
+#include <map>
+#include <functional>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -402,6 +404,7 @@ void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 pa
 void process_mesh(aiMesh* mesh, const aiScene* scene, Model& model, glm::mat4 transform);
 unsigned int load_model_texture(const aiScene* scene, const std::string& model_path);
 unsigned int load_embedded_texture(const aiTexture* ai_texture);
+void load_model_skeleton(const aiScene* scene, Model& model);
 
 // Helper function to convert aiMatrix4x4 to glm::mat4
 glm::mat4 ai_to_glm_mat4(const aiMatrix4x4& from) {
@@ -506,6 +509,136 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
   model.meshes.push_back(mesh_info);
 }
 
+// Load skeleton data from scene
+void load_model_skeleton(const aiScene* scene, Model& model) {
+  model.bones.clear();
+  model.has_skeleton = false;
+
+  if (!scene || !scene->mRootNode) {
+    return;
+  }
+
+  LOG_DEBUG("[SKELETON] Scene has {} meshes, {} animations", scene->mNumMeshes, scene->mNumAnimations);
+
+  // Map bone names to indices for quick lookup
+  std::map<std::string, int> bone_name_to_index;
+
+  // First pass: collect all bones from all meshes
+  for (unsigned int m = 0; m < scene->mNumMeshes; m++) {
+    const aiMesh* mesh = scene->mMeshes[m];
+    LOG_DEBUG("[SKELETON] Mesh {} has {} bones", m, mesh->mNumBones);
+
+    for (unsigned int b = 0; b < mesh->mNumBones; b++) {
+      const aiBone* ai_bone = mesh->mBones[b];
+      std::string bone_name = ai_bone->mName.C_Str();
+
+      // Add bone if not already in our list
+      if (bone_name_to_index.find(bone_name) == bone_name_to_index.end()) {
+        Bone bone;
+        bone.name = bone_name;
+        bone.offset_matrix = ai_to_glm_mat4(ai_bone->mOffsetMatrix);
+        bone.parent_index = -1; // Will be set in second pass
+
+        bone_name_to_index[bone_name] = static_cast<int>(model.bones.size());
+        model.bones.push_back(bone);
+      }
+    }
+  }
+
+  // If no bones found in meshes, try extracting from animation channels
+  if (model.bones.empty() && scene->mNumAnimations > 0) {
+    LOG_INFO("[SKELETON] No bones in meshes, trying to extract from {} animations", scene->mNumAnimations);
+
+    // Collect unique bone names from all animation channels
+    std::set<std::string> bone_names;
+    for (unsigned int a = 0; a < scene->mNumAnimations; a++) {
+      const aiAnimation* anim = scene->mAnimations[a];
+      for (unsigned int c = 0; c < anim->mNumChannels; c++) {
+        const aiNodeAnim* channel = anim->mChannels[c];
+        bone_names.insert(channel->mNodeName.C_Str());
+      }
+    }
+
+    LOG_INFO("[SKELETON] Found {} unique bone names in animations", bone_names.size());
+
+    // Create bones from animation channels
+    for (const std::string& bone_name : bone_names) {
+      Bone bone;
+      bone.name = bone_name;
+      bone.offset_matrix = glm::mat4(1.0f); // Identity for animation-only bones
+      bone.parent_index = -1; // Will be set in hierarchy build
+
+      bone_name_to_index[bone_name] = static_cast<int>(model.bones.size());
+      model.bones.push_back(bone);
+    }
+  }
+
+  // If still no bones found, return early
+  if (model.bones.empty()) {
+    return;
+  }
+
+  LOG_INFO("[SKELETON] Found {} bones", model.bones.size());
+
+  // Second pass: build hierarchy by traversing scene nodes
+  std::function<void(aiNode*, int)> traverse_node = [&](aiNode* node, int parent_index) {
+    std::string node_name = node->mName.C_Str();
+
+    // Check if this node corresponds to a bone
+    auto it = bone_name_to_index.find(node_name);
+    int current_bone_index = -1;
+
+    if (it != bone_name_to_index.end()) {
+      current_bone_index = it->second;
+      model.bones[current_bone_index].parent_index = parent_index;
+      model.bones[current_bone_index].local_transform = ai_to_glm_mat4(node->mTransformation);
+
+      // Add to parent's children list
+      if (parent_index >= 0) {
+        model.bones[parent_index].child_indices.push_back(current_bone_index);
+      }
+
+      LOG_TRACE("[SKELETON] Bone '{}' (index {}) has parent index {}",
+                node_name, current_bone_index, parent_index);
+    }
+
+    // Recursively process children
+    for (unsigned int i = 0; i < node->mNumChildren; i++) {
+      traverse_node(node->mChildren[i], current_bone_index >= 0 ? current_bone_index : parent_index);
+    }
+  };
+
+  // Start traversal from root
+  traverse_node(scene->mRootNode, -1);
+
+  // Third pass: calculate global transforms
+  std::function<void(int, const glm::mat4&)> calculate_global_transforms =
+    [&](int bone_index, const glm::mat4& parent_transform) {
+      if (bone_index < 0 || bone_index >= static_cast<int>(model.bones.size())) {
+        return;
+      }
+
+      Bone& bone = model.bones[bone_index];
+      bone.global_transform = parent_transform * bone.local_transform;
+
+      // Recursively update children
+      for (int child_index : bone.child_indices) {
+        calculate_global_transforms(child_index, bone.global_transform);
+      }
+    };
+
+  // Calculate global transforms for all root bones (bones with parent_index == -1)
+  glm::mat4 identity = glm::mat4(1.0f);
+  for (size_t i = 0; i < model.bones.size(); i++) {
+    if (model.bones[i].parent_index == -1) {
+      calculate_global_transforms(static_cast<int>(i), identity);
+    }
+  }
+
+  model.has_skeleton = true;
+  LOG_INFO("[SKELETON] Successfully loaded skeleton with {} bones", model.bones.size());
+}
+
 bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager) {
   // Clean up previous model
   cleanup_model(model);
@@ -534,16 +667,43 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 
   // Handle incomplete scenes (common with FBX files containing animations)
   if (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
-    LOG_WARN("Scene marked as incomplete (possibly due to animations), but proceeding with mesh data");
+    LOG_DEBUG("Scene marked as incomplete (possibly due to animations), but proceeding with mesh data");
   }
 
   // Process the scene hierarchy starting from root node
   glm::mat4 identity = glm::mat4(1.0f);
   process_node(scene->mRootNode, scene, model, identity);
 
+  // Load skeleton data early (before geometry check) so animation-only files can load
+  load_model_skeleton(scene, model);
+
   // Check if the model has any visible geometry
-  if (model.vertices.empty() || model.indices.empty()) {
+  bool has_geometry = !model.vertices.empty() && !model.indices.empty();
+  if (!has_geometry) {
     model.has_no_geometry = true;
+
+    // If there's no geometry but there is a skeleton, still allow loading for animation preview
+    if (model.has_skeleton) {
+      LOG_INFO("[3D] Animation-only file with {} bones (no geometry)", model.bones.size());
+
+      // Calculate bounds from skeleton bone positions
+      model.min_bounds = aiVector3D(FLT_MAX, FLT_MAX, FLT_MAX);
+      model.max_bounds = aiVector3D(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+      for (const Bone& bone : model.bones) {
+        glm::vec3 bone_pos = glm::vec3(bone.global_transform[3]);
+        model.min_bounds.x = std::min(model.min_bounds.x, bone_pos.x);
+        model.min_bounds.y = std::min(model.min_bounds.y, bone_pos.y);
+        model.min_bounds.z = std::min(model.min_bounds.z, bone_pos.z);
+        model.max_bounds.x = std::max(model.max_bounds.x, bone_pos.x);
+        model.max_bounds.y = std::max(model.max_bounds.y, bone_pos.y);
+        model.max_bounds.z = std::max(model.max_bounds.z, bone_pos.z);
+      }
+
+      model.loaded = true;
+      return true;
+    }
+
     return false;
   }
 
@@ -617,7 +777,6 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   load_model_materials(scene, filepath, model, texture_manager);
 
   LOG_DEBUG("[3D] Loaded {} materials", model.materials.size());
-
 
   model.loaded = true;
   return true;
@@ -738,6 +897,197 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   glBindVertexArray(0);
 }
 
+// Helper function to create diamond-shaped bone geometry (two pyramids base-to-base)
+// Wide base is placed closer to start (parent) to show bone directionality
+void generate_bone_diamond(const glm::vec3& start, const glm::vec3& end, float width,
+                           std::vector<float>& vertices, std::vector<unsigned int>& indices) {
+  // Calculate bone direction and length
+  glm::vec3 direction = end - start;
+  float length = glm::length(direction);
+  if (length < 0.0001f) return; // Skip zero-length bones
+
+  glm::vec3 dir_normalized = glm::normalize(direction);
+
+  // Place wide base 20% along the bone (closer to parent/start)
+  glm::vec3 base_pos = start + dir_normalized * (length * 0.20f);
+
+  // Create perpendicular vectors for the square cross-section
+  glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+  if (std::abs(glm::dot(dir_normalized, up)) > 0.99f) {
+    up = glm::vec3(1.0f, 0.0f, 0.0f); // Use different up if parallel
+  }
+  glm::vec3 right = glm::normalize(glm::cross(dir_normalized, up));
+  glm::vec3 forward = glm::normalize(glm::cross(right, dir_normalized));
+
+  // Diamond has 6 vertices: start point, end point, and 4 corners forming square base
+  unsigned int base_idx = vertices.size() / 8;
+
+  // Vertex 0: Start point (narrow end at parent)
+  vertices.insert(vertices.end(), {start.x, start.y, start.z, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+
+  // Vertex 1: End point (narrow end at child)
+  vertices.insert(vertices.end(), {end.x, end.y, end.z, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+
+  // Vertices 2-5: Four corners forming a perfect square base (wide part near parent)
+  // Using right and forward vectors ensures perpendicularity and equal spacing
+  glm::vec3 corners[4] = {
+    base_pos + right * width + forward * width,   // Corner 0: +X +Z
+    base_pos - right * width + forward * width,   // Corner 1: -X +Z
+    base_pos - right * width - forward * width,   // Corner 2: -X -Z
+    base_pos + right * width - forward * width    // Corner 3: +X -Z
+  };
+
+  for (int i = 0; i < 4; i++) {
+    vertices.insert(vertices.end(), {corners[i].x, corners[i].y, corners[i].z, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+  }
+
+  // Create triangles for both pyramids
+  // First pyramid (start point to square base) - short pyramid near parent
+  for (int i = 0; i < 4; i++) {
+    indices.push_back(base_idx + 0);           // Start point
+    indices.push_back(base_idx + 2 + i);       // Current corner
+    indices.push_back(base_idx + 2 + ((i + 1) % 4)); // Next corner
+  }
+
+  // Second pyramid (square base to end point) - long pyramid pointing to child
+  for (int i = 0; i < 4; i++) {
+    indices.push_back(base_idx + 1);           // End point
+    indices.push_back(base_idx + 2 + ((i + 1) % 4)); // Next corner (reversed winding)
+    indices.push_back(base_idx + 2 + i);       // Current corner
+  }
+
+  // Calculate normals for lighting (approximate - one normal per vertex)
+  for (size_t i = base_idx * 8; i < vertices.size(); i += 8) {
+    glm::vec3 pos(vertices[i], vertices[i + 1], vertices[i + 2]);
+    glm::vec3 normal = glm::normalize(pos - base_pos);
+    vertices[i + 3] = normal.x;
+    vertices[i + 4] = normal.y;
+    vertices[i + 5] = normal.z;
+  }
+}
+
+void render_skeleton(const Model& model, const Camera3D& camera, TextureManager& texture_manager) {
+  if (!model.has_skeleton || model.bones.empty()) {
+    return;
+  }
+
+  // Use dedicated skeleton shader with directional lighting
+  glUseProgram(texture_manager.get_skeleton_shader());
+
+  // Set up matrices (same as render_model)
+  glm::mat4 model_matrix = glm::mat4(1.0f);
+
+  // Center the skeleton at origin (same centering as model)
+  aiVector3D center = (model.min_bounds + model.max_bounds) * 0.5f;
+  model_matrix = glm::translate(model_matrix, glm::vec3(-center.x, -center.y, -center.z));
+
+  // Calculate camera matrices (same as render_model)
+  aiVector3D size = model.max_bounds - model.min_bounds;
+  float max_size = std::max({ size.x, size.y, size.z });
+  float base_distance = max_size * 2.2f;
+  float camera_distance = base_distance / camera.zoom;
+
+  float rot_x_rad = glm::radians(camera.rotation_x);
+  float rot_y_rad = glm::radians(camera.rotation_y);
+
+  float camera_x = camera_distance * cos(rot_x_rad) * sin(rot_y_rad);
+  float camera_y = camera_distance * sin(rot_x_rad);
+  float camera_z = camera_distance * cos(rot_x_rad) * cos(rot_y_rad);
+
+  glm::mat4 view_matrix = glm::lookAt(
+    glm::vec3(camera_x, camera_y, camera_z),
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    glm::vec3(0.0f, -1.0f, 0.0f)
+  );
+
+  float far_plane = camera_distance * 2.0f;
+  glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane);
+
+  // Set uniforms for skeleton shader
+  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_skeleton_shader(), "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_skeleton_shader(), "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_skeleton_shader(), "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+  // Set directional lighting for skeleton
+  glm::vec3 light_direction = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
+  glUniform3f(glGetUniformLocation(texture_manager.get_skeleton_shader(), "lightDir"), light_direction.x, light_direction.y, light_direction.z);
+  glUniform3f(glGetUniformLocation(texture_manager.get_skeleton_shader(), "lightColor"), 1.0f, 1.0f, 1.0f);
+
+  // Build vertex data for diamond-shaped bones
+  std::vector<float> bone_vertices;
+  std::vector<unsigned int> bone_indices;
+
+  for (const Bone& bone : model.bones) {
+    // Skip root bones (no parent to draw to)
+    if (bone.parent_index < 0 || bone.parent_index >= static_cast<int>(model.bones.size())) {
+      continue;
+    }
+
+    const Bone& parent_bone = model.bones[bone.parent_index];
+
+    // Skip control/helper bones based on config filters
+    // These are technical bones not part of the visual skeleton
+    if ((Config::SKELETON_HIDE_CTRL_BONES && bone.name.find("Ctrl") != std::string::npos) ||
+        (Config::SKELETON_HIDE_IK_BONES && bone.name.find("IK") != std::string::npos) ||
+        (Config::SKELETON_HIDE_ROLL_BONES && bone.name.find("Roll") != std::string::npos) ||
+        (Config::SKELETON_HIDE_ROOT_CHILDREN && parent_bone.name == "Root")) {
+      continue;
+    }
+
+    // Extract positions from global transforms
+    glm::vec3 bone_pos = glm::vec3(bone.global_transform[3]);
+    glm::vec3 parent_pos = glm::vec3(parent_bone.global_transform[3]);
+
+    // Calculate bone width relative to this bone's length (5% of bone length)
+    float bone_length = glm::length(bone_pos - parent_pos);
+    float bone_width = bone_length * 0.07f;
+
+    // Generate diamond geometry for this bone
+    generate_bone_diamond(parent_pos, bone_pos, bone_width, bone_vertices, bone_indices);
+  }
+
+  if (bone_vertices.empty()) {
+    return;
+  }
+
+  // Create temporary VAO/VBO/EBO for bone geometry
+  unsigned int bone_vao, bone_vbo, bone_ebo;
+  glGenVertexArrays(1, &bone_vao);
+  glGenBuffers(1, &bone_vbo);
+  glGenBuffers(1, &bone_ebo);
+
+  glBindVertexArray(bone_vao);
+
+  glBindBuffer(GL_ARRAY_BUFFER, bone_vbo);
+  glBufferData(GL_ARRAY_BUFFER, bone_vertices.size() * sizeof(float), bone_vertices.data(), GL_DYNAMIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bone_ebo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, bone_indices.size() * sizeof(unsigned int), bone_indices.data(), GL_DYNAMIC_DRAW);
+
+  // Set up vertex attributes (same layout as model vertices)
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+  glEnableVertexAttribArray(2);
+
+  // Set skeleton color (brighter to compensate for dim lighting, creating uniform matte grey)
+  glm::vec3 skeleton_color(1.0f, 1.0f, 1.0f);
+  glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &skeleton_color[0]);
+  glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
+  glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "emissiveColor"), 1, &no_emissive[0]);
+
+  // Draw bone geometry
+  glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(bone_indices.size()), GL_UNSIGNED_INT, 0);
+
+  // Cleanup
+  glBindVertexArray(0);
+  glDeleteBuffers(1, &bone_vbo);
+  glDeleteBuffers(1, &bone_ebo);
+  glDeleteVertexArrays(1, &bone_vao);
+}
+
 void cleanup_model(Model& model) {
   if (model.loaded) {
     glDeleteVertexArrays(1, &model.vao);
@@ -756,6 +1106,8 @@ void cleanup_model(Model& model) {
     model.indices.clear();
     model.materials.clear();
     model.meshes.clear();
+    model.bones.clear();
+    model.has_skeleton = false;
     model.loaded = false;
   }
 }
@@ -802,6 +1154,11 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
 
   if (model.loaded) {
     render_model(model, texture_manager, camera);
+
+    // Render skeleton overlay if present
+    if (model.has_skeleton) {
+      render_skeleton(model, camera, texture_manager);
+    }
   }
 
   // Unbind framebuffer
