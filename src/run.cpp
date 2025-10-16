@@ -94,19 +94,11 @@ int run(std::atomic<bool>* shutdown_requested) {
     return -1;
   }
 
-  // Set OpenGL context hints for cross-platform compatibility
-#ifdef __APPLE__
-  // macOS requires OpenGL 4.1 core profile
+  // Set OpenGL 4.1 Core Profile (works on all modern platforms)
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#else
-  // Windows/Linux can use OpenGL 3.3
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-#endif
 
   // Window configuration based on mode
   glfwWindowHint(GLFW_VISIBLE, headless_mode ? GLFW_FALSE : GLFW_TRUE);
