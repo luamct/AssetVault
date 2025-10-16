@@ -118,3 +118,17 @@ void setup_3d_rendering_state();
 
 // Skeleton rendering for models with bone data
 void render_skeleton(const Model& model, const Camera3D& camera, TextureManager& texture_manager);
+
+// Shader management functions
+// Initialize 3D shaders by loading from external shader files
+// Must be called after OpenGL context is created
+// Returns true on success, false on failure
+bool initialize_3d_shaders();
+
+// Cleanup 3D shader programs (call before destroying OpenGL context)
+void cleanup_3d_shaders();
+
+// Shader loading utilities
+// Load shader source code from file and compile/link into OpenGL shader program
+// Returns shader program ID (0 on failure)
+unsigned int load_shader_program(const std::string& vertex_path, const std::string& fragment_path);

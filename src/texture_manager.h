@@ -222,8 +222,6 @@ public:
   unsigned int get_preview_texture() const { return preview_texture_; }
   unsigned int get_preview_depth_texture() const { return preview_depth_texture_; }
   unsigned int get_preview_framebuffer() const { return preview_framebuffer_; }
-  unsigned int get_preview_shader() const { return preview_shader_; }
-  unsigned int get_skeleton_shader() const { return skeleton_shader_; }
 
   // Audio control icons
   unsigned int get_play_icon() const { return play_icon_; }
@@ -243,8 +241,6 @@ private:
   unsigned int preview_texture_;
   unsigned int preview_depth_texture_;
   unsigned int preview_framebuffer_;
-  unsigned int preview_shader_;
-  unsigned int skeleton_shader_;  // Separate shader for skeleton rendering with directional lighting
   bool preview_initialized_;
 
   // Cleanup queue for thread-safe texture cache updates and thumbnail deletion

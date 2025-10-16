@@ -1,6 +1,7 @@
 #include "3d.h"
 #include "logger.h"
 #include <iostream>
+#include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include <set>
@@ -18,6 +19,10 @@
 
 // 3D Preview no longer needs a global current model
 // Model state is now managed by the caller
+
+// Shader programs for 3D rendering (loaded from external files)
+static unsigned int preview_shader_ = 0;
+static unsigned int skeleton_shader_ = 0;
 
 // Vertex shader source (updated for 3D models with texture support)
 const char* vertex_shader_source = R"(
@@ -704,7 +709,7 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   if (!model.loaded)
     return;
 
-  glUseProgram(texture_manager.get_preview_shader());
+  glUseProgram(preview_shader_);
 
   // Set up matrices
   glm::mat4 model_matrix = glm::mat4(1.0f);
@@ -738,20 +743,20 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   );
 
   // Set uniforms
-  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_preview_shader(), "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_preview_shader(), "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(preview_shader_, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(preview_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
 
   // Dynamic far clipping plane based on camera distance
   float far_plane = camera_distance * 2.0f; // 2x camera distance to ensure model is visible
   glUniformMatrix4fv(
-    glGetUniformLocation(texture_manager.get_preview_shader(), "projection"), 1, GL_FALSE,
+    glGetUniformLocation(preview_shader_, "projection"), 1, GL_FALSE,
     glm::value_ptr(glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane))
   );
 
   // Light and material properties
-  glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "lightPos"), camera_x, camera_y + 1.0f, camera_z);
-  glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "viewPos"), camera_x, camera_y, camera_z);
-  glUniform3f(glGetUniformLocation(texture_manager.get_preview_shader(), "lightColor"), 1.0f, 1.0f, 1.0f);
+  glUniform3f(glGetUniformLocation(preview_shader_, "lightPos"), camera_x, camera_y + 1.0f, camera_z);
+  glUniform3f(glGetUniformLocation(preview_shader_, "viewPos"), camera_x, camera_y, camera_z);
+  glUniform3f(glGetUniformLocation(preview_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
   // NEW: Render each mesh with its material
   glBindVertexArray(model.vao);
@@ -763,23 +768,23 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
       if (material.has_texture && material.texture_id != 0) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, material.texture_id);
-        glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "diffuseTexture"), 0);
-        glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 1);
+        glUniform1i(glGetUniformLocation(preview_shader_, "diffuseTexture"), 0);
+        glUniform1i(glGetUniformLocation(preview_shader_, "useTexture"), 1);
       }
       else {
-        glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
-        glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &material.diffuse_color[0]);
+        glUniform1i(glGetUniformLocation(preview_shader_, "useTexture"), 0);
+        glUniform3fv(glGetUniformLocation(preview_shader_, "materialColor"), 1, &material.diffuse_color[0]);
       }
       // Always pass emissive color (will be zero if material has no emissive)
-      glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "emissiveColor"), 1, &material.emissive_color[0]);
+      glUniform3fv(glGetUniformLocation(preview_shader_, "emissiveColor"), 1, &material.emissive_color[0]);
     }
     else {
-      glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
+      glUniform1i(glGetUniformLocation(preview_shader_, "useTexture"), 0);
       glm::vec3 default_color(0.7f, 0.7f, 0.7f);
-      glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &default_color[0]);
+      glUniform3fv(glGetUniformLocation(preview_shader_, "materialColor"), 1, &default_color[0]);
       // No emissive for default material
       glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
-      glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "emissiveColor"), 1, &no_emissive[0]);
+      glUniform3fv(glGetUniformLocation(preview_shader_, "emissiveColor"), 1, &no_emissive[0]);
     }
 
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(model.indices.size()), GL_UNSIGNED_INT, 0);
@@ -794,15 +799,15 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
         if (material.has_texture && material.texture_id != 0) {
           glActiveTexture(GL_TEXTURE0);
           glBindTexture(GL_TEXTURE_2D, material.texture_id);
-          glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "diffuseTexture"), 0);
-          glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 1);
+          glUniform1i(glGetUniformLocation(preview_shader_, "diffuseTexture"), 0);
+          glUniform1i(glGetUniformLocation(preview_shader_, "useTexture"), 1);
         }
         else {
-          glUniform1i(glGetUniformLocation(texture_manager.get_preview_shader(), "useTexture"), 0);
-          glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &material.diffuse_color[0]);
+          glUniform1i(glGetUniformLocation(preview_shader_, "useTexture"), 0);
+          glUniform3fv(glGetUniformLocation(preview_shader_, "materialColor"), 1, &material.diffuse_color[0]);
         }
         // Always pass emissive color for this material
-        glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "emissiveColor"), 1, &material.emissive_color[0]);
+        glUniform3fv(glGetUniformLocation(preview_shader_, "emissiveColor"), 1, &material.emissive_color[0]);
 
         // Draw this specific mesh (indices are already properly offset)
         glDrawElements(
@@ -890,7 +895,7 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   }
 
   // Use dedicated skeleton shader with directional lighting
-  glUseProgram(texture_manager.get_skeleton_shader());
+  glUseProgram(skeleton_shader_);
 
   // Set up matrices (same as render_model)
   glm::mat4 model_matrix = glm::mat4(1.0f);
@@ -922,14 +927,14 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane);
 
   // Set uniforms for skeleton shader
-  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_skeleton_shader(), "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_skeleton_shader(), "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(texture_manager.get_skeleton_shader(), "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+  glUniformMatrix4fv(glGetUniformLocation(skeleton_shader_, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(skeleton_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(skeleton_shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
   // Set directional lighting for skeleton
   glm::vec3 light_direction = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
-  glUniform3f(glGetUniformLocation(texture_manager.get_skeleton_shader(), "lightDir"), light_direction.x, light_direction.y, light_direction.z);
-  glUniform3f(glGetUniformLocation(texture_manager.get_skeleton_shader(), "lightColor"), 1.0f, 1.0f, 1.0f);
+  glUniform3f(glGetUniformLocation(skeleton_shader_, "lightDir"), light_direction.x, light_direction.y, light_direction.z);
+  glUniform3f(glGetUniformLocation(skeleton_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
   // Build vertex data for diamond-shaped bones
   std::vector<float> bone_vertices;
@@ -992,9 +997,9 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
 
   // Set skeleton color (brighter to compensate for dim lighting, creating uniform matte grey)
   glm::vec3 skeleton_color(1.0f, 1.0f, 1.0f);
-  glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "materialColor"), 1, &skeleton_color[0]);
+  glUniform3fv(glGetUniformLocation(skeleton_shader_, "materialColor"), 1, &skeleton_color[0]);
   glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
-  glUniform3fv(glGetUniformLocation(texture_manager.get_preview_shader(), "emissiveColor"), 1, &no_emissive[0]);
+  glUniform3fv(glGetUniformLocation(skeleton_shader_, "emissiveColor"), 1, &no_emissive[0]);
 
   // Draw bone geometry
   glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(bone_indices.size()), GL_UNSIGNED_INT, 0);
@@ -1094,6 +1099,119 @@ void setup_3d_rendering_state() {
 
   // Note: Face culling is NOT enabled to handle models with inconsistent winding order
   // Some models have inverted normals or mixed winding, so we render all faces
+}
+
+// Helper function to compile a shader from source code
+static unsigned int compile_shader(unsigned int type, const std::string& source, const std::string& shader_name) {
+  unsigned int shader = glCreateShader(type);
+  const char* src = source.c_str();
+  glShaderSource(shader, 1, &src, nullptr);
+  glCompileShader(shader);
+
+  int success;
+  glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    char info_log[512];
+    glGetShaderInfoLog(shader, 512, nullptr, info_log);
+    LOG_ERROR("Shader compilation failed ({}): {}", shader_name, info_log);
+    glDeleteShader(shader);
+    return 0;
+  }
+
+  return shader;
+}
+
+// Load shader source code from file and compile/link into OpenGL shader program
+unsigned int load_shader_program(const std::string& vertex_path, const std::string& fragment_path) {
+  // Read vertex shader source
+  std::ifstream v_file(vertex_path);
+  if (!v_file.is_open()) {
+    LOG_ERROR("Failed to open vertex shader file: {}", vertex_path);
+    return 0;
+  }
+  std::string vertex_source((std::istreambuf_iterator<char>(v_file)), std::istreambuf_iterator<char>());
+  v_file.close();
+
+  // Read fragment shader source
+  std::ifstream f_file(fragment_path);
+  if (!f_file.is_open()) {
+    LOG_ERROR("Failed to open fragment shader file: {}", fragment_path);
+    return 0;
+  }
+  std::string fragment_source((std::istreambuf_iterator<char>(f_file)), std::istreambuf_iterator<char>());
+  f_file.close();
+
+  // Compile shaders
+  unsigned int vertex_shader = compile_shader(GL_VERTEX_SHADER, vertex_source, vertex_path);
+  if (vertex_shader == 0) {
+    return 0;
+  }
+
+  unsigned int fragment_shader = compile_shader(GL_FRAGMENT_SHADER, fragment_source, fragment_path);
+  if (fragment_shader == 0) {
+    glDeleteShader(vertex_shader);
+    return 0;
+  }
+
+  // Link shader program
+  unsigned int program = glCreateProgram();
+  glAttachShader(program, vertex_shader);
+  glAttachShader(program, fragment_shader);
+  glLinkProgram(program);
+
+  int success;
+  glGetProgramiv(program, GL_LINK_STATUS, &success);
+  if (!success) {
+    char info_log[512];
+    glGetProgramInfoLog(program, 512, nullptr, info_log);
+    LOG_ERROR("Shader program linking failed: {}", info_log);
+    glDeleteProgram(program);
+    glDeleteShader(vertex_shader);
+    glDeleteShader(fragment_shader);
+    return 0;
+  }
+
+  // Clean up individual shaders (program has them linked now)
+  glDeleteShader(vertex_shader);
+  glDeleteShader(fragment_shader);
+
+  LOG_DEBUG("Loaded shader program: {} + {}", vertex_path, fragment_path);
+  return program;
+}
+
+// Initialize 3D shaders by loading from external shader files
+bool initialize_3d_shaders() {
+  LOG_DEBUG("Initializing 3D shaders from external files");
+
+  // Load model shader (for 3D models with textures and lighting)
+  preview_shader_ = load_shader_program("shaders/model.vert", "shaders/model.frag");
+  if (preview_shader_ == 0) {
+    LOG_ERROR("Failed to load model shader");
+    return false;
+  }
+
+  // Load skeleton shader (for bone visualization with directional lighting)
+  skeleton_shader_ = load_shader_program("shaders/skeleton.vert", "shaders/skeleton.frag");
+  if (skeleton_shader_ == 0) {
+    LOG_ERROR("Failed to load skeleton shader");
+    cleanup_3d_shaders();
+    return false;
+  }
+
+  LOG_INFO("Successfully initialized 3D shaders");
+  return true;
+}
+
+// Cleanup 3D shader programs
+void cleanup_3d_shaders() {
+  if (preview_shader_ != 0) {
+    glDeleteProgram(preview_shader_);
+    preview_shader_ = 0;
+  }
+  if (skeleton_shader_ != 0) {
+    glDeleteProgram(skeleton_shader_);
+    skeleton_shader_ = 0;
+  }
 }
 
 std::vector<std::string> extract_model_texture_paths(const std::string& model_path) {

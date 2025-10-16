@@ -4,6 +4,7 @@
 #include "event_processor.h"
 #include "file_watcher.h"
 #include "texture_manager.h"
+#include "3d.h"
 #include "audio_manager.h"
 #include "drag_drop.h"
 #include "logger.h"
@@ -85,6 +86,12 @@ bool Services::start(FileEventCallback file_event_callback, SafeAssets* safe_ass
     // Initialize 3D preview system
     if (!texture_manager_->initialize_preview_system()) {
         LOG_ERROR("Failed to initialize 3D preview system");
+        return false;
+    }
+
+    // Initialize 3D shaders (loaded from external files)
+    if (!initialize_3d_shaders()) {
+        LOG_ERROR("Failed to initialize 3D shaders");
         return false;
     }
 
