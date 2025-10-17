@@ -373,13 +373,23 @@ elseif(APPLE)
     )
 endif()
 
+# Shader files - track as dependencies so changes trigger rebuild
+set(SHADER_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/unified.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/unified.frag
+)
+
+# Add shaders as sources so CMake tracks them (won't compile them, just track for changes)
+target_sources(AssetInventory PRIVATE ${SHADER_FILES})
+set_source_files_properties(${SHADER_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+
 # Resource copying
 add_custom_command(TARGET AssetInventory POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Copying Roboto font to build directory"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Roboto-Regular.ttf
     $<IF:$<BOOL:${PLATFORM_MACOS}>,$<TARGET_BUNDLE_DIR:AssetInventory>/Contents/Resources,$<TARGET_FILE_DIR:AssetInventory>>/external/fonts/Roboto-Regular.ttf
-    
+
     COMMAND ${CMAKE_COMMAND} -E echo "Copying images directory to build directory"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_CURRENT_SOURCE_DIR}/images
