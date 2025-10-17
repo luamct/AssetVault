@@ -672,17 +672,14 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
     glm::value_ptr(glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane))
   );
 
-  // Light and material properties
-  glUniform3f(glGetUniformLocation(unified_shader_, "lightPos"), camera_x, camera_y + 1.0f, camera_z);
-  glUniform3f(glGetUniformLocation(unified_shader_, "viewPos"), camera_x, camera_y, camera_z);
+  // Directional lighting (better for flat shading - consistent across all surfaces)
+  glm::vec3 light_direction = glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f));  // Coming from upper-right-front
+  glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
-  // Lighting intensity controls (full lighting for models)
-  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 1.0f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 1.0f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "fillLightIntensity"), 1.0f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "specularIntensity"), 1.0f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "rimLightIntensity"), 1.0f);
+  // Lighting intensity controls (matching skeleton shader: 0.3 ambient, 0.7 diffuse)
+  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.3f);
+  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.7f);
 
   // NEW: Render each mesh with its material
   glBindVertexArray(model.vao);
@@ -773,17 +770,18 @@ void generate_bone_diamond(const glm::vec3& start, const glm::vec3& end, float w
   glm::vec3 right = glm::normalize(glm::cross(dir_normalized, up));
   glm::vec3 forward = glm::normalize(glm::cross(right, dir_normalized));
 
-  // Diamond has 6 vertices: start point, end point, and 4 corners forming square base
+  // Create 6 vertices: start, end, and 4 corners at base_pos
   unsigned int base_idx = vertices.size() / 8;
 
-  // Vertex 0: Start point (narrow end at parent)
-  vertices.insert(vertices.end(), {start.x, start.y, start.z, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+  // Vertex 0: start point (apex of first pyramid)
+  glm::vec3 start_normal = glm::normalize(start - base_pos);
+  vertices.insert(vertices.end(), {start.x, start.y, start.z, start_normal.x, start_normal.y, start_normal.z, 0.0f, 0.0f});
 
-  // Vertex 1: End point (narrow end at child)
-  vertices.insert(vertices.end(), {end.x, end.y, end.z, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+  // Vertex 1: end point (apex of second pyramid)
+  glm::vec3 end_normal = glm::normalize(end - base_pos);
+  vertices.insert(vertices.end(), {end.x, end.y, end.z, end_normal.x, end_normal.y, end_normal.z, 0.0f, 0.0f});
 
-  // Vertices 2-5: Four corners forming a perfect square base (wide part near parent)
-  // Using right and forward vectors ensures perpendicularity and equal spacing
+  // Vertices 2-5: four corners of the diamond at base_pos
   glm::vec3 corners[4] = {
     base_pos + right * width + forward * width,   // Corner 0: +X +Z
     base_pos - right * width + forward * width,   // Corner 1: -X +Z
@@ -792,31 +790,24 @@ void generate_bone_diamond(const glm::vec3& start, const glm::vec3& end, float w
   };
 
   for (int i = 0; i < 4; i++) {
-    vertices.insert(vertices.end(), {corners[i].x, corners[i].y, corners[i].z, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    glm::vec3 corner_normal = glm::normalize(corners[i] - base_pos);
+    vertices.insert(vertices.end(), {corners[i].x, corners[i].y, corners[i].z,
+                                     corner_normal.x, corner_normal.y, corner_normal.z, 0.0f, 0.0f});
   }
 
-  // Create triangles for both pyramids
-  // First pyramid (start point to square base) - short pyramid near parent
+  // Create triangles using the shared vertices
+  // First pyramid: start (0) to each edge of the square base
   for (int i = 0; i < 4; i++) {
-    indices.push_back(base_idx + 0);           // Start point
-    indices.push_back(base_idx + 2 + i);       // Current corner
-    indices.push_back(base_idx + 2 + ((i + 1) % 4)); // Next corner
+    indices.push_back(base_idx + 0);           // start
+    indices.push_back(base_idx + 2 + i);       // current corner
+    indices.push_back(base_idx + 2 + (i+1)%4); // next corner
   }
 
-  // Second pyramid (square base to end point) - long pyramid pointing to child
+  // Second pyramid: end (1) to each edge of the square base (reversed winding)
   for (int i = 0; i < 4; i++) {
-    indices.push_back(base_idx + 1);           // End point
-    indices.push_back(base_idx + 2 + ((i + 1) % 4)); // Next corner (reversed winding)
-    indices.push_back(base_idx + 2 + i);       // Current corner
-  }
-
-  // Calculate normals for lighting (approximate - one normal per vertex)
-  for (size_t i = base_idx * 8; i < vertices.size(); i += 8) {
-    glm::vec3 pos(vertices[i], vertices[i + 1], vertices[i + 2]);
-    glm::vec3 normal = glm::normalize(pos - base_pos);
-    vertices[i + 3] = normal.x;
-    vertices[i + 4] = normal.y;
-    vertices[i + 5] = normal.z;
+    indices.push_back(base_idx + 1);           // end
+    indices.push_back(base_idx + 2 + (i+1)%4); // next corner
+    indices.push_back(base_idx + 2 + i);       // current corner
   }
 }
 
@@ -862,17 +853,14 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
   glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
-  // Set lighting for skeleton (use same point light setup as models for consistency)
-  glUniform3f(glGetUniformLocation(unified_shader_, "lightPos"), camera_x, camera_y + 1.0f, camera_z);
-  glUniform3f(glGetUniformLocation(unified_shader_, "viewPos"), camera_x, camera_y, camera_z);
+  // Directional lighting (same as models)
+  glm::vec3 light_direction = glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f));
+  glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
-  // Lighting intensity controls (simplified lighting for skeleton - no advanced effects)
-  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 1.0f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 1.0f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "fillLightIntensity"), 0.0f);   // Disabled
-  glUniform1f(glGetUniformLocation(unified_shader_, "specularIntensity"), 0.0f);     // Disabled
-  glUniform1f(glGetUniformLocation(unified_shader_, "rimLightIntensity"), 0.0f);     // Disabled
+  // Lighting intensity controls (0.3 ambient, 0.7 diffuse)
+  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.3f);
+  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.7f);
 
   // Build vertex data for diamond-shaped bones
   std::vector<float> bone_vertices;
@@ -1119,19 +1107,15 @@ void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& proj
   glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view));
   glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
-  // Lighting (minimal lighting for debug axes - almost just material color)
-  glm::vec3 light_pos(5.0f, 10.0f, 5.0f);
-  glUniform3f(glGetUniformLocation(unified_shader_, "lightPos"), light_pos.x, light_pos.y, light_pos.z);
-  glUniform3f(glGetUniformLocation(unified_shader_, "viewPos"), 0.0f, 0.0f, 5.0f);
+  // Directional lighting (minimal lighting for debug axes - mostly shows material color)
+  glm::vec3 light_direction = glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f));
+  glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
   glUniform3f(glGetUniformLocation(unified_shader_, "emissiveColor"), 0.0f, 0.0f, 0.0f);
 
-  // Lighting intensity controls (minimal lighting - mostly shows material color)
-  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.8f);   // High ambient to mostly show color
-  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.3f);   // Slight diffuse for shape
-  glUniform1f(glGetUniformLocation(unified_shader_, "fillLightIntensity"), 0.0f); // Disabled
-  glUniform1f(glGetUniformLocation(unified_shader_, "specularIntensity"), 0.0f);  // Disabled
-  glUniform1f(glGetUniformLocation(unified_shader_, "rimLightIntensity"), 0.0f);  // Disabled
+  // Lighting intensity controls (high ambient to mostly show axis colors)
+  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.8f);
+  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.3f);
 
   glBindVertexArray(axes_vao);
 
