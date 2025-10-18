@@ -449,6 +449,12 @@ void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
 
   LOG_TRACE("[THUMBNAIL] Model loaded successfully. Materials count: {}", model.materials.size());
 
+  if (model.has_no_geometry) {
+    LOG_INFO("[THUMBNAIL] Model '{}' has no renderable geometry. Skipping thumbnail generation.", model_path);
+    cleanup_model(model);
+    return;
+  }
+
   // Start GPU timing for rendering
   auto start_gpu = std::chrono::high_resolution_clock::now();
 
@@ -505,7 +511,7 @@ void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
     LOG_WARN("OpenGL error after thumbnail render: {}", gl_error);
   }
 
-  // Read pixels from framebuffer (no flipping needed - already correct orientation)
+  // Read pixels from framebuffer (OpenGL gives bottom-to-top rows)
   std::vector<unsigned char> pixels(thumbnail_size * thumbnail_size * 4);
   glReadPixels(0, 0, thumbnail_size, thumbnail_size, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 
@@ -528,12 +534,15 @@ void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
   }
 
   // Save as PNG
+  // stbi_write assumes top-left origin; flip via the provided global flag to match PNG expectations
+  stbi_flip_vertically_on_write(1);
   int write_result = stbi_write_png(
     thumbnail_path.u8string().c_str(),
     thumbnail_size, thumbnail_size, 4,
     pixels.data(),
     thumbnail_size * 4
   );
+  stbi_flip_vertically_on_write(0);
 
   if (!write_result) {
     LOG_ERROR("Failed to write 3D model thumbnail: {}", thumbnail_path.generic_u8string());

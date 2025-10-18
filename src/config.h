@@ -13,7 +13,7 @@ namespace Config {
     // =============================================================================
 
     // Set to true to clear database and thumbnails on startup (fresh start for debugging)
-    constexpr bool DEBUG_CLEAN_START = false;
+    constexpr bool DEBUG_CLEAN_START = true;
 
     // Font settings
     constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";

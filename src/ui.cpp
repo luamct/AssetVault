@@ -1298,7 +1298,12 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
       // Display the 3D viewport
-      ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_preview_texture(), viewport_size);
+      ImGui::Image(
+        (ImTextureID) (intptr_t) texture_manager.get_preview_texture(), 
+        viewport_size,
+        ImVec2(0.0f, 1.0f),   // bottom-left
+        ImVec2(1.0f, 0.0f)    // top-right
+      );
 
       // Handle mouse interactions for 3D camera control
       bool is_image_hovered = ImGui::IsItemHovered();

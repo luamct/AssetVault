@@ -77,21 +77,21 @@ bool Services::start(FileEventCallback file_event_callback, SafeAssets* safe_ass
         return false;
     }
 
-    // Start event processor with assets directory
-    if (!event_processor_->start(assets_directory)) {
-        LOG_ERROR("Failed to start event processor");
-        return false;
-    }
-
-    // Initialize 3D preview system
+    // Initialize 3D preview system before starting any background rendering work
     if (!texture_manager_->initialize_preview_system()) {
         LOG_ERROR("Failed to initialize 3D preview system");
         return false;
     }
 
-    // Initialize 3D shaders (loaded from external files)
+    // Compile and link the unified 3D shader while we're still on the main context
     if (!initialize_3d_shaders()) {
         LOG_ERROR("Failed to initialize 3D shaders");
+        return false;
+    }
+
+    // Start event processor with assets directory (thumbnail thread now sees ready GL resources)
+    if (!event_processor_->start(assets_directory)) {
+        LOG_ERROR("Failed to start event processor");
         return false;
     }
 

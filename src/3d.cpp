@@ -628,6 +628,11 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   if (!model.loaded)
     return;
 
+  if (unified_shader_ == 0) {
+    LOG_ERROR("[3D] render_model called without initialized shader program");
+    return;
+  }
+
   glUseProgram(unified_shader_);
 
   // Set up matrices
@@ -658,7 +663,7 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   glm::mat4 view_matrix = glm::lookAt(
     glm::vec3(camera_x, camera_y, camera_z), // Camera position - controlled by mouse
     glm::vec3(0.0f, 0.0f, 0.0f),             // Look at origin where model is centered
-    glm::vec3(0.0f, -1.0f, 0.0f)             // Up vector (flipped to fix upside-down models)
+    glm::vec3(0.0f, 1.0f, 0.0f)              // Standard +Y-up view
   );
 
   // Set uniforms
@@ -681,44 +686,15 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.3f);
   glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.7f);
 
-  // NEW: Render each mesh with its material
-  glBindVertexArray(model.vao);
+  const bool has_renderable_geometry = (model.vao != 0) && !model.indices.empty();
 
-  if (model.meshes.empty()) {
-    // Fallback: render as single mesh with first material if available
-    if (!model.materials.empty()) {
-      const Material& material = model.materials[0];
-      if (material.has_texture && material.texture_id != 0) {
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, material.texture_id);
-        glUniform1i(glGetUniformLocation(unified_shader_, "diffuseTexture"), 0);
-        glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 1);
-      }
-      else {
-        glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
-        glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &material.diffuse_color[0]);
-      }
-      // Always pass emissive color (will be zero if material has no emissive)
-      glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &material.emissive_color[0]);
-    }
-    else {
-      glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
-      glm::vec3 default_color(0.7f, 0.7f, 0.7f);
-      glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &default_color[0]);
-      // No emissive for default material
-      glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
-      glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &no_emissive[0]);
-    }
+  if (has_renderable_geometry) {
+    glBindVertexArray(model.vao);
 
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(model.indices.size()), GL_UNSIGNED_INT, 0);
-  }
-  else {
-    // Render each mesh with its correct material
-    for (const auto& mesh : model.meshes) {
-      if (mesh.material_index < model.materials.size()) {
-        const Material& material = model.materials[mesh.material_index];
-
-        // Bind texture or set material color
+    if (model.meshes.empty()) {
+      // Fallback: render as single mesh with first material if available
+      if (!model.materials.empty()) {
+        const Material& material = model.materials[0];
         if (material.has_texture && material.texture_id != 0) {
           glActiveTexture(GL_TEXTURE0);
           glBindTexture(GL_TEXTURE_2D, material.texture_id);
@@ -729,18 +705,53 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
           glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
           glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &material.diffuse_color[0]);
         }
-        // Always pass emissive color for this material
+        // Always pass emissive color (will be zero if material has no emissive)
         glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &material.emissive_color[0]);
+      }
+      else {
+        glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
+        glm::vec3 default_color(0.7f, 0.7f, 0.7f);
+        glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &default_color[0]);
+        // No emissive for default material
+        glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
+        glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &no_emissive[0]);
+      }
 
-        // Draw this specific mesh (indices are already properly offset)
-        glDrawElements(
-          GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, (void*) (mesh.index_offset * sizeof(unsigned int))
-        );
+      glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(model.indices.size()), GL_UNSIGNED_INT, 0);
+    }
+    else {
+      // Render each mesh with its correct material
+      for (const auto& mesh : model.meshes) {
+        if (mesh.material_index < model.materials.size()) {
+          const Material& material = model.materials[mesh.material_index];
+
+          // Bind texture or set material color
+          if (material.has_texture && material.texture_id != 0) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, material.texture_id);
+            glUniform1i(glGetUniformLocation(unified_shader_, "diffuseTexture"), 0);
+            glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 1);
+          }
+          else {
+            glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
+            glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &material.diffuse_color[0]);
+          }
+          // Always pass emissive color for this material
+          glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &material.emissive_color[0]);
+
+          // Draw this specific mesh (indices are already properly offset)
+          glDrawElements(
+            GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, (void*) (mesh.index_offset * sizeof(unsigned int))
+          );
+        }
       }
     }
-  }
 
-  glBindVertexArray(0);
+    glBindVertexArray(0);
+  }
+  else {
+    glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
+  }
 
   // Render debug axes at origin (scaled relative to model size)
   // Pass the same view and projection matrices to ensure consistency

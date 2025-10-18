@@ -1,10 +1,10 @@
 #version 330 core
 in vec3 FragPos;
-flat in vec3 Normal;  // Flat shading - receives non-interpolated normal from vertex shader
+in vec3 Normal;
 in vec2 TexCoord;
 
 // Lighting uniforms
-uniform vec3 lightDir;        // Directional light direction (not position - better for flat shading)
+uniform vec3 lightDir;        // Directional light direction
 uniform vec3 lightColor;
 
 // Material uniforms
@@ -29,7 +29,7 @@ void main()
     // Ambient lighting (controlled by intensity)
     vec3 ambient = ambientIntensity * lightColor;
 
-    // Directional diffuse lighting (uniform across surfaces with same normal)
+    // Directional diffuse lighting
     float diff = max(dot(norm, -lightDir), 0.0);
     vec3 diffuse = diffuseIntensity * diff * lightColor;
 
