@@ -1348,7 +1348,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           // Only update if there's actual movement
           if (delta_x != 0.0f || delta_y != 0.0f) {
             // Update rotation based on mouse movement using config sensitivity
-            camera.rotation_y += delta_x * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Horizontal rotation (left/right)
+            camera.rotation_y -= delta_x * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Horizontal rotation (left/right)
             camera.rotation_x += delta_y * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Vertical rotation (up/down)
 
             // Clamp vertical rotation to avoid flipping

@@ -46,6 +46,7 @@ namespace Config {
     // 3D preview controls
     constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;  // Degrees per pixel (was 0.5, now 1/3 of that)
     constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;            // Zoom multiplier per scroll wheel notch
+    constexpr bool PREVIEW_DRAW_DEBUG_AXES = true;            // Toggle axes rendering in 3D preview
 
     // 3D skeleton rendering filters
     constexpr bool SKELETON_HIDE_CTRL_BONES = true;   // Skip bones with "Ctrl" suffix (animation controls)

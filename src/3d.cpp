@@ -23,6 +23,18 @@
 // Unified shader program for all 3D rendering (loaded from external files)
 static unsigned int unified_shader_ = 0;
 
+namespace {
+
+glm::vec3 compute_preview_light_direction(const glm::vec3& camera_position) {
+  glm::vec3 direction = -camera_position;
+  if (glm::length(direction) < 0.0001f) {
+    direction = glm::vec3(0.0f, -1.0f, -1.0f);
+  }
+  return glm::normalize(direction);
+}
+
+}
+
 // Helper function to get base path
 std::string getBasePath(const std::string& path) {
   size_t pos = path.find_last_of("\\/");
@@ -672,19 +684,22 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
   // Dynamic far clipping plane based on camera distance
   float far_plane = camera_distance * 2.0f; // 2x camera distance to ensure model is visible
+  glm::mat4 projection_matrix = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane);
   glUniformMatrix4fv(
     glGetUniformLocation(unified_shader_, "projection"), 1, GL_FALSE,
-    glm::value_ptr(glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane))
+    glm::value_ptr(projection_matrix)
   );
 
-  // Directional lighting (better for flat shading - consistent across all surfaces)
-  glm::vec3 light_direction = glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f));  // Coming from upper-right-front
+  glm::vec3 camera_pos(camera_x, camera_y, camera_z);
+
+  // Treat lighting as a headlamp attached to the camera
+  const glm::vec3 light_direction = compute_preview_light_direction(camera_pos);
   glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
-  // Lighting intensity controls (matching skeleton shader: 0.3 ambient, 0.7 diffuse)
+  // Lighting intensity controls (slightly softer diffuse)
   glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.3f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.7f);
+  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.56f);
 
   const bool has_renderable_geometry = (model.vao != 0) && !model.indices.empty();
 
@@ -755,8 +770,10 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
   // Render debug axes at origin (scaled relative to model size)
   // Pass the same view and projection matrices to ensure consistency
-  float axis_scale = max_size * 0.7f;
-  render_debug_axes(axis_scale, view_matrix, glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane));
+  if (Config::PREVIEW_DRAW_DEBUG_AXES) {
+    float axis_scale = max_size * 0.7f;
+    render_debug_axes(axis_scale, view_matrix, projection_matrix, light_direction);
+  }
 }
 
 // Helper function to create diamond-shaped bone geometry (two pyramids base-to-base)
@@ -853,7 +870,7 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glm::mat4 view_matrix = glm::lookAt(
     glm::vec3(camera_x, camera_y, camera_z),
     glm::vec3(0.0f, 0.0f, 0.0f),
-    glm::vec3(0.0f, -1.0f, 0.0f)
+    glm::vec3(0.0f, 1.0f, 0.0f)
   );
 
   float far_plane = camera_distance * 2.0f;
@@ -864,14 +881,16 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
   glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
+  glm::vec3 camera_pos(camera_x, camera_y, camera_z);
+
   // Directional lighting (same as models)
-  glm::vec3 light_direction = glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f));
+  const glm::vec3 light_direction = compute_preview_light_direction(camera_pos);
   glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
-  // Lighting intensity controls (0.3 ambient, 0.7 diffuse)
+  // Lighting intensity controls (0.3 ambient, 0.56 diffuse)
   glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.3f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.7f);
+  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.56f);
 
   // Build vertex data for diamond-shaped bones
   std::vector<float> bone_vertices;
@@ -984,7 +1003,7 @@ const Model& get_current_model(const Model& current_model) {
   return current_model;
 }
 
-void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& projection) {
+void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& projection, const glm::vec3& light_direction) {
   static unsigned int axes_vao = 0;
   static unsigned int axes_vbo = 0;
   static bool initialized = false;
@@ -1118,8 +1137,6 @@ void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& proj
   glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view));
   glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
-  // Directional lighting (minimal lighting for debug axes - mostly shows material color)
-  glm::vec3 light_direction = glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f));
   glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
   glUniform3f(glGetUniformLocation(unified_shader_, "emissiveColor"), 0.0f, 0.0f, 0.0f);
@@ -1171,8 +1188,8 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
   glBindFramebuffer(GL_FRAMEBUFFER, texture_manager.get_preview_framebuffer());
   glViewport(0, 0, width, height);
   glClearColor(
-    Theme::BACKGROUND_LIGHT_GRAY.x, Theme::BACKGROUND_LIGHT_GRAY.y, Theme::BACKGROUND_LIGHT_GRAY.z,
-    Theme::BACKGROUND_LIGHT_GRAY.w
+    Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
+    Theme::BACKGROUND_LIGHT_BLUE_1.w
   );
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
