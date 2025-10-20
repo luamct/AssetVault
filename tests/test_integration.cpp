@@ -4,6 +4,7 @@
 #include <thread>
 #include <chrono>
 #include <cstdlib>
+#include <system_error>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -27,6 +28,24 @@
 #include "test_helpers.h"
 
 namespace fs = std::filesystem;
+
+struct ScopedFileRemoval {
+    explicit ScopedFileRemoval(fs::path target) : path(std::move(target)) {}
+    ~ScopedFileRemoval() {
+        if (path.empty()) {
+            return;
+        }
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+
+    void dismiss() {
+        path.clear();
+    }
+
+private:
+    fs::path path;
+};
 
 // RAII guard to ensure GLFW cleanup even if tests fail
 // This is a safety net in case run() doesn't clean up properly
@@ -203,9 +222,11 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             LOG_INFO("[TEST] Adding new asset file...");
             fs::path source_file = assets_dir / "racer.obj";
             fs::path test_file = assets_dir / "racer_copy.obj";
+            ScopedFileRemoval ensure_cleanup(test_file);
 
             if (fs::exists(test_file)) {
-                fs::remove(test_file);
+                std::error_code ec;
+                fs::remove(test_file, ec);
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
 
@@ -253,6 +274,7 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
 
             // Cleanup test file
             fs::remove(test_file);
+            ensure_cleanup.dismiss();
 
             LOG_INFO("[TEST] ✓ Asset added successfully during execution");
             test_passed = true;
@@ -275,6 +297,13 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
 
             // Create a temporary file first
             fs::path test_file = assets_dir / "temp_delete_test.obj";
+            ScopedFileRemoval ensure_cleanup(test_file);
+            if (fs::exists(test_file)) {
+                std::error_code ec;
+                fs::remove(test_file, ec);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
             fs::copy_file(assets_dir / "racer.obj", test_file);
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
@@ -290,6 +319,7 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
             // Delete the file
             LOG_INFO("[TEST] Deleting asset file...");
             fs::remove(test_file);
+            ensure_cleanup.dismiss();
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
             // Verify it was removed from database

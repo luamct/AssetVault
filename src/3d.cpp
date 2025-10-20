@@ -29,6 +29,23 @@ static unsigned int unified_shader_ = 0;
 
 namespace {
 
+std::string normalize_node_name(const std::string& name) {
+  std::string clean = name;
+
+  auto ns_pos = clean.find(':');
+  if (ns_pos != std::string::npos) {
+    clean = clean.substr(ns_pos + 1);
+  }
+
+  const std::string helper_tag = "_$AssimpFbx$_";
+  auto helper_pos = clean.find(helper_tag);
+  if (helper_pos != std::string::npos) {
+    clean = clean.substr(0, helper_pos);
+  }
+
+  return clean;
+}
+
 // Return a normalized direction vector that mimics a headlamp mounted on the camera.
 glm::vec3 compute_preview_light_direction(const glm::vec3& camera_position) {
   glm::vec3 direction = -camera_position;
@@ -391,6 +408,8 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
 // Build the bone hierarchy, rest pose, and lookup tables from the Assimp scene data.
 void load_model_skeleton(const aiScene* scene, Model& model) {
   model.bones.clear();
+  model.skeleton_nodes.clear();
+  model.skeleton_node_lookup.clear();
   model.has_skeleton = false;
 
   if (!scene || !scene->mRootNode) {
@@ -399,138 +418,154 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
 
   LOG_DEBUG("[SKELETON] Scene has {} meshes, {} animations", scene->mNumMeshes, scene->mNumAnimations);
 
-  // Map bone names to indices for quick lookup
   std::unordered_map<std::string, int> bone_name_to_index;
+  std::unordered_map<std::string, int> bone_raw_name_to_index;
 
-  // First pass: collect all bones from all meshes
-  for (unsigned int m = 0; m < scene->mNumMeshes; m++) {
-    const aiMesh* mesh = scene->mMeshes[m];
-    LOG_DEBUG("[SKELETON] Mesh {} has {} bones", m, mesh->mNumBones);
-
-    for (unsigned int b = 0; b < mesh->mNumBones; b++) {
-      const aiBone* ai_bone = mesh->mBones[b];
-      std::string bone_name = ai_bone->mName.C_Str();
-
-      // Add bone if not already in our list
-      if (bone_name_to_index.find(bone_name) == bone_name_to_index.end()) {
-        Bone bone;
-        bone.name = bone_name;
-        bone.offset_matrix = ai_to_glm_mat4(ai_bone->mOffsetMatrix);
-        bone.parent_index = -1; // Will be set in second pass
-
-        bone_name_to_index[bone_name] = static_cast<int>(model.bones.size());
-        model.bones.push_back(bone);
-      }
-    }
-  }
-
-  // If no bones found in meshes, try extracting from animation channels
-  if (model.bones.empty() && scene->mNumAnimations > 0) {
-    LOG_INFO("[SKELETON] No bones in meshes, trying to extract from {} animations", scene->mNumAnimations);
-
-    // Collect unique bone names from all animation channels
-    std::set<std::string> bone_names;
-    for (unsigned int a = 0; a < scene->mNumAnimations; a++) {
-      const aiAnimation* anim = scene->mAnimations[a];
-      for (unsigned int c = 0; c < anim->mNumChannels; c++) {
-        const aiNodeAnim* channel = anim->mChannels[c];
-        bone_names.insert(channel->mNodeName.C_Str());
-      }
-    }
-
-    LOG_INFO("[SKELETON] Found {} unique bone names in animations", bone_names.size());
-
-    // Create bones from animation channels
-    for (const std::string& bone_name : bone_names) {
+  auto register_bone = [&](const std::string& raw_name, const std::string& clean_name, const aiMatrix4x4* offset_matrix) {
+    auto it = bone_name_to_index.find(clean_name);
+    if (it == bone_name_to_index.end()) {
       Bone bone;
-      bone.name = bone_name;
-      bone.offset_matrix = glm::mat4(1.0f); // Identity for animation-only bones
-      bone.parent_index = -1; // Will be set in hierarchy build
-
-      bone_name_to_index[bone_name] = static_cast<int>(model.bones.size());
+      bone.name = clean_name;
+      bone.offset_matrix = offset_matrix ? ai_to_glm_mat4(*offset_matrix) : glm::mat4(1.0f);
+      bone.local_transform = glm::mat4(1.0f);
+      bone.global_transform = glm::mat4(1.0f);
+      bone.parent_index = -1;
+      bone.skeleton_node_index = -1;
+      int index = static_cast<int>(model.bones.size());
+      bone_name_to_index[clean_name] = index;
+      bone_raw_name_to_index[raw_name] = index;
       model.bones.push_back(bone);
+      LOG_DEBUG("[SKELETON] Registered bone '{}' (raw='{}', index {})", clean_name, raw_name, index);
+    }
+    else {
+      bone_raw_name_to_index[raw_name] = it->second;
+    }
+  };
+
+  for (unsigned int m = 0; m < scene->mNumMeshes; ++m) {
+    const aiMesh* mesh = scene->mMeshes[m];
+    for (unsigned int b = 0; b < mesh->mNumBones; ++b) {
+      const aiBone* ai_bone = mesh->mBones[b];
+      std::string raw_name = ai_bone->mName.C_Str();
+      std::string clean_name = normalize_node_name(raw_name);
+      register_bone(raw_name, clean_name, &ai_bone->mOffsetMatrix);
     }
   }
 
-  // If still no bones found, return early
+  if (model.bones.empty() && scene->mNumAnimations > 0) {
+    LOG_INFO("[SKELETON] No mesh bones; scanning animations for bone names");
+    std::set<std::string> bone_names;
+    for (unsigned int a = 0; a < scene->mNumAnimations; ++a) {
+      const aiAnimation* anim = scene->mAnimations[a];
+      for (unsigned int c = 0; c < anim->mNumChannels; ++c) {
+        const aiNodeAnim* channel = anim->mChannels[c];
+        bone_names.insert(normalize_node_name(channel->mNodeName.C_Str()));
+      }
+    }
+
+    for (const std::string& name : bone_names) {
+      register_bone(name, name, nullptr);
+    }
+  }
+
   if (model.bones.empty()) {
     return;
   }
 
-  LOG_INFO("[SKELETON] Found {} bones", model.bones.size());
   model.bone_lookup = bone_name_to_index;
 
-  // Second pass: build hierarchy by traversing scene nodes
-  std::function<void(aiNode*, int)> traverse_node = [&](aiNode* node, int parent_index) {
-    std::string node_name = node->mName.C_Str();
+  std::function<void(aiNode*, int, int)> build_nodes = [&](aiNode* node, int parent_node_index, int parent_bone_index) {
+    const std::string raw_name = node->mName.C_Str();
+    const std::string clean_name = normalize_node_name(raw_name);
 
-    // Check if this node corresponds to a bone
-    auto it = bone_name_to_index.find(node_name);
-    int current_bone_index = -1;
+    SkeletonNode skeleton_node;
+    skeleton_node.name_raw = raw_name;
+    skeleton_node.name = clean_name;
+    skeleton_node.rest_local_transform = ai_to_glm_mat4(node->mTransformation);
+    skeleton_node.parent_index = parent_node_index;
+    decompose_transform(skeleton_node.rest_local_transform, skeleton_node.rest_position, skeleton_node.rest_rotation, skeleton_node.rest_scale);
 
-    if (it != bone_name_to_index.end()) {
-      current_bone_index = it->second;
-      model.bones[current_bone_index].parent_index = parent_index;
-      model.bones[current_bone_index].local_transform = ai_to_glm_mat4(node->mTransformation);
+    int node_index = static_cast<int>(model.skeleton_nodes.size());
+    model.skeleton_nodes.push_back(skeleton_node);
+    model.skeleton_node_lookup[raw_name] = node_index;
 
-      glm::vec3 rest_pos;
-      glm::quat rest_rot;
-      glm::vec3 rest_scale;
-      if (!decompose_transform(model.bones[current_bone_index].local_transform, rest_pos, rest_rot, rest_scale)) {
-        rest_pos = glm::vec3(0.0f);
-        rest_rot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        rest_scale = glm::vec3(1.0f);
-      }
-      model.bones[current_bone_index].rest_position = rest_pos;
-      model.bones[current_bone_index].rest_rotation = rest_rot;
-      model.bones[current_bone_index].rest_scale = rest_scale;
-
-      // Add to parent's children list
-      if (parent_index >= 0) {
-        model.bones[parent_index].child_indices.push_back(current_bone_index);
-      }
-
-      LOG_TRACE("[SKELETON] Bone '{}' (index {}) has parent index {}",
-                node_name, current_bone_index, parent_index);
+    if (parent_node_index >= 0) {
+      model.skeleton_nodes[parent_node_index].child_indices.push_back(node_index);
     }
 
-    // Recursively process children
-    for (unsigned int i = 0; i < node->mNumChildren; i++) {
-      traverse_node(node->mChildren[i], current_bone_index >= 0 ? current_bone_index : parent_index);
+    int current_bone_index = parent_bone_index;
+
+    auto raw_match = bone_raw_name_to_index.find(raw_name);
+    bool helper_tag = raw_name.find("_$AssimpFbx$_") != std::string::npos;
+
+    if (raw_match != bone_raw_name_to_index.end() || (!helper_tag && bone_name_to_index.count(clean_name) != 0)) {
+      current_bone_index = (raw_match != bone_raw_name_to_index.end()) ? raw_match->second : bone_name_to_index[clean_name];
+
+      SkeletonNode& stored = model.skeleton_nodes[node_index];
+      stored.bone_index = current_bone_index;
+      stored.is_bone = !helper_tag;
+      stored.is_helper = helper_tag;
+
+      Bone& bone = model.bones[current_bone_index];
+      if (stored.is_bone) {
+        bone.parent_index = parent_bone_index;
+        bone.skeleton_node_index = node_index;
+        bone.local_transform = stored.rest_local_transform;
+        bone.rest_position = stored.rest_position;
+        bone.rest_rotation = stored.rest_rotation;
+        bone.rest_scale = stored.rest_scale;
+        if (parent_bone_index >= 0) {
+          model.bones[parent_bone_index].child_indices.push_back(current_bone_index);
+        }
+      }
+      else {
+        stored.is_helper = true;
+      }
+    }
+    else if (bone_name_to_index.count(clean_name) != 0) {
+      SkeletonNode& stored = model.skeleton_nodes[node_index];
+      stored.bone_index = bone_name_to_index[clean_name];
+      stored.is_helper = true;
+    }
+
+    for (unsigned int i = 0; i < node->mNumChildren; ++i) {
+      build_nodes(node->mChildren[i], node_index, current_bone_index);
     }
   };
 
-  // Start traversal from root
-  traverse_node(scene->mRootNode, -1);
+  build_nodes(scene->mRootNode, -1, -1);
 
-  // Third pass: calculate global transforms
-  std::function<void(int, const glm::mat4&)> calculate_global_transforms =
-    [&](int bone_index, const glm::mat4& parent_transform) {
-      if (bone_index < 0 || bone_index >= static_cast<int>(model.bones.size())) {
-        return;
-      }
+  std::function<void(int, const glm::mat4&)> compute_rest_globals = [&](int node_index, const glm::mat4& parent_global) {
+    SkeletonNode& node = model.skeleton_nodes[node_index];
+    glm::mat4 global = parent_global * node.rest_local_transform;
+    node.rest_global_transform = global;
 
-      Bone& bone = model.bones[bone_index];
-      bone.global_transform = parent_transform * bone.local_transform;
+    if (node.is_bone && node.bone_index >= 0) {
+      Bone& bone = model.bones[node.bone_index];
+      bone.global_transform = global;
+    }
 
-      // Recursively update children
-      for (int child_index : bone.child_indices) {
-        calculate_global_transforms(child_index, bone.global_transform);
-      }
-    };
+    for (int child_index : node.child_indices) {
+      compute_rest_globals(child_index, global);
+    }
+  };
 
-  // Calculate global transforms for all root bones (bones with parent_index == -1)
-  glm::mat4 identity = glm::mat4(1.0f);
-  for (size_t i = 0; i < model.bones.size(); i++) {
-    if (model.bones[i].parent_index == -1) {
-      calculate_global_transforms(static_cast<int>(i), identity);
+  for (size_t i = 0; i < model.skeleton_nodes.size(); ++i) {
+    if (model.skeleton_nodes[i].parent_index == -1) {
+      compute_rest_globals(static_cast<int>(i), glm::mat4(1.0f));
     }
   }
 
-  model.animated_local_transforms.resize(model.bones.size(), glm::mat4(1.0f));
-
+  model.animated_local_transforms.assign(model.bones.size(), glm::mat4(1.0f));
+  model.animated_node_local_transforms.assign(model.skeleton_nodes.size(), glm::mat4(1.0f));
+  model.animated_node_global_transforms.assign(model.skeleton_nodes.size(), glm::mat4(1.0f));
   model.has_skeleton = true;
-  LOG_INFO("[SKELETON] Successfully loaded skeleton with {} bones", model.bones.size());
+
+  for (size_t i = 0; i < std::min<size_t>(model.bones.size(), 5); ++i) {
+    const Bone& bone = model.bones[i];
+    glm::vec3 pos = glm::vec3(bone.global_transform[3]);
+    LOG_INFO("[SKELETON] Rest pose bone {} at ({:.3f}, {:.3f}, {:.3f})", bone.name, pos.x, pos.y, pos.z);
+  }
 }
 
 // Load geometry, materials, skeleton, and animations for a model on demand.
@@ -954,6 +989,7 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
         (Config::SKELETON_HIDE_IK_BONES && bone.name.find("IK") != std::string::npos) ||
         (Config::SKELETON_HIDE_ROLL_BONES && bone.name.find("Roll") != std::string::npos) ||
         hide_root_child) {
+      LOG_TRACE("[SKELETON] Skipping bone '{}' due to filters (parent '{}')", bone.name, parent_bone.name);
       continue;
     }
 
@@ -1036,8 +1072,12 @@ void cleanup_model(Model& model) {
     model.meshes.clear();
     model.bones.clear();
     model.bone_lookup.clear();
+    model.skeleton_nodes.clear();
+    model.skeleton_node_lookup.clear();
     model.animations.clear();
     model.animated_local_transforms.clear();
+    model.animated_node_local_transforms.clear();
+    model.animated_node_global_transforms.clear();
     model.animation_playing = false;
     model.animation_time = 0.0;
     model.active_animation = 0;
@@ -1254,7 +1294,7 @@ void render_3d_preview(int width, int height, Model& model, TextureManager& text
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   if (model.loaded) {
-    if (model.animation_playing && !model.animations.empty() && !model.bones.empty()) {
+    if (Config::PREVIEW_PLAY_ANIMATIONS && model.animation_playing && !model.animations.empty() && !model.bones.empty()) {
       advance_model_animation(model, delta_time);
     }
 

@@ -54,6 +54,22 @@ struct Bone {
   glm::vec3 rest_position = glm::vec3(0.0f); // Rest pose translation
   glm::quat rest_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Rest pose rotation
   glm::vec3 rest_scale = glm::vec3(1.0f);    // Rest pose scale
+  int skeleton_node_index = -1;      // Index into Model::skeleton_nodes for fast lookup
+};
+
+struct SkeletonNode {
+  std::string name_raw;              // Exact Assimp node name (namespace/helpers intact)
+  std::string name;                  // Normalized name (namespace stripped)
+  glm::mat4 rest_local_transform = glm::mat4(1.0f);    // Local transform at rest
+  glm::mat4 rest_global_transform = glm::mat4(1.0f);   // Global transform at rest
+  glm::vec3 rest_position = glm::vec3(0.0f);           // Rest translation component
+  glm::quat rest_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Rest rotation component
+  glm::vec3 rest_scale = glm::vec3(1.0f);              // Rest scale component
+  int parent_index = -1;                                // Parent node index (-1 for root)
+  std::vector<int> child_indices;                      // Children node indices
+  int bone_index = -1;                                  // Associated bone (-1 if none)
+  bool is_bone = false;                                 // True if this node is the primary bone transform
+  bool is_helper = false;                               // True if this node is a helper affecting a bone
 };
 
 struct AnimationKeyframeVec3 {
@@ -67,7 +83,7 @@ struct AnimationKeyframeQuat {
 };
 
 struct AnimationChannel {
-  int bone_index = -1;
+  int node_index = -1;  // Skeleton node affected by this channel
   std::vector<AnimationKeyframeVec3> position_keys;
   std::vector<AnimationKeyframeQuat> rotation_keys;
   std::vector<AnimationKeyframeVec3> scaling_keys;
@@ -108,6 +124,12 @@ struct Model {
   bool animation_playing = false;
   double animation_time = 0.0;     // Accumulated time in seconds for active clip
   size_t active_animation = 0;     // Currently selected clip index
+
+  // Skeleton node graph (includes helpers and other transform parents)
+  std::vector<SkeletonNode> skeleton_nodes;
+  std::unordered_map<std::string, int> skeleton_node_lookup; // Raw node name -> node index mapping
+  std::vector<glm::mat4> animated_node_local_transforms;  // Scratch locals per skeleton node
+  std::vector<glm::mat4> animated_node_global_transforms; // Scratch globals per skeleton node
 
   // Bounds
   aiVector3D min_bounds;

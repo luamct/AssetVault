@@ -1,11 +1,13 @@
 #include "animation.h"
 #include "logger.h"
+#include "config.h"
 #include <glm/gtc/matrix_transform.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <unordered_map>
 
 namespace {
 
@@ -76,11 +78,17 @@ void load_model_animations(const aiScene* scene, Model& model) {
   model.animation_time = 0.0;
   model.active_animation = 0;
 
-  if (!scene || scene->mNumAnimations == 0 || model.bones.empty()) {
+  if (!scene || scene->mNumAnimations == 0 || model.bones.empty() || !Config::PREVIEW_PLAY_ANIMATIONS) {
+    return;
+  }
+
+  if (model.skeleton_nodes.empty()) {
+    LOG_WARN("[ANIMATION] Scene has animations but skeleton nodes were not initialized");
     return;
   }
 
   model.animations.reserve(scene->mNumAnimations);
+  LOG_DEBUG("[ANIMATION] Building clips for scene with {} animations and {} skeleton nodes", scene->mNumAnimations, model.skeleton_nodes.size());
 
   for (unsigned int a = 0; a < scene->mNumAnimations; ++a) {
     const aiAnimation* ai_anim = scene->mAnimations[a];
@@ -96,22 +104,40 @@ void load_model_animations(const aiScene* scene, Model& model) {
     double max_key_time = 0.0;
 
     clip.channels.reserve(ai_anim->mNumChannels);
+    std::unordered_map<int, size_t> channel_lookup;
+    LOG_DEBUG("[ANIMATION] Clip '{}' original duration {} ticks @ {} tps (channels={})", clip.name, clip.duration, clip.ticks_per_second, ai_anim->mNumChannels);
     for (unsigned int c = 0; c < ai_anim->mNumChannels; ++c) {
       const aiNodeAnim* channel = ai_anim->mChannels[c];
       if (!channel) {
         continue;
       }
 
-      std::string bone_name = channel->mNodeName.C_Str();
-      auto bone_it = model.bone_lookup.find(bone_name);
-      if (bone_it == model.bone_lookup.end()) {
-        continue; // Animation affects a node we are not rendering
+      std::string raw_name = channel->mNodeName.C_Str();
+      auto node_it = model.skeleton_node_lookup.find(raw_name);
+      if (node_it == model.skeleton_node_lookup.end()) {
+        LOG_WARN("[ANIMATION] Channel '{}' has no matching skeleton node", raw_name);
+        continue;
       }
 
-      AnimationChannel anim_channel;
-      anim_channel.bone_index = bone_it->second;
+      int node_index = node_it->second;
+      size_t channel_index;
+      auto existing = channel_lookup.find(node_index);
+      if (existing == channel_lookup.end()) {
+        channel_index = clip.channels.size();
+        AnimationChannel anim_channel;
+        anim_channel.node_index = node_index;
+        clip.channels.push_back(std::move(anim_channel));
+        channel_lookup[node_index] = channel_index;
+        LOG_DEBUG("[ANIMATION] New channel for node '{}' (index {})", raw_name, node_index);
+      }
+      else {
+        channel_index = existing->second;
+        LOG_DEBUG("[ANIMATION] Merging additional channel data into node '{}' (index {})", raw_name, node_index);
+      }
 
-      anim_channel.position_keys.reserve(channel->mNumPositionKeys);
+      AnimationChannel& anim_channel = clip.channels[channel_index];
+
+      anim_channel.position_keys.reserve(anim_channel.position_keys.size() + channel->mNumPositionKeys);
       for (unsigned int i = 0; i < channel->mNumPositionKeys; ++i) {
         const aiVectorKey& key = channel->mPositionKeys[i];
         AnimationKeyframeVec3 frame;
@@ -121,7 +147,7 @@ void load_model_animations(const aiScene* scene, Model& model) {
         max_key_time = std::max(max_key_time, frame.time);
       }
 
-      anim_channel.rotation_keys.reserve(channel->mNumRotationKeys);
+      anim_channel.rotation_keys.reserve(anim_channel.rotation_keys.size() + channel->mNumRotationKeys);
       for (unsigned int i = 0; i < channel->mNumRotationKeys; ++i) {
         const aiQuatKey& key = channel->mRotationKeys[i];
         AnimationKeyframeQuat frame;
@@ -131,7 +157,7 @@ void load_model_animations(const aiScene* scene, Model& model) {
         max_key_time = std::max(max_key_time, frame.time);
       }
 
-      anim_channel.scaling_keys.reserve(channel->mNumScalingKeys);
+      anim_channel.scaling_keys.reserve(anim_channel.scaling_keys.size() + channel->mNumScalingKeys);
       for (unsigned int i = 0; i < channel->mNumScalingKeys; ++i) {
         const aiVectorKey& key = channel->mScalingKeys[i];
         AnimationKeyframeVec3 frame;
@@ -140,15 +166,30 @@ void load_model_animations(const aiScene* scene, Model& model) {
         anim_channel.scaling_keys.push_back(frame);
         max_key_time = std::max(max_key_time, frame.time);
       }
-
-      clip.channels.push_back(std::move(anim_channel));
     }
 
     if (!clip.channels.empty()) {
+      for (AnimationChannel& channel : clip.channels) {
+        auto sort_vec3 = [](std::vector<AnimationKeyframeVec3>& keys) {
+          std::sort(keys.begin(), keys.end(), [](const AnimationKeyframeVec3& a, const AnimationKeyframeVec3& b) {
+            return a.time < b.time;
+          });
+        };
+        auto sort_quat = [](std::vector<AnimationKeyframeQuat>& keys) {
+          std::sort(keys.begin(), keys.end(), [](const AnimationKeyframeQuat& a, const AnimationKeyframeQuat& b) {
+            return a.time < b.time;
+          });
+        };
+        sort_vec3(channel.position_keys);
+        sort_quat(channel.rotation_keys);
+        sort_vec3(channel.scaling_keys);
+      }
+
       if (max_key_time > 0.0) {
         clip.duration = std::max(clip.duration, max_key_time);
       }
       model.animations.push_back(std::move(clip));
+      LOG_DEBUG("[ANIMATION] Clip '{}' registered with {} channels, duration {:.3f}s", model.animations.back().name, model.animations.back().channels.size(), model.animations.back().duration / model.animations.back().ticks_per_second);
     }
   }
 
@@ -157,13 +198,15 @@ void load_model_animations(const aiScene* scene, Model& model) {
     model.animation_time = 0.0;
     model.active_animation = model.animations.size() - 1;
     model.animated_local_transforms.resize(model.bones.size(), glm::mat4(1.0f));
+    model.animated_node_local_transforms.resize(model.skeleton_nodes.size(), glm::mat4(1.0f));
+    model.animated_node_global_transforms.resize(model.skeleton_nodes.size(), glm::mat4(1.0f));
     LOG_INFO("[ANIMATION] Loaded {} animation clip(s)", model.animations.size());
   }
 }
 
 // Step the active clip forward and recompute bone globals, writing results into the model.
 void advance_model_animation(Model& model, float delta_seconds) {
-  if (!model.animation_playing || model.animations.empty() || model.bones.empty()) {
+  if (!Config::PREVIEW_PLAY_ANIMATIONS || !model.animation_playing || model.animations.empty() || model.bones.empty()) {
     return;
   }
 
@@ -188,48 +231,85 @@ void advance_model_animation(Model& model, float delta_seconds) {
     time_in_ticks += duration_ticks;
   }
 
-  const size_t bone_count = model.bones.size();
-  if (model.animated_local_transforms.size() != bone_count) {
-    model.animated_local_transforms.resize(bone_count, glm::mat4(1.0f));
+  static int debug_frames = 0;
+  if (debug_frames < 10) {
+    LOG_TRACE("[ANIMATION] Advancing '{}' to {:.3f}s (ticks {:.3f}/{:.3f})", clip.name, model.animation_time, time_in_ticks, duration_ticks);
   }
 
-  for (size_t i = 0; i < bone_count; ++i) {
-    model.animated_local_transforms[i] = model.bones[i].local_transform;
+  const size_t node_count = model.skeleton_nodes.size();
+  if (node_count == 0) {
+    return;
+  }
+
+  if (model.animated_node_local_transforms.size() != node_count) {
+    model.animated_node_local_transforms.assign(node_count, glm::mat4(1.0f));
+  }
+  if (model.animated_node_global_transforms.size() != node_count) {
+    model.animated_node_global_transforms.assign(node_count, glm::mat4(1.0f));
+  }
+
+  for (size_t i = 0; i < node_count; ++i) {
+    model.animated_node_local_transforms[i] = model.skeleton_nodes[i].rest_local_transform;
   }
 
   for (const AnimationChannel& channel : clip.channels) {
-    if (channel.bone_index < 0 || static_cast<size_t>(channel.bone_index) >= bone_count) {
+    if (channel.node_index < 0 || static_cast<size_t>(channel.node_index) >= node_count) {
       continue;
     }
 
-    const Bone& bone = model.bones[channel.bone_index];
-    glm::vec3 translation = interpolate_vec3(channel.position_keys, time_in_ticks, bone.rest_position);
-    glm::quat rotation = interpolate_quat(channel.rotation_keys, time_in_ticks, bone.rest_rotation);
-    glm::vec3 scale = interpolate_vec3(channel.scaling_keys, time_in_ticks, bone.rest_scale);
+    const SkeletonNode& node_def = model.skeleton_nodes[channel.node_index];
+    glm::vec3 translation = interpolate_vec3(channel.position_keys, time_in_ticks, node_def.rest_position);
+    glm::quat rotation = interpolate_quat(channel.rotation_keys, time_in_ticks, node_def.rest_rotation);
+    glm::vec3 scale = interpolate_vec3(channel.scaling_keys, time_in_ticks, node_def.rest_scale);
+
+    if (debug_frames < 10) {
+      LOG_TRACE("[ANIMATION] Node '{}' idx {} -> T({}, {}, {}), R({}, {}, {}, {}), S({}, {}, {})",
+        node_def.name_raw, channel.node_index,
+        translation.x, translation.y, translation.z,
+        rotation.w, rotation.x, rotation.y, rotation.z,
+        scale.x, scale.y, scale.z);
+    }
 
     glm::mat4 translation_m = glm::translate(glm::mat4(1.0f), translation);
     glm::mat4 rotation_m = glm::toMat4(rotation);
     glm::mat4 scaling_m = glm::scale(glm::mat4(1.0f), scale);
-    model.animated_local_transforms[channel.bone_index] = translation_m * rotation_m * scaling_m;
+    model.animated_node_local_transforms[channel.node_index] = translation_m * rotation_m * scaling_m;
   }
 
-  std::function<void(int, const glm::mat4&)> update_global = [&](int index, const glm::mat4& parent_transform) {
-    if (index < 0 || static_cast<size_t>(index) >= bone_count) {
+  const size_t bone_count = model.bones.size();
+  if (model.animated_local_transforms.size() != bone_count) {
+    model.animated_local_transforms.assign(bone_count, glm::mat4(1.0f));
+  }
+
+  std::function<void(int, const glm::mat4&)> update_global = [&](int node_index, const glm::mat4& parent_global) {
+    if (node_index < 0 || static_cast<size_t>(node_index) >= node_count) {
       return;
     }
 
-    glm::mat4 global = parent_transform * model.animated_local_transforms[index];
-    model.bones[index].global_transform = global;
+    glm::mat4 local = model.animated_node_local_transforms[node_index];
+    glm::mat4 global = parent_global * local;
+    model.animated_node_global_transforms[node_index] = global;
 
-    for (int child : model.bones[index].child_indices) {
-      update_global(child, global);
+    const SkeletonNode& node = model.skeleton_nodes[node_index];
+    if (node.is_bone && node.bone_index >= 0 && static_cast<size_t>(node.bone_index) < bone_count) {
+      Bone& bone = model.bones[node.bone_index];
+      bone.local_transform = local;
+      bone.global_transform = global;
+      model.animated_local_transforms[node.bone_index] = local;
+    }
+
+    for (int child_index : node.child_indices) {
+      update_global(child_index, global);
     }
   };
 
-  const glm::mat4 identity = glm::mat4(1.0f);
-  for (size_t i = 0; i < bone_count; ++i) {
-    if (model.bones[i].parent_index == -1) {
-      update_global(static_cast<int>(i), identity);
+  for (size_t i = 0; i < node_count; ++i) {
+    if (model.skeleton_nodes[i].parent_index == -1) {
+      update_global(static_cast<int>(i), glm::mat4(1.0f));
     }
+  }
+
+  if (debug_frames < 10) {
+    debug_frames++;
   }
 }
