@@ -1,15 +1,19 @@
 #include "3d.h"
 #include "logger.h"
+#include "animation.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include <set>
-#include <map>
+#include <unordered_map>
 #include <functional>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include "stb_image.h"
 #include "texture_manager.h"
 #include "theme.h"
@@ -25,6 +29,7 @@ static unsigned int unified_shader_ = 0;
 
 namespace {
 
+// Return a normalized direction vector that mimics a headlamp mounted on the camera.
 glm::vec3 compute_preview_light_direction(const glm::vec3& camera_position) {
   glm::vec3 direction = -camera_position;
   if (glm::length(direction) < 0.0001f) {
@@ -33,9 +38,25 @@ glm::vec3 compute_preview_light_direction(const glm::vec3& camera_position) {
   return glm::normalize(direction);
 }
 
+// Utility: unpack a matrix into T/R/S components while falling back to identity on failure.
+bool decompose_transform(const glm::mat4& matrix, glm::vec3& translation, glm::quat& rotation, glm::vec3& scale) {
+  glm::vec3 skew;
+  glm::vec4 perspective;
+  if (!glm::decompose(matrix, scale, rotation, translation, skew, perspective)) {
+    translation = glm::vec3(0.0f);
+    rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    scale = glm::vec3(1.0f);
+    return false;
+  }
+
+  rotation = glm::normalize(rotation);
+  return true;
+}
+
 }
 
 // Helper function to get base path
+// Extract directory portion of a path so relative texture lookups work.
 std::string getBasePath(const std::string& path) {
   size_t pos = path.find_last_of("\\/");
   return (std::string::npos == pos) ? "" : path.substr(0, pos + 1);
@@ -43,6 +64,7 @@ std::string getBasePath(const std::string& path) {
 
 
 // Load all materials from model
+// Populate the model's material list and load any referenced textures (embedded or external).
 void load_model_materials(const aiScene* scene, const std::string& model_path, Model& model, TextureManager& texture_manager) {
   LOG_TRACE("[MATERIAL] Loading materials for model: {}", model_path);
   model.materials.clear();
@@ -283,6 +305,7 @@ glm::mat4 ai_to_glm_mat4(const aiMatrix4x4& from) {
 }
 
 // Process node recursively and apply transformations
+// Traverse the Assimp scene graph, baking each node's transform into mesh vertices.
 void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 parent_transform) {
   // Calculate this node's transformation
   glm::mat4 node_transform = ai_to_glm_mat4(node->mTransformation);
@@ -301,6 +324,7 @@ void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 pa
 }
 
 // Process a single mesh with transformation applied
+// Convert a single Assimp mesh into our interleaved vertex/index buffers.
 void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat4 transform) {
 
   // Create mesh info
@@ -364,6 +388,7 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
 }
 
 // Load skeleton data from scene
+// Build the bone hierarchy, rest pose, and lookup tables from the Assimp scene data.
 void load_model_skeleton(const aiScene* scene, Model& model) {
   model.bones.clear();
   model.has_skeleton = false;
@@ -375,7 +400,7 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
   LOG_DEBUG("[SKELETON] Scene has {} meshes, {} animations", scene->mNumMeshes, scene->mNumAnimations);
 
   // Map bone names to indices for quick lookup
-  std::map<std::string, int> bone_name_to_index;
+  std::unordered_map<std::string, int> bone_name_to_index;
 
   // First pass: collect all bones from all meshes
   for (unsigned int m = 0; m < scene->mNumMeshes; m++) {
@@ -433,6 +458,7 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
   }
 
   LOG_INFO("[SKELETON] Found {} bones", model.bones.size());
+  model.bone_lookup = bone_name_to_index;
 
   // Second pass: build hierarchy by traversing scene nodes
   std::function<void(aiNode*, int)> traverse_node = [&](aiNode* node, int parent_index) {
@@ -446,6 +472,18 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
       current_bone_index = it->second;
       model.bones[current_bone_index].parent_index = parent_index;
       model.bones[current_bone_index].local_transform = ai_to_glm_mat4(node->mTransformation);
+
+      glm::vec3 rest_pos;
+      glm::quat rest_rot;
+      glm::vec3 rest_scale;
+      if (!decompose_transform(model.bones[current_bone_index].local_transform, rest_pos, rest_rot, rest_scale)) {
+        rest_pos = glm::vec3(0.0f);
+        rest_rot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        rest_scale = glm::vec3(1.0f);
+      }
+      model.bones[current_bone_index].rest_position = rest_pos;
+      model.bones[current_bone_index].rest_rotation = rest_rot;
+      model.bones[current_bone_index].rest_scale = rest_scale;
 
       // Add to parent's children list
       if (parent_index >= 0) {
@@ -489,10 +527,13 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
     }
   }
 
+  model.animated_local_transforms.resize(model.bones.size(), glm::mat4(1.0f));
+
   model.has_skeleton = true;
   LOG_INFO("[SKELETON] Successfully loaded skeleton with {} bones", model.bones.size());
 }
 
+// Load geometry, materials, skeleton, and animations for a model on demand.
 bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager) {
   // Clean up previous model
   cleanup_model(model);
@@ -530,6 +571,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 
   // Load skeleton data early (before geometry check) so animation-only files can load
   load_model_skeleton(scene, model);
+  load_model_animations(scene, model);
 
   // Check if the model has any visible geometry
   bool has_geometry = !model.vertices.empty() && !model.indices.empty();
@@ -636,6 +678,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   return true;
 }
 
+// Draw the model meshes with lighting sized to the preview camera.
 void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera) {
   if (!model.loaded)
     return;
@@ -906,10 +949,11 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
 
     // Skip control/helper bones based on config filters
     // These are technical bones not part of the visual skeleton
+    const bool hide_root_child = Config::SKELETON_HIDE_ROOT_CHILDREN && parent_bone.name == "Root";
     if ((Config::SKELETON_HIDE_CTRL_BONES && bone.name.find("Ctrl") != std::string::npos) ||
         (Config::SKELETON_HIDE_IK_BONES && bone.name.find("IK") != std::string::npos) ||
         (Config::SKELETON_HIDE_ROLL_BONES && bone.name.find("Roll") != std::string::npos) ||
-        (Config::SKELETON_HIDE_ROOT_CHILDREN && parent_bone.name == "Root")) {
+        hide_root_child) {
       continue;
     }
 
@@ -952,7 +996,7 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glEnableVertexAttribArray(2);
 
   // Set skeleton color (brighter to compensate for dim lighting, creating uniform matte grey)
-  glm::vec3 skeleton_color(1.0f, 1.0f, 1.0f);
+  glm::vec3 skeleton_color(Theme::SKELETON_BONE.x, Theme::SKELETON_BONE.y, Theme::SKELETON_BONE.z);
   glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &skeleton_color[0]);
   glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
   glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &no_emissive[0]);
@@ -967,11 +1011,16 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glDeleteVertexArrays(1, &bone_vao);
 }
 
+// Release GPU buffers and clear CPU-side state for a model.
 void cleanup_model(Model& model) {
   if (model.loaded) {
     glDeleteVertexArrays(1, &model.vao);
     glDeleteBuffers(1, &model.vbo);
     glDeleteBuffers(1, &model.ebo);
+
+    model.vao = 0;
+    model.vbo = 0;
+    model.ebo = 0;
 
     // Clean up all material textures
     for (auto& material : model.materials) {
@@ -986,11 +1035,19 @@ void cleanup_model(Model& model) {
     model.materials.clear();
     model.meshes.clear();
     model.bones.clear();
+    model.bone_lookup.clear();
+    model.animations.clear();
+    model.animated_local_transforms.clear();
+    model.animation_playing = false;
+    model.animation_time = 0.0;
+    model.active_animation = 0;
     model.has_skeleton = false;
+    model.has_no_geometry = false;
     model.loaded = false;
   }
 }
 
+// Replace the active preview model, releasing previous GL resources.
 void set_current_model(Model& current_model, const Model& model) {
   // Clean up previous model
   cleanup_model(current_model);
@@ -999,10 +1056,12 @@ void set_current_model(Model& current_model, const Model& model) {
   current_model = model;
 }
 
+// Convenience getter to mirror legacy API expectations.
 const Model& get_current_model(const Model& current_model) {
   return current_model;
 }
 
+// Draw origin axes so users have spatial reference inside the preview cube.
 void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& projection, const glm::vec3& light_direction) {
   static unsigned int axes_vao = 0;
   static unsigned int axes_vbo = 0;
@@ -1165,7 +1224,8 @@ void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& proj
   glBindVertexArray(0);
 }
 
-void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager, const Camera3D& camera) {
+// Render the off-screen preview framebuffer, advancing animation playback if needed.
+void render_3d_preview(int width, int height, Model& model, TextureManager& texture_manager, const Camera3D& camera, float delta_time) {
   if (!texture_manager.is_preview_initialized()) {
     return;
   }
@@ -1194,6 +1254,10 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   if (model.loaded) {
+    if (model.animation_playing && !model.animations.empty() && !model.bones.empty()) {
+      advance_model_animation(model, delta_time);
+    }
+
     render_model(model, texture_manager, camera);
 
     // Render skeleton overlay if present
@@ -1206,6 +1270,7 @@ void render_3d_preview(int width, int height, const Model& model, TextureManager
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+// Configure global GL state expected by all preview renders (depth, blending, etc.).
 void setup_3d_rendering_state() {
   // Enable depth testing for proper 3D rendering
   glEnable(GL_DEPTH_TEST);
@@ -1220,6 +1285,7 @@ void setup_3d_rendering_state() {
 }
 
 // Helper function to compile a shader from source code
+// Compile a single shader object and surface compile errors to the log.
 static unsigned int compile_shader(unsigned int type, const std::string& source, const std::string& shader_name) {
   unsigned int shader = glCreateShader(type);
   const char* src = source.c_str();
@@ -1240,6 +1306,7 @@ static unsigned int compile_shader(unsigned int type, const std::string& source,
 }
 
 // Load shader source code from file and compile/link into OpenGL shader program
+// Read, compile, and link the unified shader program used by all preview passes.
 unsigned int load_shader_program(const std::string& vertex_path, const std::string& fragment_path) {
   // Read vertex shader source
   std::ifstream v_file(vertex_path);
@@ -1298,6 +1365,7 @@ unsigned int load_shader_program(const std::string& vertex_path, const std::stri
 }
 
 // Initialize 3D shaders by loading from external shader files
+// Load the on-disk vertex/fragment shaders once per GL context.
 bool initialize_3d_shaders() {
   LOG_DEBUG("Initializing unified 3D shader from external files");
 
@@ -1313,6 +1381,7 @@ bool initialize_3d_shaders() {
 }
 
 // Cleanup 3D shader programs
+// Destroy shader program resources before tearing down the GL context.
 void cleanup_3d_shaders() {
   if (unified_shader_ != 0) {
     glDeleteProgram(unified_shader_);

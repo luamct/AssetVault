@@ -68,6 +68,9 @@ namespace Theme {
   constexpr ImVec4 ACCENT_BLUE_2_ALPHA_95 = ImVec4(0.10f, 0.45f, 0.65f, 0.95f); // Darker accent 95% opacity
   constexpr ImVec4 ACCENT_BLUE_3_ALPHA_90 = ImVec4(0.05f, 0.35f, 0.55f, 0.90f); // Darkest accent 90% opacity
 
+  // === 3D Preview Colors ===
+  constexpr ImVec4 SKELETON_BONE = ImVec4(1.0f, 0.58f, 0.12f, 1.0f); // Warm orange bones
+
   // === LIVELY TOGGLE COLORS ===
   constexpr ImVec4 TOGGLE_OFF_BG = ImVec4(0.92f, 0.95f, 0.98f, 1.00f);        // Light off state background
   constexpr ImVec4 TOGGLE_OFF_BORDER = ImVec4(0.80f, 0.85f, 0.90f, 1.00f);    // Light off state border

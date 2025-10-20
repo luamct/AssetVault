@@ -1283,7 +1283,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       // Render the 3D preview to framebuffer texture
       int fb_width = static_cast<int>(avail_width);
       int fb_height = static_cast<int>(avail_height);
-      render_3d_preview(fb_width, fb_height, current_model, texture_manager, camera);
+      render_3d_preview(fb_width, fb_height, current_model, texture_manager, camera, ImGui::GetIO().DeltaTime);
 
       // Center the viewport in the panel (same logic as 2D previews)
       ImVec2 container_pos = ImGui::GetCursorScreenPos();

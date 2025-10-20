@@ -6,8 +6,10 @@
 #include <assimp/postprocess.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 // Forward declaration
 class TextureManager;
@@ -49,6 +51,37 @@ struct Bone {
   glm::mat4 global_transform;        // World space transformation
   int parent_index;                  // Index of parent bone (-1 for root)
   std::vector<int> child_indices;    // Indices of child bones
+  glm::vec3 rest_position = glm::vec3(0.0f); // Rest pose translation
+  glm::quat rest_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Rest pose rotation
+  glm::vec3 rest_scale = glm::vec3(1.0f);    // Rest pose scale
+};
+
+struct AnimationKeyframeVec3 {
+  double time = 0.0;   // In ticks
+  glm::vec3 value = glm::vec3(0.0f);
+};
+
+struct AnimationKeyframeQuat {
+  double time = 0.0;   // In ticks
+  glm::quat value = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+};
+
+struct AnimationChannel {
+  int bone_index = -1;
+  std::vector<AnimationKeyframeVec3> position_keys;
+  std::vector<AnimationKeyframeQuat> rotation_keys;
+  std::vector<AnimationKeyframeVec3> scaling_keys;
+};
+
+struct AnimationClip {
+  std::string name;
+  double duration = 0.0;          // Duration in ticks
+  double ticks_per_second = 0.0;  // Conversion factor from seconds to ticks
+  std::vector<AnimationChannel> channels;
+
+  bool is_valid() const {
+    return duration > 0.0 && !channels.empty();
+  }
 };
 
 // Model data structure
@@ -67,6 +100,14 @@ struct Model {
   // Skeletal data
   std::vector<Bone> bones;         // Bone hierarchy for skeletal animation
   bool has_skeleton = false;       // True if model contains skeletal data
+  std::unordered_map<std::string, int> bone_lookup; // Bone name -> index mapping
+
+  // Animation data
+  std::vector<AnimationClip> animations;
+  std::vector<glm::mat4> animated_local_transforms; // Scratch buffer for pose evaluation
+  bool animation_playing = false;
+  double animation_time = 0.0;     // Accumulated time in seconds for active clip
+  size_t active_animation = 0;     // Currently selected clip index
 
   // Bounds
   aiVector3D min_bounds;
@@ -98,7 +139,7 @@ struct Camera3D {
 };
 
 // 3D Preview functions (now handled by TextureManager)
-void render_3d_preview(int width, int height, const Model& model, TextureManager& texture_manager, const Camera3D& camera);
+void render_3d_preview(int width, int height, Model& model, TextureManager& texture_manager, const Camera3D& camera, float delta_time);
 bool load_model(const std::string& filepath, Model& model, TextureManager& texture_manager);
 void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera);
 void cleanup_model(Model& model);

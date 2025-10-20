@@ -151,6 +151,7 @@ add_library(AssetInventoryCore STATIC
     src/search.cpp
     src/texture_manager.cpp
     src/3d.cpp
+    src/animation.cpp
     src/utils.cpp
     src/ui.cpp
     src/audio_manager.cpp

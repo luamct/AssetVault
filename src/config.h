@@ -49,10 +49,10 @@ namespace Config {
     constexpr bool PREVIEW_DRAW_DEBUG_AXES = true;            // Toggle axes rendering in 3D preview
 
     // 3D skeleton rendering filters
-    constexpr bool SKELETON_HIDE_CTRL_BONES = true;   // Skip bones with "Ctrl" suffix (animation controls)
-    constexpr bool SKELETON_HIDE_IK_BONES = true;     // Skip bones with "IK" in name (inverse kinematics targets)
-    constexpr bool SKELETON_HIDE_ROLL_BONES = true;   // Skip bones with "Roll" in name (helper bones)
-    constexpr bool SKELETON_HIDE_ROOT_CHILDREN = true; // Skip bones directly parented to "Root" (world anchor)
+    constexpr bool SKELETON_HIDE_CTRL_BONES = false;   // Skip bones with "Ctrl" suffix (animation controls)
+    constexpr bool SKELETON_HIDE_IK_BONES = false;     // Skip bones with "IK" in name (inverse kinematics targets)
+    constexpr bool SKELETON_HIDE_ROLL_BONES = false;   // Skip bones with "Roll" in name (helper bones)
+    constexpr bool SKELETON_HIDE_ROOT_CHILDREN = false; // Skip bones directly parented to "Root" (world anchor)
 
     // Preview panel layout
     constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;     // Margin from window right edge
