@@ -453,7 +453,7 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
   }
 
   if (model.bones.empty() && scene->mNumAnimations > 0) {
-    LOG_INFO("[SKELETON] No mesh bones; scanning animations for bone names");
+  LOG_DEBUG("[SKELETON] No mesh bones; scanning animations for bone names");
     std::set<std::string> bone_names;
     for (unsigned int a = 0; a < scene->mNumAnimations; ++a) {
       const aiAnimation* anim = scene->mAnimations[a];
@@ -564,7 +564,7 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
   for (size_t i = 0; i < std::min<size_t>(model.bones.size(), 5); ++i) {
     const Bone& bone = model.bones[i];
     glm::vec3 pos = glm::vec3(bone.global_transform[3]);
-    LOG_INFO("[SKELETON] Rest pose bone {} at ({:.3f}, {:.3f}, {:.3f})", bone.name, pos.x, pos.y, pos.z);
+    LOG_DEBUG("[SKELETON] Rest pose bone {} at ({:.3f}, {:.3f}, {:.3f})", bone.name, pos.x, pos.y, pos.z);
   }
 }
 

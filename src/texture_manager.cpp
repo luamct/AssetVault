@@ -27,6 +27,7 @@
 #include "asset.h" // For SVG_THUMBNAIL_SIZE
 #include "config.h" // For MODEL_THUMBNAIL_SIZE, MAX_TEXTURE_RETRY_ATTEMPTS
 #include "3d.h" // For Model, load_model, render_model, cleanup_model
+#include "animation.h" // For advance_model_animation
 
 TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
@@ -437,22 +438,30 @@ void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
             load_success, model.has_no_geometry, model.vertices.size(), model.indices.size());
 
   if (!load_success) {
-    if (model.has_no_geometry) {
-      LOG_INFO("[THUMBNAIL] Model has no geometry (animation-only FBX), skipping thumbnail: {}", model_path);
-      return;
-    }
-    else {
-      LOG_ERROR("[THUMBNAIL] Failed to load model for thumbnail: {}", model_path);
-      throw ThumbnailGenerationException("Failed to load 3D model: " + model_path);
-    }
+    LOG_ERROR("[THUMBNAIL] Failed to load model for thumbnail: {}", model_path);
+    throw ThumbnailGenerationException("Failed to load 3D model: " + model_path);
   }
 
   LOG_TRACE("[THUMBNAIL] Model loaded successfully. Materials count: {}", model.materials.size());
 
-  if (model.has_no_geometry) {
-    LOG_INFO("[THUMBNAIL] Model '{}' has no renderable geometry. Skipping thumbnail generation.", model_path);
+  const bool has_renderable_geometry = !model.has_no_geometry && (model.vao != 0) && !model.indices.empty();
+  const bool has_renderable_skeleton = model.has_skeleton && !model.bones.empty();
+
+  if (!has_renderable_geometry && !has_renderable_skeleton) {
+    LOG_INFO("[THUMBNAIL] Model '{}' has nothing to render for thumbnail generation.", model_path);
     cleanup_model(model);
     return;
+  }
+
+  if (!model.animations.empty() && has_renderable_skeleton) {
+    if (model.active_animation >= model.animations.size()) {
+      model.active_animation = model.animations.size() - 1;
+    }
+    const std::string& clip_name = model.animations[model.active_animation].name;
+    LOG_DEBUG("[THUMBNAIL] Advancing animation '{}' to first frame for thumbnail", clip_name);
+    // Ensure we sample the very first frame so skeleton transforms match the preview playback.
+    model.animation_time = 0.0;
+    advance_model_animation(model, 0.0f);
   }
 
   // Start GPU timing for rendering
@@ -501,9 +510,14 @@ void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
     LOG_WARN("OpenGL error before thumbnail render: {}", gl_error);
   }
 
-  // Render the model using existing render_model function with default camera
+  // Render the model or skeleton using existing preview routines.
   Camera3D default_camera; // Uses default rotation and zoom
-  render_model(model, *this, default_camera);
+  if (has_renderable_geometry) {
+    render_model(model, *this, default_camera);
+  }
+  else {
+    render_skeleton(model, default_camera, *this);
+  }
 
   // Check for OpenGL errors after rendering
   gl_error = glGetError();
