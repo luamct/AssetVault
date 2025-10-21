@@ -714,7 +714,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 }
 
 // Draw the model meshes with lighting sized to the preview camera.
-void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera) {
+void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera, bool draw_axes) {
   if (!model.loaded)
     return;
 
@@ -848,7 +848,7 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
   // Render debug axes at origin (scaled relative to model size)
   // Pass the same view and projection matrices to ensure consistency
-  if (Config::PREVIEW_DRAW_DEBUG_AXES) {
+  if (draw_axes && Config::PREVIEW_DRAW_DEBUG_AXES) {
     float axis_scale = max_size * 0.7f;
     render_debug_axes(axis_scale, view_matrix, projection_matrix, light_direction);
   }
@@ -924,6 +924,11 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
 
   // Use dedicated skeleton shader with directional lighting
   glUseProgram(unified_shader_);
+
+  // Ensure shader samples constant color instead of any residual texture state.
+  glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
 
   // Set up matrices (same as render_model)
   glm::mat4 model_matrix = glm::mat4(1.0f);
@@ -1298,7 +1303,7 @@ void render_3d_preview(int width, int height, Model& model, TextureManager& text
       advance_model_animation(model, delta_time);
     }
 
-    render_model(model, texture_manager, camera);
+    render_model(model, texture_manager, camera, true);
 
     // Render skeleton overlay if present
     if (model.has_skeleton) {
