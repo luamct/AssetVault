@@ -45,6 +45,7 @@ struct UIState {
   // Asset path state
   std::string assets_path_selected;
   std::string assets_directory;
+  bool show_drive_roots = false;
 
   // Fast membership check for current results (IDs only)
   std::unordered_set<uint32_t> results_ids;

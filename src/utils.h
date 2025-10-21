@@ -22,6 +22,7 @@ std::string format_display_path(const std::string& full_path, const std::string&
 std::string format_file_size(uint64_t size_bytes);
 std::filesystem::path get_thumbnail_path(const std::string& relative_path);
 void ensure_executable_working_directory();
+std::vector<std::filesystem::path> list_root_directories();
 
 std::string get_home_directory();
 

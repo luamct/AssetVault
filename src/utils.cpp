@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cwchar>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -168,6 +169,31 @@ void ensure_executable_working_directory() {
 #else
   // Non-Windows platforms already run from a predictable working directory.
 #endif
+}
+
+std::vector<std::filesystem::path> list_root_directories() {
+  std::vector<std::filesystem::path> roots;
+#ifdef _WIN32
+  DWORD size = GetLogicalDriveStringsW(0, nullptr);
+  if (size == 0) {
+    return roots;
+  }
+
+  std::wstring buffer(size + 1, L'\0');
+  DWORD written = GetLogicalDriveStringsW(static_cast<DWORD>(buffer.size()), buffer.data());
+  if (written == 0) {
+    return roots;
+  }
+
+  const wchar_t* drive = buffer.c_str();
+  while (*drive != L'\0') {
+    roots.emplace_back(drive);
+    drive += wcslen(drive) + 1;
+  }
+#else
+  roots.emplace_back(std::filesystem::path("/"));
+#endif
+  return roots;
 }
 
 void safe_localtime(std::tm* tm_buf, const std::time_t* time) {

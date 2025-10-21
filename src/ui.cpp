@@ -571,6 +571,7 @@ namespace {
       g_request_assets_path_popup = false;
 
       // Initialize to current assets directory if set, otherwise home directory
+      ui_state.show_drive_roots = false;
       if (!ui_state.assets_directory.empty()) {
         ui_state.assets_path_selected = ui_state.assets_directory;
       }
@@ -627,52 +628,98 @@ namespace {
 
         // Navigate to parent directory
         fs::path parent_path = current_path.parent_path();
+#ifdef _WIN32
+        bool at_volume_root = current_path.has_root_path() && current_path == current_path.root_path();
+#else
+        bool at_volume_root = false;
+#endif
+
         if (!parent_path.empty()) {
           if (ImGui::Selectable("..", false)) {
+#ifdef _WIN32
+            if (at_volume_root && !ui_state.show_drive_roots) {
+              ui_state.show_drive_roots = true;
+            }
+            else {
+              ui_state.show_drive_roots = false;
+              ui_state.assets_path_selected = parent_path.generic_u8string();
+            }
+#else
             ui_state.assets_path_selected = parent_path.generic_u8string();
+#endif
           }
         }
 
-        fs::directory_iterator dir_iter(current_path, fs_error);
-        if (fs_error) {
-          ImGui::TextColored(Theme::TEXT_WARNING, "Unable to read directory contents.");
-          fs_error.clear();
-        }
-        else {
-          std::vector<fs::directory_entry> directories;
-          for (const auto& entry : dir_iter) {
-            std::error_code entry_error;
-            if (!entry.is_directory(entry_error)) {
-              continue;
+#ifdef _WIN32
+        if (ui_state.show_drive_roots && at_volume_root) {
+          std::vector<fs::path> drives = list_root_directories();
+          if (!drives.empty()) {
+            std::sort(drives.begin(), drives.end(), [](const fs::path& a, const fs::path& b) {
+              return a.u8string() < b.u8string();
+            });
+
+            const fs::path current_root = current_path.root_path();
+            for (const auto& drive : drives) {
+              std::string label = "[Drive] " + drive.u8string();
+              bool is_current_drive = drive == current_root;
+              if (ImGui::Selectable(label.c_str(), is_current_drive)) {
+                ui_state.assets_path_selected = drive.generic_u8string();
+                ui_state.show_drive_roots = false;
+              }
             }
 
-            std::string folder_name = entry.path().filename().u8string();
-            if (folder_name.empty()) {
-              continue;
-            }
-
-            if (!folder_name.empty() && folder_name[0] == '.') {
-              continue;
-            }
-
-            directories.push_back(entry);
+            ImGui::Separator();
           }
+          else {
+            ImGui::TextColored(Theme::TEXT_WARNING, "No drives detected.");
+          }
+        }
+#endif
 
-          std::sort(directories.begin(), directories.end(), [](const fs::directory_entry& a, const fs::directory_entry& b) {
-            return a.path().filename().u8string() < b.path().filename().u8string();
-          });
+        if (!ui_state.show_drive_roots) {
+          fs::directory_iterator dir_iter(current_path, fs_error);
+          if (fs_error) {
+            ImGui::TextColored(Theme::TEXT_WARNING, "Unable to read directory contents.");
+            fs_error.clear();
+          }
+          else {
+            std::vector<fs::directory_entry> directories;
+            for (const auto& entry : dir_iter) {
+              std::error_code entry_error;
+              if (!entry.is_directory(entry_error)) {
+                continue;
+              }
 
-          for (const auto& entry : directories) {
-            std::string folder_name = entry.path().filename().u8string();
-            if (ImGui::Selectable(folder_name.c_str(), false)) {
-              ui_state.assets_path_selected = entry.path().generic_u8string();
+              std::string folder_name = entry.path().filename().u8string();
+              if (folder_name.empty()) {
+                continue;
+              }
+
+              if (!folder_name.empty() && folder_name[0] == '.') {
+                continue;
+              }
+
+              directories.push_back(entry);
             }
 
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-              ui_state.assets_path_selected = entry.path().generic_u8string();
-              LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
-              directory_changed = true;
-              ImGui::CloseCurrentPopup();
+            std::sort(directories.begin(), directories.end(), [](const fs::directory_entry& a, const fs::directory_entry& b) {
+              return a.path().filename().u8string() < b.path().filename().u8string();
+            });
+
+            for (const auto& entry : directories) {
+              std::string folder_name = entry.path().filename().u8string();
+              if (ImGui::Selectable(folder_name.c_str(), false)) {
+                ui_state.assets_path_selected = entry.path().generic_u8string();
+                ui_state.show_drive_roots = false;
+              }
+
+              if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                ui_state.assets_path_selected = entry.path().generic_u8string();
+                ui_state.show_drive_roots = false;
+                LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
+                directory_changed = true;
+                ImGui::CloseCurrentPopup();
+              }
             }
           }
         }
@@ -683,14 +730,16 @@ namespace {
       }
 
       if (ImGui::Button("Select", ImVec2(160.0f, 0.0f))) {
-        if (!ui_state.assets_path_selected.empty()) {
+        if (!ui_state.assets_path_selected.empty() && !ui_state.show_drive_roots) {
           LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
           directory_changed = true;
         }
+        ui_state.show_drive_roots = false;
         ImGui::CloseCurrentPopup();
       }
       ImGui::SameLine();
       if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f))) {
+        ui_state.show_drive_roots = false;
         ImGui::CloseCurrentPopup();
       }
 
