@@ -14,6 +14,16 @@
 #include <vector>
 #include <cstdlib>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace fs = std::filesystem;
 
 // Function to truncate filename to specified length with ellipsis
@@ -134,6 +144,30 @@ std::string get_home_directory() {
 std::filesystem::path get_thumbnail_path(const std::string& relative_path) {
   return Config::get_thumbnail_directory() /
     std::filesystem::path(relative_path).replace_extension(".png");
+}
+
+void ensure_executable_working_directory() {
+#ifdef _WIN32
+  wchar_t path_buffer[MAX_PATH] = L"";
+  DWORD length = GetModuleFileNameW(nullptr, path_buffer, MAX_PATH);
+  if (length == 0 || length == MAX_PATH) {
+    return;
+  }
+
+  fs::path exe_path(path_buffer);
+  fs::path exe_dir = exe_path.parent_path();
+  if (exe_dir.empty()) {
+    return;
+  }
+
+  std::error_code ec;
+  fs::current_path(exe_dir, ec);
+  if (ec) {
+    LOG_WARN("Failed to switch working directory to executable directory: {}", exe_dir.u8string());
+  }
+#else
+  // Non-Windows platforms already run from a predictable working directory.
+#endif
 }
 
 void safe_localtime(std::tm* tm_buf, const std::time_t* time) {

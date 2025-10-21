@@ -21,6 +21,7 @@ std::string get_relative_path(const std::string& full_path, const std::string& a
 std::string format_display_path(const std::string& full_path, const std::string& assets_directory);
 std::string format_file_size(uint64_t size_bytes);
 std::filesystem::path get_thumbnail_path(const std::string& relative_path);
+void ensure_executable_working_directory();
 
 std::string get_home_directory();
 

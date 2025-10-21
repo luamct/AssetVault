@@ -73,6 +73,8 @@ int run(std::atomic<bool>* shutdown_requested) {
   Logger::initialize(LogLevel::Info);
   LOG_INFO("AssetInventory application starting {}", headless_mode ? " (headless mode)" : "...");
 
+  ensure_executable_working_directory();
+
   // Initialize application directories (create cache, thumbnail, and data directories)
   Config::initialize_directories();
 
