@@ -25,7 +25,7 @@
 // Model state is now managed by the caller
 
 // Unified shader program for all 3D rendering (loaded from external files)
-static unsigned int unified_shader_ = 0;
+static unsigned int shader_ = 0;
 
 namespace {
 
@@ -718,12 +718,12 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   if (!model.loaded)
     return;
 
-  if (unified_shader_ == 0) {
+  if (shader_ == 0) {
     LOG_ERROR("[3D] render_model called without initialized shader program");
     return;
   }
 
-  glUseProgram(unified_shader_);
+  glUseProgram(shader_);
 
   // Set up matrices
   glm::mat4 model_matrix = glm::mat4(1.0f);
@@ -757,14 +757,14 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   );
 
   // Set uniforms
-  glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
 
   // Dynamic far clipping plane based on camera distance
   float far_plane = camera_distance * 2.0f; // 2x camera distance to ensure model is visible
   glm::mat4 projection_matrix = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane);
   glUniformMatrix4fv(
-    glGetUniformLocation(unified_shader_, "projection"), 1, GL_FALSE,
+    glGetUniformLocation(shader_, "projection"), 1, GL_FALSE,
     glm::value_ptr(projection_matrix)
   );
 
@@ -772,12 +772,12 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
   // Treat lighting as a headlamp attached to the camera
   const glm::vec3 light_direction = compute_preview_light_direction(camera_pos);
-  glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
-  glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
+  glUniform3fv(glGetUniformLocation(shader_, "lightDir"), 1, &light_direction[0]);
+  glUniform3f(glGetUniformLocation(shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
-  // Lighting intensity controls (slightly softer diffuse)
-  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.3f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.56f);
+  // Lighting intensity controls (boosted for brighter, more saturated appearance)
+  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.5f);
+  glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 0.6f);
 
   const bool has_renderable_geometry = (model.vao != 0) && !model.indices.empty();
 
@@ -791,23 +791,23 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
         if (material.has_texture && material.texture_id != 0) {
           glActiveTexture(GL_TEXTURE0);
           glBindTexture(GL_TEXTURE_2D, material.texture_id);
-          glUniform1i(glGetUniformLocation(unified_shader_, "diffuseTexture"), 0);
-          glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 1);
+          glUniform1i(glGetUniformLocation(shader_, "diffuseTexture"), 0);
+          glUniform1i(glGetUniformLocation(shader_, "useTexture"), 1);
         }
         else {
-          glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
-          glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &material.diffuse_color[0]);
+          glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
+          glUniform3fv(glGetUniformLocation(shader_, "materialColor"), 1, &material.diffuse_color[0]);
         }
         // Always pass emissive color (will be zero if material has no emissive)
-        glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &material.emissive_color[0]);
+        glUniform3fv(glGetUniformLocation(shader_, "emissiveColor"), 1, &material.emissive_color[0]);
       }
       else {
-        glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
+        glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
         glm::vec3 default_color(0.7f, 0.7f, 0.7f);
-        glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &default_color[0]);
+        glUniform3fv(glGetUniformLocation(shader_, "materialColor"), 1, &default_color[0]);
         // No emissive for default material
         glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
-        glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &no_emissive[0]);
+        glUniform3fv(glGetUniformLocation(shader_, "emissiveColor"), 1, &no_emissive[0]);
       }
 
       glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(model.indices.size()), GL_UNSIGNED_INT, 0);
@@ -822,15 +822,15 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
           if (material.has_texture && material.texture_id != 0) {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, material.texture_id);
-            glUniform1i(glGetUniformLocation(unified_shader_, "diffuseTexture"), 0);
-            glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 1);
+            glUniform1i(glGetUniformLocation(shader_, "diffuseTexture"), 0);
+            glUniform1i(glGetUniformLocation(shader_, "useTexture"), 1);
           }
           else {
-            glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
-            glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &material.diffuse_color[0]);
+            glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
+            glUniform3fv(glGetUniformLocation(shader_, "materialColor"), 1, &material.diffuse_color[0]);
           }
           // Always pass emissive color for this material
-          glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &material.emissive_color[0]);
+          glUniform3fv(glGetUniformLocation(shader_, "emissiveColor"), 1, &material.emissive_color[0]);
 
           // Draw this specific mesh (indices are already properly offset)
           glDrawElements(
@@ -843,8 +843,13 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
     glBindVertexArray(0);
   }
   else {
-    glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
+    glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
   }
+
+  // Ensure subsequent passes (debug axes, skeleton overlay) render with solid colors.
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
 
   // Render debug axes at origin (scaled relative to model size)
   // Pass the same view and projection matrices to ensure consistency
@@ -923,10 +928,10 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   }
 
   // Use dedicated skeleton shader with directional lighting
-  glUseProgram(unified_shader_);
+  glUseProgram(shader_);
 
   // Ensure shader samples constant color instead of any residual texture state.
-  glUniform1i(glGetUniformLocation(unified_shader_, "useTexture"), 0);
+  glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -960,20 +965,20 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane);
 
   // Set uniforms for skeleton shader
-  glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
   glm::vec3 camera_pos(camera_x, camera_y, camera_z);
 
   // Directional lighting (same as models)
   const glm::vec3 light_direction = compute_preview_light_direction(camera_pos);
-  glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
-  glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
+  glUniform3fv(glGetUniformLocation(shader_, "lightDir"), 1, &light_direction[0]);
+  glUniform3f(glGetUniformLocation(shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
   // Lighting intensity controls (0.3 ambient, 0.56 diffuse)
-  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.3f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.56f);
+  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.3f);
+  glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 0.56f);
 
   // Build vertex data for diamond-shaped bones
   std::vector<float> bone_vertices;
@@ -1038,9 +1043,9 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
 
   // Set skeleton color (brighter to compensate for dim lighting, creating uniform matte grey)
   glm::vec3 skeleton_color(Theme::SKELETON_BONE.x, Theme::SKELETON_BONE.y, Theme::SKELETON_BONE.z);
-  glUniform3fv(glGetUniformLocation(unified_shader_, "materialColor"), 1, &skeleton_color[0]);
+  glUniform3fv(glGetUniformLocation(shader_, "materialColor"), 1, &skeleton_color[0]);
   glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
-  glUniform3fv(glGetUniformLocation(unified_shader_, "emissiveColor"), 1, &no_emissive[0]);
+  glUniform3fv(glGetUniformLocation(shader_, "emissiveColor"), 1, &no_emissive[0]);
 
   // Draw bone geometry
   glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(bone_indices.size()), GL_UNSIGNED_INT, 0);
@@ -1231,38 +1236,42 @@ void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& proj
   }
 
   // Render the axes using skeleton shader (simple directional lighting)
-  glUseProgram(unified_shader_);
+  glUseProgram(shader_);
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
 
   // Setup matrices - use identity model matrix scaled to axis size
   glm::mat4 model = glm::mat4(1.0f);
   model = glm::scale(model, glm::vec3(scale));
 
-  glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "model"), 1, GL_FALSE, glm::value_ptr(model));
-  glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "view"), 1, GL_FALSE, glm::value_ptr(view));
-  glUniformMatrix4fv(glGetUniformLocation(unified_shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "model"), 1, GL_FALSE, glm::value_ptr(model));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "view"), 1, GL_FALSE, glm::value_ptr(view));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
-  glUniform3fv(glGetUniformLocation(unified_shader_, "lightDir"), 1, &light_direction[0]);
-  glUniform3f(glGetUniformLocation(unified_shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
-  glUniform3f(glGetUniformLocation(unified_shader_, "emissiveColor"), 0.0f, 0.0f, 0.0f);
+  glUniform3fv(glGetUniformLocation(shader_, "lightDir"), 1, &light_direction[0]);
+  glUniform3f(glGetUniformLocation(shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
+  glUniform3f(glGetUniformLocation(shader_, "emissiveColor"), 0.0f, 0.0f, 0.0f);
 
   // Lighting intensity controls (high ambient to mostly show axis colors)
-  glUniform1f(glGetUniformLocation(unified_shader_, "ambientIntensity"), 0.8f);
-  glUniform1f(glGetUniformLocation(unified_shader_, "diffuseIntensity"), 0.3f);
+  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.8f);
+  glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 0.3f);
 
   glBindVertexArray(axes_vao);
 
   // Draw X-axis (red) - 2 vertices for line + 12 vertices for arrow (4 triangles)
-  glUniform3f(glGetUniformLocation(unified_shader_, "materialColor"), 1.0f, 0.0f, 0.0f);
+  glUniform3f(glGetUniformLocation(shader_, "materialColor"), 1.0f, 0.0f, 0.0f);
   glDrawArrays(GL_LINES, 0, 2);
   glDrawArrays(GL_TRIANGLES, 2, 12);
 
   // Draw Y-axis (green) - starts at vertex 14
-  glUniform3f(glGetUniformLocation(unified_shader_, "materialColor"), 0.0f, 1.0f, 0.0f);
+  glUniform3f(glGetUniformLocation(shader_, "materialColor"), 0.0f, 1.0f, 0.0f);
   glDrawArrays(GL_LINES, 14, 2);
   glDrawArrays(GL_TRIANGLES, 16, 12);
 
   // Draw Z-axis (blue) - starts at vertex 28
-  glUniform3f(glGetUniformLocation(unified_shader_, "materialColor"), 0.0f, 0.0f, 1.0f);
+  glUniform3f(glGetUniformLocation(shader_, "materialColor"), 0.0f, 0.0f, 1.0f);
   glDrawArrays(GL_LINES, 28, 2);
   glDrawArrays(GL_TRIANGLES, 30, 12);
 
@@ -1415,8 +1424,8 @@ bool initialize_3d_shaders() {
   LOG_DEBUG("Initializing unified 3D shader from external files");
 
   // Load unified shader (for all 3D rendering with parameter-based control)
-  unified_shader_ = load_shader_program("shaders/unified.vert", "shaders/unified.frag");
-  if (unified_shader_ == 0) {
+  shader_ = load_shader_program("shaders/unified.vert", "shaders/unified.frag");
+  if (shader_ == 0) {
     LOG_ERROR("Failed to load unified shader");
     return false;
   }
@@ -1428,9 +1437,9 @@ bool initialize_3d_shaders() {
 // Cleanup 3D shader programs
 // Destroy shader program resources before tearing down the GL context.
 void cleanup_3d_shaders() {
-  if (unified_shader_ != 0) {
-    glDeleteProgram(unified_shader_);
-    unified_shader_ = 0;
+  if (shader_ != 0) {
+    glDeleteProgram(shader_);
+    shader_ = 0;
   }
 }
 
