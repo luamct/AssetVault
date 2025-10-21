@@ -1378,7 +1378,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       // 3D-specific information
       if (current_model_ref.loaded) {
         int vertex_count =
-          static_cast<int>(current_model_ref.vertices.size() / 8);             // 8 floats per vertex (3 pos + 3 normal + 2 tex)
+          static_cast<int>(current_model_ref.vertices.size() / MODEL_VERTEX_FLOAT_STRIDE);
         int face_count = static_cast<int>(current_model_ref.indices.size() / 3); // 3 indices per triangle
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Vertices: ");

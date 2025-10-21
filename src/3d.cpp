@@ -29,6 +29,14 @@ static unsigned int shader_ = 0;
 
 namespace {
 
+constexpr int VERTEX_FLOAT_STRIDE = MODEL_VERTEX_FLOAT_STRIDE;
+constexpr int POSITION_OFFSET = 0;
+constexpr int NORMAL_OFFSET = 3;
+constexpr int TEXCOORD_OFFSET = 6;
+constexpr int BONE_ID_OFFSET = 8;
+constexpr int BONE_WEIGHT_OFFSET = 12;
+constexpr int MAX_SHADER_BONES = 128;
+
 std::string normalize_node_name(const std::string& name) {
   std::string clean = name;
 
@@ -348,17 +356,122 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
   Mesh mesh_info;
   mesh_info.name = mesh->mName.C_Str();
   mesh_info.material_index = mesh->mMaterialIndex;
-  mesh_info.vertex_offset = static_cast<unsigned int>(model.vertices.size() / 8); // 8 floats per vertex
+  mesh_info.vertex_offset = static_cast<unsigned int>(model.vertices.size() / VERTEX_FLOAT_STRIDE);
   mesh_info.index_offset = static_cast<unsigned int>(model.indices.size());
+
+  const bool has_bones = mesh->HasBones();
+  mesh_info.has_skin = has_bones;
+  if (has_bones) {
+    model.has_skinned_meshes = true;
+  }
 
   // Create normal matrix for proper normal transformation
   glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(transform)));
+
+  std::vector<std::array<int, MODEL_MAX_BONES_PER_VERTEX>> vertex_bone_ids;
+  std::vector<std::array<float, MODEL_MAX_BONES_PER_VERTEX>> vertex_bone_weights;
+  if (has_bones) {
+    vertex_bone_ids.resize(mesh->mNumVertices);
+    vertex_bone_weights.resize(mesh->mNumVertices);
+
+    for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
+      vertex_bone_ids[i].fill(0);
+      vertex_bone_weights[i].fill(0.0f);
+    }
+
+    for (unsigned int b = 0; b < mesh->mNumBones; ++b) {
+      const aiBone* ai_bone = mesh->mBones[b];
+      if (!ai_bone) {
+        continue;
+      }
+
+      const std::string raw_name = ai_bone->mName.C_Str();
+      int bone_index = -1;
+
+      auto raw_match = model.bone_lookup_raw.find(raw_name);
+      if (raw_match != model.bone_lookup_raw.end()) {
+        bone_index = raw_match->second;
+      }
+      else {
+        const std::string clean_name = normalize_node_name(raw_name);
+        auto clean_match = model.bone_lookup.find(clean_name);
+        if (clean_match != model.bone_lookup.end()) {
+          bone_index = clean_match->second;
+        }
+      }
+
+      if (bone_index < 0) {
+        LOG_WARN("[SKINNING] Mesh '{}' references unknown bone '{}'", mesh_info.name, raw_name);
+        continue;
+      }
+
+      for (unsigned int w = 0; w < ai_bone->mNumWeights; ++w) {
+        const aiVertexWeight& weight = ai_bone->mWeights[w];
+        if (weight.mVertexId >= mesh->mNumVertices) {
+          continue;
+        }
+
+        auto& ids = vertex_bone_ids[weight.mVertexId];
+        auto& weights = vertex_bone_weights[weight.mVertexId];
+
+        int target_slot = -1;
+        for (int slot = 0; slot < MODEL_MAX_BONES_PER_VERTEX; ++slot) {
+          if (weights[slot] == 0.0f) {
+            target_slot = slot;
+            break;
+          }
+        }
+
+        if (target_slot == -1) {
+          float min_weight = weights[0];
+          int min_slot = 0;
+          for (int slot = 1; slot < MODEL_MAX_BONES_PER_VERTEX; ++slot) {
+            if (weights[slot] < min_weight) {
+              min_weight = weights[slot];
+              min_slot = slot;
+            }
+          }
+
+          if (weight.mWeight <= min_weight) {
+            continue;
+          }
+
+          target_slot = min_slot;
+        }
+
+        ids[target_slot] = bone_index;
+        weights[target_slot] = weight.mWeight;
+      }
+    }
+
+    for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
+      auto& weights = vertex_bone_weights[i];
+      float weight_sum = weights[0] + weights[1] + weights[2] + weights[3];
+      if (weight_sum > 0.0f) {
+        float inv_sum = 1.0f / weight_sum;
+        for (float& value : weights) {
+          value *= inv_sum;
+        }
+      }
+      else {
+        weights[0] = 1.0f;
+      }
+    }
+  }
 
   // Process vertices with transformation applied
   for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
     // Transform position
     glm::vec4 pos(mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z, 1.0f);
-    glm::vec4 transformed_pos = transform * pos;
+    glm::vec4 world_pos = transform * pos;
+    model.min_bounds.x = std::min(model.min_bounds.x, world_pos.x);
+    model.min_bounds.y = std::min(model.min_bounds.y, world_pos.y);
+    model.min_bounds.z = std::min(model.min_bounds.z, world_pos.z);
+    model.max_bounds.x = std::max(model.max_bounds.x, world_pos.x);
+    model.max_bounds.y = std::max(model.max_bounds.y, world_pos.y);
+    model.max_bounds.z = std::max(model.max_bounds.z, world_pos.z);
+
+    glm::vec4 transformed_pos = has_bones ? pos : world_pos;
 
     model.vertices.push_back(transformed_pos.x);
     model.vertices.push_back(transformed_pos.y);
@@ -367,7 +480,7 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
     // Transform normal
     if (mesh->HasNormals()) {
       glm::vec3 normal(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z);
-      glm::vec3 transformed_normal = normal_matrix * normal;
+      glm::vec3 transformed_normal = has_bones ? normal : normal_matrix * normal;
 
       model.vertices.push_back(transformed_normal.x);
       model.vertices.push_back(transformed_normal.y);
@@ -385,6 +498,31 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
       model.vertices.push_back(mesh->mTextureCoords[0][i].y);
     }
     else {
+      model.vertices.push_back(0.0f);
+      model.vertices.push_back(0.0f);
+    }
+
+    if (has_bones) {
+      const auto& ids = vertex_bone_ids[i];
+      const auto& weights = vertex_bone_weights[i];
+      model.vertices.push_back(static_cast<float>(ids[0]));
+      model.vertices.push_back(static_cast<float>(ids[1]));
+      model.vertices.push_back(static_cast<float>(ids[2]));
+      model.vertices.push_back(static_cast<float>(ids[3]));
+
+      model.vertices.push_back(weights[0]);
+      model.vertices.push_back(weights[1]);
+      model.vertices.push_back(weights[2]);
+      model.vertices.push_back(weights[3]);
+    }
+    else {
+      model.vertices.push_back(0.0f);
+      model.vertices.push_back(0.0f);
+      model.vertices.push_back(0.0f);
+      model.vertices.push_back(0.0f);
+
+      model.vertices.push_back(0.0f);
+      model.vertices.push_back(0.0f);
       model.vertices.push_back(0.0f);
       model.vertices.push_back(0.0f);
     }
@@ -473,6 +611,7 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
   }
 
   model.bone_lookup = bone_name_to_index;
+  model.bone_lookup_raw = bone_raw_name_to_index;
 
   std::function<void(aiNode*, int, int)> build_nodes = [&](aiNode* node, int parent_node_index, int parent_bone_index) {
     const std::string raw_name = node->mName.C_Str();
@@ -576,6 +715,7 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   // Initialize model state
   model.path = filepath;
   model.has_no_geometry = false;
+  model.has_skinned_meshes = false;
 
   // Check if file exists
   if (!std::filesystem::exists(filepath)) {
@@ -600,12 +740,16 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
     LOG_DEBUG("Scene marked as incomplete (possibly due to animations), but proceeding with mesh data");
   }
 
+  model.min_bounds = aiVector3D(FLT_MAX, FLT_MAX, FLT_MAX);
+  model.max_bounds = aiVector3D(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+  // Build skeleton first so bone indices are available during mesh processing
+  load_model_skeleton(scene, model);
+
   // Process the scene hierarchy starting from root node
   glm::mat4 identity = glm::mat4(1.0f);
   process_node(scene->mRootNode, scene, model, identity);
 
-  // Load skeleton data early (before geometry check) so animation-only files can load
-  load_model_skeleton(scene, model);
   load_model_animations(scene, model);
 
   // Check if the model has any visible geometry
@@ -639,11 +783,11 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
   }
 
   // Calculate bounds
-  if (!model.vertices.empty()) {
+  if (!model.vertices.empty() && !model.has_skinned_meshes) {
     model.min_bounds = aiVector3D(FLT_MAX, FLT_MAX, FLT_MAX);
     model.max_bounds = aiVector3D(-FLT_MAX, -FLT_MAX, -FLT_MAX);
 
-    for (size_t i = 0; i < model.vertices.size(); i += 8) { // 3 pos + 3 normal + 2 tex coords
+    for (size_t i = 0; i < model.vertices.size(); i += VERTEX_FLOAT_STRIDE) {
       aiVector3D pos(model.vertices[i], model.vertices[i + 1], model.vertices[i + 2]);
       model.min_bounds.x = std::min(model.min_bounds.x, pos.x);
       model.min_bounds.y = std::min(model.min_bounds.y, pos.y);
@@ -692,15 +836,22 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
     return false;
   }
 
+  const GLsizei vertex_stride_bytes = VERTEX_FLOAT_STRIDE * sizeof(float);
   // Position attribute
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) 0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, vertex_stride_bytes, (void*) (POSITION_OFFSET * sizeof(float)));
   glEnableVertexAttribArray(0);
   // Normal attribute
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) (3 * sizeof(float)));
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, vertex_stride_bytes, (void*) (NORMAL_OFFSET * sizeof(float)));
   glEnableVertexAttribArray(1);
   // Texture coordinate attribute
-  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*) (6 * sizeof(float)));
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, vertex_stride_bytes, (void*) (TEXCOORD_OFFSET * sizeof(float)));
   glEnableVertexAttribArray(2);
+  // Bone indices attribute (stored as floats to simplify layout)
+  glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, vertex_stride_bytes, (void*) (BONE_ID_OFFSET * sizeof(float)));
+  glEnableVertexAttribArray(3);
+  // Bone weights attribute
+  glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, vertex_stride_bytes, (void*) (BONE_WEIGHT_OFFSET * sizeof(float)));
+  glEnableVertexAttribArray(4);
 
   glBindVertexArray(0);
 
@@ -777,7 +928,43 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
   // Lighting intensity controls (boosted for brighter, more saturated appearance)
   glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.5f);
-  glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 0.6f);
+  glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 0.5f);
+
+  GLint enable_skinning_uniform = glGetUniformLocation(shader_, "enableSkinning");
+  GLint bone_count_uniform = glGetUniformLocation(shader_, "boneCount");
+  GLint bone_matrices_uniform = glGetUniformLocation(shader_, "boneMatrices");
+
+  size_t bone_count = std::min(model.bones.size(), static_cast<size_t>(MAX_SHADER_BONES));
+  static bool warned_bone_limit = false;
+  if (model.has_skinned_meshes && model.bones.size() > MAX_SHADER_BONES && !warned_bone_limit) {
+    LOG_WARN("[SKINNING] Model '{}' uses {} bones but shader supports {}. Extra bones will be ignored.",
+      model.path, model.bones.size(), MAX_SHADER_BONES);
+    warned_bone_limit = true;
+  }
+  static bool warned_missing_bones = false;
+  if (model.has_skinned_meshes && bone_count == 0 && !warned_missing_bones) {
+    LOG_WARN("[SKINNING] Model '{}' has skinned meshes but no bones were loaded; rendering may be incorrect.",
+      model.path);
+    warned_missing_bones = true;
+  }
+
+  static std::vector<glm::mat4> bone_matrices;
+  if (bone_count_uniform >= 0) {
+    glUniform1i(bone_count_uniform, static_cast<int>(bone_count));
+  }
+
+  if (bone_count > 0 && bone_matrices_uniform >= 0) {
+    bone_matrices.resize(bone_count);
+    for (size_t i = 0; i < bone_count; ++i) {
+      const Bone& bone = model.bones[i];
+      bone_matrices[i] = model_matrix * bone.global_transform * bone.offset_matrix;
+    }
+    glUniformMatrix4fv(bone_matrices_uniform, static_cast<GLsizei>(bone_count), GL_FALSE,
+      glm::value_ptr(bone_matrices[0]));
+  }
+  else {
+    bone_matrices.clear();
+  }
 
   const bool has_renderable_geometry = (model.vao != 0) && !model.indices.empty();
 
@@ -788,6 +975,9 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
       // Fallback: render as single mesh with first material if available
       if (!model.materials.empty()) {
         const Material& material = model.materials[0];
+        if (enable_skinning_uniform >= 0) {
+          glUniform1i(enable_skinning_uniform, (model.has_skinned_meshes && bone_count > 0) ? 1 : 0);
+        }
         if (material.has_texture && material.texture_id != 0) {
           glActiveTexture(GL_TEXTURE0);
           glBindTexture(GL_TEXTURE_2D, material.texture_id);
@@ -815,6 +1005,9 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
     else {
       // Render each mesh with its correct material
       for (const auto& mesh : model.meshes) {
+        if (enable_skinning_uniform >= 0) {
+          glUniform1i(enable_skinning_uniform, (mesh.has_skin && bone_count > 0) ? 1 : 0);
+        }
         if (mesh.material_index < model.materials.size()) {
           const Material& material = model.materials[mesh.material_index];
 
@@ -844,6 +1037,13 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   }
   else {
     glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
+    if (enable_skinning_uniform >= 0) {
+      glUniform1i(enable_skinning_uniform, 0);
+    }
+  }
+
+  if (enable_skinning_uniform >= 0) {
+    glUniform1i(enable_skinning_uniform, 0);
   }
 
   // Ensure subsequent passes (debug axes, skeleton overlay) render with solid colors.
@@ -934,6 +1134,10 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, 0);
+  GLint enable_skinning_uniform = glGetUniformLocation(shader_, "enableSkinning");
+  if (enable_skinning_uniform >= 0) {
+    glUniform1i(enable_skinning_uniform, 0);
+  }
 
   // Set up matrices (same as render_model)
   glm::mat4 model_matrix = glm::mat4(1.0f);
@@ -1082,6 +1286,7 @@ void cleanup_model(Model& model) {
     model.meshes.clear();
     model.bones.clear();
     model.bone_lookup.clear();
+    model.bone_lookup_raw.clear();
     model.skeleton_nodes.clear();
     model.skeleton_node_lookup.clear();
     model.animations.clear();
@@ -1092,6 +1297,7 @@ void cleanup_model(Model& model) {
     model.animation_time = 0.0;
     model.active_animation = 0;
     model.has_skeleton = false;
+    model.has_skinned_meshes = false;
     model.has_no_geometry = false;
     model.loaded = false;
   }
@@ -1241,6 +1447,10 @@ void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& proj
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, 0);
   glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
+  GLint enable_skinning_uniform = glGetUniformLocation(shader_, "enableSkinning");
+  if (enable_skinning_uniform >= 0) {
+    glUniform1i(enable_skinning_uniform, 0);
+  }
 
   // Setup matrices - use identity model matrix scaled to axis size
   glm::mat4 model = glm::mat4(1.0f);

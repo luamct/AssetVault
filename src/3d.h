@@ -10,6 +10,10 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <array>
+
+constexpr int MODEL_MAX_BONES_PER_VERTEX = 4;
+constexpr int MODEL_VERTEX_FLOAT_STRIDE = 16;
 
 // Forward declaration
 class TextureManager;
@@ -41,6 +45,7 @@ struct Mesh {
   unsigned int index_offset;   // Start position in index buffer
   unsigned int index_count;    // Number of indices
   std::string name;            // Mesh name (for debugging)
+  bool has_skin = false;       // True if this mesh carries bone weights
 };
 
 // Bone data structure for skeletal animation
@@ -117,6 +122,8 @@ struct Model {
   std::vector<Bone> bones;         // Bone hierarchy for skeletal animation
   bool has_skeleton = false;       // True if model contains skeletal data
   std::unordered_map<std::string, int> bone_lookup; // Bone name -> index mapping
+  std::unordered_map<std::string, int> bone_lookup_raw; // Raw bone name -> index mapping
+  bool has_skinned_meshes = false; // True if any mesh requires GPU skinning
 
   // Animation data
   std::vector<AnimationClip> animations;
