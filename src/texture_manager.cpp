@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <chrono>
+#include <cmath>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -650,18 +651,6 @@ unsigned int TextureManager::load_texture_for_model(const std::string& filepath)
   return create_opengl_texture(texture_data, params);
 }
 
-unsigned int TextureManager::create_solid_color_texture(float r, float g, float b) {
-  // Use the new unified pipeline
-  TextureData texture_data = create_solid_color_data(r, g, b);
-  if (!texture_data.is_valid()) {
-    LOG_ERROR("Failed to create solid color texture data");
-    return 0;
-  }
-
-  TextureParameters params = TextureParameters::solid_color();
-  return create_opengl_texture(texture_data, params);
-}
-
 unsigned int TextureManager::create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive, float emissive_intensity) {
   // Now that the shader properly handles emissive colors,
   // we just use the diffuse color for the texture
@@ -850,9 +839,16 @@ TextureData TextureManager::create_solid_color_data(float r, float g, float b) {
     return texture_data; // Return invalid texture data
   }
 
-  color_data[0] = static_cast<unsigned char>(r * 255.0f);
-  color_data[1] = static_cast<unsigned char>(g * 255.0f);
-  color_data[2] = static_cast<unsigned char>(b * 255.0f);
+  const auto encode_linear_to_srgb = [](float linear) {
+    float clamped = std::clamp(linear, 0.0f, 1.0f);
+    float srgb = std::pow(clamped, 1.0f / 2.2f);
+    srgb = std::clamp(srgb, 0.0f, 1.0f);
+    return static_cast<unsigned char>(srgb * 255.0f + 0.5f);
+  };
+
+  color_data[0] = encode_linear_to_srgb(r);
+  color_data[1] = encode_linear_to_srgb(g);
+  color_data[2] = encode_linear_to_srgb(b);
 
   texture_data.data = color_data;
   texture_data.width = 1;
@@ -860,7 +856,7 @@ TextureData TextureManager::create_solid_color_data(float r, float g, float b) {
   texture_data.format = GL_RGB;
   texture_data.on_destroy = OnDestroy::FREE; // Allocated with malloc
 
-  LOG_TRACE("[TEXTURE_DATA] Created solid color data: RGB({}, {}, {})", r, g, b);
+  LOG_TRACE("[TEXTURE_DATA] Created solid color data: linear RGB({}, {}, {})", r, g, b);
 
   return texture_data;
 }

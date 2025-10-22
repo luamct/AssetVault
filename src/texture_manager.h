@@ -195,7 +195,6 @@ public:
 
   // 3D model texture management
   unsigned int load_texture_for_model(const std::string& filepath);
-  unsigned int create_solid_color_texture(float r, float g, float b);
   unsigned int create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive, float emissive_intensity);
 
 

@@ -927,7 +927,7 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   glUniform3f(glGetUniformLocation(shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
   // Lighting intensity controls (boosted for brighter, more saturated appearance)
-  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.5f);
+  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.4f);
   glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 0.5f);
 
   GLint enable_skinning_uniform = glGetUniformLocation(shader_, "enableSkinning");

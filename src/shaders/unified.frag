@@ -21,8 +21,16 @@ out vec4 FragColor;
 
 void main()
 {
+    const float GAMMA = 2.2;
+    const vec3 INV_GAMMA = vec3(1.0 / GAMMA);
+    const vec3 GAMMA_VEC = vec3(GAMMA);
+
     // Sample texture color or use material color
-    vec3 objectColor = useTexture ? texture(diffuseTexture, TexCoord).rgb : materialColor;
+    vec3 objectColor = materialColor;
+    if (useTexture) {
+        vec3 srgb = texture(diffuseTexture, TexCoord).rgb;
+        objectColor = pow(max(srgb, vec3(0.0)), GAMMA_VEC);
+    }
 
     vec3 norm = normalize(Normal);
 
@@ -33,6 +41,9 @@ void main()
     float diff = max(dot(norm, -lightDir), 0.0);
     vec3 diffuse = diffuseIntensity * diff * lightColor;
 
-    vec3 result = (ambient + diffuse) * objectColor + emissiveColor;
-    FragColor = vec4(result, 1.0);
+    vec3 linearColor = (ambient + diffuse) * objectColor + emissiveColor;
+    linearColor = max(linearColor, vec3(0.0));
+
+    vec3 srgbColor = pow(linearColor, INV_GAMMA);
+    FragColor = vec4(srgbColor, 1.0);
 }

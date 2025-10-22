@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <system_error>
+#include <set>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -381,27 +382,30 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
                 return;
             }
 
-            bool found_racer_thumb = false;
+            std::set<std::string> expected_thumbnails = {"racer.obj.png", "racer.fbx.png", "racer.glb.png"};
+            std::set<std::string> found_thumbnails;
             LOG_INFO("[TEST] Checking thumbnails in: {}", thumbnail_dir.string());
 
             for (const auto& entry : fs::directory_iterator(thumbnail_dir)) {
                 std::string filename = entry.path().filename().string();
                 LOG_INFO("[TEST]   Found thumbnail: {}", filename);
 
-                // All racer.* files share same thumbnail (racer.png)
-                if (filename == "racer.png") {
-                    found_racer_thumb = true;
-                    // Verify it's a real file with content
+                if (expected_thumbnails.count(filename) > 0) {
                     if (fs::file_size(entry.path()) == 0) {
-                        LOG_ERROR("[TEST] racer.png thumbnail is empty");
+                        LOG_ERROR("[TEST] {} thumbnail is empty", filename);
                         shutdown_requested = true;
                         return;
                     }
+                    found_thumbnails.insert(filename);
                 }
             }
 
-            if (!found_racer_thumb) {
-                LOG_ERROR("[TEST] racer.png thumbnail not found");
+            if (found_thumbnails != expected_thumbnails) {
+                for (const auto& expected : expected_thumbnails) {
+                    if (found_thumbnails.count(expected) == 0) {
+                        LOG_ERROR("[TEST] {} thumbnail not found", expected);
+                    }
+                }
                 shutdown_requested = true;
                 return;
             }
