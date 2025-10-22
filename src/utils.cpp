@@ -143,8 +143,9 @@ std::string get_home_directory() {
 }
 
 std::filesystem::path get_thumbnail_path(const std::string& relative_path) {
-  return Config::get_thumbnail_directory() /
-    std::filesystem::path(relative_path).replace_extension(".png");
+  std::filesystem::path path_with_source_extension(relative_path);
+  path_with_source_extension += ".png";
+  return Config::get_thumbnail_directory() / path_with_source_extension;
 }
 
 void ensure_executable_working_directory() {

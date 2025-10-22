@@ -630,8 +630,6 @@ namespace {
         fs::path parent_path = current_path.parent_path();
 #ifdef _WIN32
         bool at_volume_root = current_path.has_root_path() && current_path == current_path.root_path();
-#else
-        bool at_volume_root = false;
 #endif
 
         if (!parent_path.empty()) {
