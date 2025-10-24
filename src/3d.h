@@ -151,7 +151,7 @@ struct Model {
 // Camera state for 3D preview interaction
 struct Camera3D {
   float rotation_x = 30.0f;   // Initial rotation around X axis (up/down)
-  float rotation_y = -45.0f;  // Initial rotation around Y axis (left/right)
+  float rotation_y = 45.0f;   // Initial rotation around Y axis (left/right)
   float zoom = 1.0f;           // Zoom factor (1.0 = default)
 
   // Mouse interaction state
@@ -162,7 +162,7 @@ struct Camera3D {
   // Reset to default view
   void reset() {
     rotation_x = 30.0f;
-    rotation_y = -45.0f;
+    rotation_y = 45.0f;
     zoom = 1.0f;
   }
 };

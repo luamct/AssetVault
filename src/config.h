@@ -82,8 +82,8 @@ namespace Config {
     constexpr int SVG_THUMBNAIL_SIZE = 240;
 
     // Image scaling limits
-    constexpr float MAX_THUMBNAIL_UPSCALE_FACTOR = 1.0f;  // 3x upscaling for grid thumbnails
-    constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 100.0f;  // High upscaling for preview panel
+    constexpr float MAX_THUMBNAIL_UPSCALE_FACTOR = 2.0f;  // Upscaling for grid thumbnails
+    constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 20.0f;  // High upscaling for preview panel (unlimited in practice)
 
     // =============================================================================
     // FILE SYSTEM & MONITORING

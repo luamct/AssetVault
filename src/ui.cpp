@@ -868,13 +868,22 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   ImGui::BeginChild("AssetGridScroll", ImVec2(0, 0), false);
 
   // Calculate grid layout upfront since all items have the same size
+  constexpr float GRID_RIGHT_MARGIN = 24.0f;                  // Extra space so the last column stays clear of the scrollbar
   float available_width = panel_width - 20.0f;                     // Account for padding
-  float item_height = Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN + Config::TEXT_HEIGHT; // Full item height including text
+  float item_height = Config::THUMBNAIL_SIZE; // Only reserve thumbnail height; labels appear on hover
   // Each item takes THUMBNAIL_SIZE + GRID_SPACING (spacing after each item, including last one)
   // This ensures GRID_SPACING at the end of each row to avoid scrollbar overlap
-  int columns = static_cast<int>(available_width / (Config::THUMBNAIL_SIZE + Config::GRID_SPACING));
+  float step_width = Config::THUMBNAIL_SIZE + Config::GRID_SPACING;
+  int columns = static_cast<int>(available_width / step_width);
   if (columns < 1)
     columns = 1;
+
+  while (columns > 1) {
+    float total_width = columns * Config::THUMBNAIL_SIZE + (columns - 1) * Config::GRID_SPACING;
+    if (total_width <= available_width - GRID_RIGHT_MARGIN)
+      break;
+    columns--;
+  }
 
   // Calculate visible range
   float current_scroll_y = ImGui::GetScrollY();
@@ -957,8 +966,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     }
 
     // Create a fixed-size container for consistent layout
-    ImVec2 container_size(Config::THUMBNAIL_SIZE,
-      Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN + Config::TEXT_HEIGHT); // Thumbnail + text area
+    ImVec2 container_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
     ImVec2 container_pos = ImGui::GetCursorScreenPos();
 
     // Draw background for the container (same as app background)
@@ -1035,6 +1043,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     // Get the actual rendered bounds of the ImageButton for the selection border
     ImVec2 thumbnail_min = ImGui::GetItemRectMin();
     ImVec2 thumbnail_max = ImGui::GetItemRectMax();
+    ImVec2 container_max(container_pos.x + container_size.x, container_pos.y + container_size.y);
+    bool is_container_hovered = ImGui::IsMouseHoveringRect(container_pos, container_max);
 
     // Handle drag-and-drop to external applications (Finder, Explorer, etc.)
     // Only initiate drag once per gesture to avoid multiple drag sessions
@@ -1097,36 +1107,34 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       );
     }
 
-    // Position text at the bottom of the container
-    ImGui::SetCursorScreenPos(ImVec2(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN));
+    if (is_container_hovered) {
+      float label_height = 24.0f;
+      ImVec2 text_region_pos(container_pos.x,
+                             container_pos.y + Config::THUMBNAIL_SIZE - label_height);
+      std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
+      ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
 
-    // Asset name below thumbnail with selection highlight
-    std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
-    ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
-    float text_x_offset = (Config::THUMBNAIL_SIZE - text_size.x) * 0.5f;
+      ImVec2 text_bg_min(text_region_pos.x, text_region_pos.y);
+      ImVec2 text_bg_max(text_region_pos.x + Config::THUMBNAIL_SIZE,
+                         text_region_pos.y + label_height);
 
-    // Draw blue background for selected text (similar to OS file explorers)
-    if (is_selected) {
-      ImVec2 text_bg_min(container_pos.x, container_pos.y + Config::THUMBNAIL_SIZE + Config::TEXT_MARGIN);
-      ImVec2 text_bg_max(container_pos.x + Config::THUMBNAIL_SIZE,
-                         text_bg_min.y + Config::TEXT_HEIGHT);
-      ImGui::GetWindowDrawList()->AddRectFilled(
-        text_bg_min,
-        text_bg_max,
-        Theme::ToImU32(Theme::ACCENT_BLUE_1),
-        2.0f  // Slight rounding for the text background
+      ImVec2 text_pos(
+        text_region_pos.x + (Config::THUMBNAIL_SIZE - text_size.x) * 0.5f,
+        text_region_pos.y + (label_height - text_size.y) * 0.5f
       );
-    }
 
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + text_x_offset);
+      ImU32 background_color = Theme::ToImU32(
+        is_selected ? Theme::ACCENT_BLUE_1_ALPHA_80 : Theme::FRAME_LIGHT_BLUE_4
+      );
+      ImU32 border_color = Theme::ToImU32(
+        is_selected ? Theme::ACCENT_BLUE_1 : Theme::BORDER_LIGHT_BLUE_1
+      );
+      ImU32 text_color = is_selected ? Theme::COLOR_WHITE_U32 : Theme::ToImU32(Theme::TEXT_DARK);
 
-    // Use white text for selected items, normal text color otherwise
-    if (is_selected) {
-      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-      ImGui::TextWrapped("%s", truncated_name.c_str());
-      ImGui::PopStyleColor();
-    } else {
-      ImGui::TextWrapped("%s", truncated_name.c_str());
+      ImDrawList* foreground = ImGui::GetForegroundDrawList();
+      foreground->AddRectFilled(text_bg_min, text_bg_max, background_color, 3.0f);
+      foreground->AddRect(text_bg_min, text_bg_max, border_color, 3.0f, 0, 1.0f);
+      foreground->AddText(text_pos, text_color, truncated_name.c_str());
     }
 
     ImGui::EndGroup();
