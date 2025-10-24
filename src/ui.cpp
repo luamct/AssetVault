@@ -32,6 +32,7 @@ void clear_ui_state(UIState& ui_state) {
   ui_state.model_preview_row = -1;
   ui_state.pending_search = false;
   ui_state.update_needed = true;
+  ui_state.assets_directory_modal_open = false;
 }
 
 // TODO: move to utils.cpp
@@ -569,6 +570,7 @@ namespace {
     if (g_request_assets_path_popup) {
       ImGui::OpenPopup("Select Assets Directory");
       g_request_assets_path_popup = false;
+      ui_state.assets_directory_modal_open = true;
 
       // Initialize to current assets directory if set, otherwise home directory
       ui_state.show_drive_roots = false;
@@ -581,7 +583,9 @@ namespace {
     }
 
     bool popup_style_pushed = false;
-    if (ImGui::IsPopupOpen("Select Assets Directory")) {
+    bool popup_open = ImGui::IsPopupOpen("Select Assets Directory");
+    if (popup_open) {
+      ui_state.assets_directory_modal_open = true;
       ImGuiViewport* viewport = ImGui::GetMainViewport();
       ImVec2 viewport_size = viewport->Size;
       ImVec2 popup_size(viewport_size.x * 0.40f, viewport_size.y * 0.50f);
@@ -595,6 +599,7 @@ namespace {
 
     if (ImGui::BeginPopupModal("Select Assets Directory", nullptr,
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+      ui_state.assets_directory_modal_open = true;
       namespace fs = std::filesystem;
       if (ui_state.assets_path_selected.empty()) {
         ui_state.assets_path_selected = get_home_directory();
@@ -742,6 +747,13 @@ namespace {
       }
 
       ImGui::EndPopup();
+    } else {
+      ui_state.assets_directory_modal_open = false;
+    }
+    if (!popup_open) {
+      ui_state.assets_directory_modal_open = false;
+    } else {
+      ui_state.assets_directory_modal_open = ImGui::IsPopupOpen("Select Assets Directory");
     }
     if (popup_style_pushed) {
       ImGui::PopStyleColor();
@@ -867,277 +879,333 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Create an inner scrolling region so the header above stays visible
   ImGui::BeginChild("AssetGridScroll", ImVec2(0, 0), false);
 
-  // Calculate grid layout upfront since all items have the same size
-  constexpr float GRID_RIGHT_MARGIN = 24.0f;                  // Extra space so the last column stays clear of the scrollbar
-  float available_width = panel_width - 20.0f;                     // Account for padding
-  float item_height = Config::THUMBNAIL_SIZE; // Only reserve thumbnail height; labels appear on hover
-  // Each item takes THUMBNAIL_SIZE + GRID_SPACING (spacing after each item, including last one)
-  // This ensures GRID_SPACING at the end of each row to avoid scrollbar overlap
-  float step_width = Config::THUMBNAIL_SIZE + Config::GRID_SPACING;
-  int columns = static_cast<int>(available_width / step_width);
-  if (columns < 1)
-    columns = 1;
+  struct ItemLayout {
+    ImVec2 position;
+    ImVec2 display_size;
+    float row_height = Config::THUMBNAIL_SIZE;
+  };
 
-  while (columns > 1) {
-    float total_width = columns * Config::THUMBNAIL_SIZE + (columns - 1) * Config::GRID_SPACING;
-    if (total_width <= available_width - GRID_RIGHT_MARGIN)
-      break;
-    columns--;
-  }
+  struct RowInfo {
+    int start_index = 0;
+    int end_index = 0; // exclusive
+    float y = 0.0f;
+    float height = Config::THUMBNAIL_SIZE;
+  };
 
-  // Calculate visible range
-  float current_scroll_y = ImGui::GetScrollY();
-  float viewport_height = ImGui::GetWindowHeight();
+  constexpr float GRID_RIGHT_MARGIN = 24.0f;  // Extra space so the last column stays clear of the scrollbar
+  float available_width = panel_width - 20.0f - GRID_RIGHT_MARGIN; // Account for padding and scrollbar margin
+  available_width = std::max(available_width, Config::THUMBNAIL_SIZE);
 
-  // Calculate visible range for lazy loading
-  float row_height = item_height + Config::GRID_SPACING;
-  int first_visible_row = static_cast<int>(current_scroll_y / row_height);
-  int last_visible_row = static_cast<int>((current_scroll_y + viewport_height) / row_height);
-
-  // Add margin for smooth scrolling (1 row above/below)
-  first_visible_row = std::max(0, first_visible_row - 1);
-  last_visible_row = last_visible_row + 1;
-
-  int first_visible_item = first_visible_row * columns;
-  int last_visible_item = std::min(ui_state.loaded_end_index,
-    (last_visible_row + 1) * columns);
-
-  // Check if we need to load more items (when approaching the end of loaded items)
-  int load_threshold_row = (ui_state.loaded_end_index - UIState::LOAD_BATCH_SIZE / 2) / columns;
-  if (last_visible_row >= load_threshold_row && ui_state.loaded_end_index < static_cast<int>(ui_state.results.size())) {
-    // Load more items
-    ui_state.loaded_end_index = std::min(
-      ui_state.loaded_end_index + UIState::LOAD_BATCH_SIZE,
-      static_cast<int>(ui_state.results.size())
-    );
-  }
-
-  // Reserve space for all loaded items to enable proper scrolling
-  int total_loaded_rows = (ui_state.loaded_end_index + columns - 1) / columns;
-  float total_content_height = total_loaded_rows * row_height;
-
-  // Save current cursor position
   ImVec2 grid_start_pos = ImGui::GetCursorPos();
-
-  // Get grid start position in screen coordinates BEFORE reserving space
   ImVec2 grid_screen_start = ImGui::GetCursorScreenPos();
 
-  // Reserve space for the entire loaded content
+  std::vector<ItemLayout> item_layouts;
+  std::vector<RowInfo> row_infos;
+
+  int loaded_count = std::min(ui_state.loaded_end_index, static_cast<int>(ui_state.results.size()));
+  if (loaded_count > 0) {
+    item_layouts.resize(loaded_count);
+
+    std::vector<ImVec2> base_sizes(loaded_count);
+    for (int i = 0; i < loaded_count; ++i) {
+      const Asset& asset = ui_state.results[i];
+      const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(asset);
+
+      ImVec2 size(Config::THUMBNAIL_SIZE * Config::ICON_SCALE,
+                  Config::THUMBNAIL_SIZE * Config::ICON_SCALE);
+
+      if ((asset.type == AssetType::_2D || asset.type == AssetType::_3D) &&
+          texture_entry.width > 0 && texture_entry.height > 0) {
+        float width = static_cast<float>(texture_entry.width);
+        float height = static_cast<float>(texture_entry.height);
+        float max_dim = std::max(width, height);
+        float scale = 1.0f;
+        if (max_dim > Config::THUMBNAIL_SIZE) {
+          scale = Config::THUMBNAIL_SIZE / max_dim;
+        }
+        size = ImVec2(width * scale, height * scale);
+      }
+
+      base_sizes[i] = size;
+    }
+
+    float y_cursor = grid_start_pos.y;
+    int index = 0;
+    while (index < loaded_count) {
+      int row_start = index;
+      float row_width = 0.0f;
+      float row_height = 0.0f;
+      int row_item_count = 0;
+
+      while (index < loaded_count) {
+        ImVec2 display = base_sizes[index];
+        if (row_item_count == 0 && available_width > 0.0f && display.x > available_width) {
+          float scale = available_width / display.x;
+          display.x *= scale;
+          display.y *= scale;
+        }
+
+        float spacing = (row_item_count == 0) ? 0.0f : Config::GRID_SPACING;
+        if (row_item_count > 0 && row_width + spacing + display.x > available_width) {
+          break;
+        }
+
+        float x_pos = grid_start_pos.x + row_width + spacing;
+        item_layouts[index].position = ImVec2(x_pos, y_cursor);
+        item_layouts[index].display_size = display;
+        row_width += spacing + display.x;
+        row_height = std::max(row_height, display.y);
+        row_item_count++;
+        index++;
+      }
+
+      if (row_item_count == 0 && index < loaded_count) {
+        ImVec2 display = base_sizes[index];
+        if (available_width > 0.0f && display.x > available_width) {
+          float scale = available_width / display.x;
+          display.x *= scale;
+          display.y *= scale;
+        }
+        item_layouts[index].position = ImVec2(grid_start_pos.x, y_cursor);
+        item_layouts[index].display_size = display;
+        row_width = display.x;
+        row_height = std::max(row_height, display.y);
+        row_item_count = 1;
+        index++;
+      }
+
+      row_height = std::max(row_height, Config::THUMBNAIL_SIZE);
+
+      RowInfo row;
+      row.start_index = row_start;
+      row.end_index = index;
+      row.y = y_cursor;
+      row.height = row_height;
+      row_infos.push_back(row);
+
+      for (int j = row_start; j < index; ++j) {
+        item_layouts[j].row_height = row_height;
+      }
+
+      y_cursor += row_height + Config::GRID_SPACING;
+    }
+  }
+
+  float total_content_height = 0.0f;
+  if (!row_infos.empty()) {
+    const RowInfo& last_row = row_infos.back();
+    total_content_height = (last_row.y + last_row.height) - grid_start_pos.y;
+  }
+
   ImGui::Dummy(ImVec2(0, total_content_height));
 
-  // Display filtered assets in a proper grid - only process visible items within loaded range
-  for (int i = first_visible_item; i < last_visible_item && i < ui_state.loaded_end_index; i++) {
-    // Calculate grid position
-    int row = static_cast<int>(i) / columns;
-    int col = static_cast<int>(i) % columns;
+  float current_scroll_y = ImGui::GetScrollY();
+  float viewport_height = ImGui::GetWindowHeight();
+  float view_bottom = current_scroll_y + viewport_height;
 
-    // Calculate absolute position for this grid item relative to grid start
-    float x_pos = grid_start_pos.x + col * (Config::THUMBNAIL_SIZE + Config::GRID_SPACING);
-    float y_pos = grid_start_pos.y + row * (item_height + Config::GRID_SPACING);
+  int first_visible_row = 0;
+  int last_visible_row = static_cast<int>(row_infos.size());
 
-    // Set cursor to the calculated position
-    ImGui::SetCursorPos(ImVec2(x_pos, y_pos));
-
-    ImGui::BeginGroup();
-
-    // Load texture (all items in loop are visible now)
-    const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(ui_state.results[i]);
-
-    // Calculate display size based on asset type
-    ImVec2 display_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
-
-    // Check if this asset has actual thumbnail dimensions (textures or 3D model thumbnails)
-    bool has_thumbnail_dimensions = false;
-    if (ui_state.results[i].type == AssetType::_2D || ui_state.results[i].type == AssetType::_3D) {
-      // TextureCacheEntry already contains the dimensions, no need for separate call
-      has_thumbnail_dimensions = (texture_entry.width > 0 && texture_entry.height > 0);
+  if (!row_infos.empty()) {
+    while (first_visible_row < static_cast<int>(row_infos.size()) &&
+           row_infos[first_visible_row].y + row_infos[first_visible_row].height < current_scroll_y) {
+      ++first_visible_row;
     }
 
-    if (has_thumbnail_dimensions) {
-      display_size = calculate_thumbnail_size(
-        texture_entry.width, texture_entry.height,
-        Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE,
-        Config::MAX_THUMBNAIL_UPSCALE_FACTOR
-      ); // upscaling for grid
-    }
-    else {
-      // For type icons, use a fixed fraction of the thumbnail size
-      display_size = ImVec2(Config::THUMBNAIL_SIZE * Config::ICON_SCALE, Config::THUMBNAIL_SIZE * Config::ICON_SCALE);
+    last_visible_row = first_visible_row;
+    while (last_visible_row < static_cast<int>(row_infos.size()) &&
+           row_infos[last_visible_row].y <= view_bottom) {
+      ++last_visible_row;
     }
 
-    // Create a fixed-size container for consistent layout
-    ImVec2 container_size(Config::THUMBNAIL_SIZE, Config::THUMBNAIL_SIZE);
-    ImVec2 container_pos = ImGui::GetCursorScreenPos();
+    first_visible_row = std::max(0, first_visible_row - 1);
+    last_visible_row = std::min(static_cast<int>(row_infos.size()), last_visible_row + 1);
 
-    // Draw background for the container (same as app background)
-    ImGui::GetWindowDrawList()->AddRectFilled(
-      container_pos, ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
-      Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
+    if (last_visible_row > 0) {
+      int last_visible_item = row_infos[last_visible_row - 1].end_index;
+      int load_threshold = std::max(0, ui_state.loaded_end_index - UIState::LOAD_BATCH_SIZE / 2);
+      if (last_visible_item >= load_threshold &&
+          ui_state.loaded_end_index < static_cast<int>(ui_state.results.size())) {
+        ui_state.loaded_end_index = std::min(
+          ui_state.loaded_end_index + UIState::LOAD_BATCH_SIZE,
+          static_cast<int>(ui_state.results.size())
+        );
+      }
+    }
+  }
 
-    // Center the image/icon in the thumbnail area
-    float image_x_offset = (Config::THUMBNAIL_SIZE - display_size.x) * 0.5f;
-    float image_y_offset = (Config::THUMBNAIL_SIZE - display_size.y) * 0.5f;
-    ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+  for (int row_index = first_visible_row; row_index < last_visible_row; ++row_index) {
+    const RowInfo& row = row_infos[row_index];
+    for (int i = row.start_index; i < row.end_index && i < loaded_count; ++i) {
+      const ItemLayout& layout = item_layouts[i];
 
-    ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
-    // Remove frame padding so ImageButton is exactly display_size (no extra space added)
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+      ImGui::SetCursorPos(layout.position);
 
-    // Display thumbnail image - now exactly matches our grid sizing
-    ImGui::SetCursorScreenPos(image_pos);
-    if (ImGui::ImageButton(
-      ("##Thumbnail" + std::to_string(i)).c_str(),
-      (ImTextureID) (intptr_t) texture_entry.get_texture_id(),
-      display_size)) {
+      ImGui::BeginGroup();
 
-      ImGuiIO& io = ImGui::GetIO();
-      // Check for Cmd (macOS) or Ctrl (Windows/Linux) modifier
-      bool modifier_pressed = io.KeySuper || io.KeyCtrl;
-      uint32_t clicked_id = ui_state.results[i].id;
+      const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(ui_state.results[i]);
 
-      if (modifier_pressed) {
-        // Multi-selection mode: toggle the clicked asset
-        if (ui_state.selected_asset_ids.count(clicked_id)) {
-          // Asset is already selected, remove it
-          ui_state.selected_asset_ids.erase(clicked_id);
-          LOG_DEBUG("Removed from selection: {}", ui_state.results[i].name);
+      ImVec2 container_size(layout.display_size.x, layout.row_height);
+      ImVec2 container_pos = ImGui::GetCursorScreenPos();
 
-          // If we removed the currently previewed asset, update preview to another selected asset
-          if (ui_state.selected_asset && ui_state.selected_asset->id == clicked_id) {
-            if (!ui_state.selected_asset_ids.empty()) {
-              // Find first selected asset to preview
-              for (const auto& result : ui_state.results) {
-                if (ui_state.selected_asset_ids.count(result.id)) {
-                  ui_state.selected_asset = result;
-                  ui_state.selected_asset_index = static_cast<int>(&result - &ui_state.results[0]);
-                  break;
+      ImGui::GetWindowDrawList()->AddRectFilled(
+        container_pos,
+        ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
+        Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
+
+      float image_x_offset = std::max(0.0f, (container_size.x - layout.display_size.x) * 0.5f);
+      float image_y_offset = std::max(0.0f, (layout.row_height - layout.display_size.y) * 0.5f);
+      ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
+
+      ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
+      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+
+      ImGui::SetCursorScreenPos(image_pos);
+      if (ImGui::ImageButton(
+        ("##Thumbnail" + std::to_string(i)).c_str(),
+        (ImTextureID) (intptr_t) texture_entry.get_texture_id(),
+        layout.display_size)) {
+
+        ImGuiIO& io = ImGui::GetIO();
+        // Check for Cmd (macOS) or Ctrl (Windows/Linux) modifier
+        bool modifier_pressed = io.KeySuper || io.KeyCtrl;
+        uint32_t clicked_id = ui_state.results[i].id;
+
+        if (modifier_pressed) {
+          // Multi-selection mode: toggle the clicked asset
+          if (ui_state.selected_asset_ids.count(clicked_id)) {
+            // Asset is already selected, remove it
+            ui_state.selected_asset_ids.erase(clicked_id);
+            LOG_DEBUG("Removed from selection: {}", ui_state.results[i].name);
+
+            // If we removed the currently previewed asset, update preview to another selected asset
+            if (ui_state.selected_asset && ui_state.selected_asset->id == clicked_id) {
+              if (!ui_state.selected_asset_ids.empty()) {
+                // Find first selected asset to preview
+                for (const auto& result : ui_state.results) {
+                  if (ui_state.selected_asset_ids.count(result.id)) {
+                    ui_state.selected_asset = result;
+                    ui_state.selected_asset_index = static_cast<int>(&result - &ui_state.results[0]);
+                    break;
+                  }
                 }
+              } else {
+                // No more selected assets
+                ui_state.selected_asset.reset();
+                ui_state.selected_asset_index = -1;
               }
-            } else {
-              // No more selected assets
-              ui_state.selected_asset.reset();
-              ui_state.selected_asset_index = -1;
             }
+          } else {
+            // Asset not selected, add it
+            ui_state.selected_asset_ids.insert(clicked_id);
+            ui_state.selected_asset_index = static_cast<int>(i);
+            ui_state.selected_asset = ui_state.results[i];
+            LOG_DEBUG("Added to selection: {}", ui_state.results[i].name);
           }
         } else {
-          // Asset not selected, add it
+          // Normal click: clear all selections and select only this asset
+          ui_state.selected_asset_ids.clear();
           ui_state.selected_asset_ids.insert(clicked_id);
           ui_state.selected_asset_index = static_cast<int>(i);
           ui_state.selected_asset = ui_state.results[i];
-          LOG_DEBUG("Added to selection: {}", ui_state.results[i].name);
+          LOG_DEBUG("Selected (single): {}", ui_state.results[i].name);
         }
-      } else {
-        // Normal click: clear all selections and select only this asset
-        ui_state.selected_asset_ids.clear();
-        ui_state.selected_asset_ids.insert(clicked_id);
-        ui_state.selected_asset_index = static_cast<int>(i);
-        ui_state.selected_asset = ui_state.results[i];
-        LOG_DEBUG("Selected (single): {}", ui_state.results[i].name);
       }
-    }
 
-    ImGui::PopStyleVar();  // Restore frame padding
+      ImGui::PopStyleVar();  // Restore frame padding
 
-    // Get the actual rendered bounds of the ImageButton for the selection border
-    ImVec2 thumbnail_min = ImGui::GetItemRectMin();
-    ImVec2 thumbnail_max = ImGui::GetItemRectMax();
-    ImVec2 container_max(container_pos.x + container_size.x, container_pos.y + container_size.y);
-    bool is_container_hovered = ImGui::IsMouseHoveringRect(container_pos, container_max);
+      ImVec2 thumbnail_min = ImGui::GetItemRectMin();
+      ImVec2 thumbnail_max = ImGui::GetItemRectMax();
+      ImVec2 container_max(container_pos.x + container_size.x, container_pos.y + container_size.y);
+      bool is_container_hovered = ImGui::IsMouseHoveringRect(container_pos, container_max);
 
-    // Handle drag-and-drop to external applications (Finder, Explorer, etc.)
-    // Only initiate drag once per gesture to avoid multiple drag sessions
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 5.0f)) {
-      if (!ui_state.drag_initiated) {
-        // Get mouse position for drag origin
-        ImVec2 mouse_pos = ImGui::GetMousePos();
+      // Handle drag-and-drop to external applications (Finder, Explorer, etc.)
+      if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 5.0f)) {
+        if (!ui_state.drag_initiated) {
+          ImVec2 mouse_pos = ImGui::GetMousePos();
 
-        std::vector<std::string> files_to_drag;
+          std::vector<std::string> files_to_drag;
 
-        // If multiple assets are selected, drag all selected assets
-        if (ui_state.selected_asset_ids.size() > 1) {
-          // Collect all selected assets and their related files
-          for (const auto& result : ui_state.results) {
-            if (ui_state.selected_asset_ids.count(result.id)) {
-              std::vector<std::string> related = find_related_files(result);
-              files_to_drag.insert(files_to_drag.end(), related.begin(), related.end());
+          if (ui_state.selected_asset_ids.size() > 1) {
+            for (const auto& result : ui_state.results) {
+              if (ui_state.selected_asset_ids.count(result.id)) {
+                std::vector<std::string> related = find_related_files(result);
+                files_to_drag.insert(files_to_drag.end(), related.begin(), related.end());
+              }
+            }
+            LOG_DEBUG("Started drag for {} selected assets (with {} total file(s))",
+                      ui_state.selected_asset_ids.size(), files_to_drag.size());
+          } else {
+            files_to_drag = find_related_files(ui_state.results[i]);
+            LOG_DEBUG("Started drag for: {} (with {} related file(s))",
+                      ui_state.results[i].name, files_to_drag.size());
+          }
+
+          if (Services::drag_drop_manager().is_supported()) {
+            if (Services::drag_drop_manager().begin_file_drag(files_to_drag, mouse_pos)) {
+              ui_state.drag_initiated = true;
             }
           }
-          LOG_DEBUG("Started drag for {} selected assets (with {} total file(s))",
-                    ui_state.selected_asset_ids.size(), files_to_drag.size());
-        } else {
-          // Single asset: find all related files (e.g., MTL for OBJ, textures for 3D models)
-          files_to_drag = find_related_files(ui_state.results[i]);
-          LOG_DEBUG("Started drag for: {} (with {} related file(s))",
-                    ui_state.results[i].name, files_to_drag.size());
-        }
-
-        // Start drag operation with all files
-        if (Services::drag_drop_manager().is_supported()) {
-          if (Services::drag_drop_manager().begin_file_drag(files_to_drag, mouse_pos)) {
-            ui_state.drag_initiated = true;  // Mark drag as initiated
-          }
         }
       }
+
+      // Handle right-click context menu (no selection change)
+      if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        ImGui::OpenPopup(("AssetContextMenu##" + std::to_string(i)).c_str());
+      }
+
+      render_asset_context_menu(ui_state.results[i], "AssetContextMenu##" + std::to_string(i));
+
+      ImGui::PopStyleColor(3);
+
+      bool is_selected = ui_state.selected_asset_ids.count(ui_state.results[i].id) > 0;
+
+      if (is_selected) {
+        ImGui::GetWindowDrawList()->AddRect(
+          thumbnail_min,
+          thumbnail_max,
+          Theme::ToImU32(Theme::ACCENT_BLUE_1),
+          4.0f,
+          0,
+          3.0f
+        );
+      }
+
+      bool can_show_label = is_container_hovered && !ui_state.assets_directory_modal_open;
+      if (can_show_label) {
+        float label_height = Config::TEXT_HEIGHT;
+        ImVec2 text_region_pos(container_pos.x,
+                               container_pos.y + layout.row_height - label_height);
+        std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
+        ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
+
+        ImVec2 text_bg_min(text_region_pos.x, text_region_pos.y);
+        ImVec2 text_bg_max(text_region_pos.x + container_size.x,
+                           text_region_pos.y + label_height);
+
+        ImVec2 text_pos(
+          text_region_pos.x + (container_size.x - text_size.x) * 0.5f,
+          text_region_pos.y + (label_height - text_size.y) * 0.5f
+        );
+
+        ImU32 background_color = Theme::ToImU32(
+          is_selected ? Theme::ACCENT_BLUE_1_ALPHA_80 : Theme::FRAME_LIGHT_BLUE_4
+        );
+        ImU32 border_color = Theme::ToImU32(
+          is_selected ? Theme::ACCENT_BLUE_1 : Theme::BORDER_LIGHT_BLUE_1
+        );
+        ImU32 text_color = is_selected ? Theme::COLOR_WHITE_U32 : Theme::ToImU32(Theme::TEXT_DARK);
+
+        ImDrawList* foreground = ImGui::GetForegroundDrawList();
+        foreground->AddRectFilled(text_bg_min, text_bg_max, background_color, 3.0f);
+        foreground->AddRect(text_bg_min, text_bg_max, border_color, 3.0f, 0, 1.0f);
+        foreground->AddText(text_pos, text_color, truncated_name.c_str());
+      }
+
+      ImGui::EndGroup();
     }
-
-    // Handle right-click context menu (no selection change)
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-      ImGui::OpenPopup(("AssetContextMenu##" + std::to_string(i)).c_str());
-    }
-
-    // Render context menu using dedicated method
-    render_asset_context_menu(ui_state.results[i], "AssetContextMenu##" + std::to_string(i));
-
-    ImGui::PopStyleColor(3);
-
-    // Check if this asset is selected (for visual highlights)
-    bool is_selected = ui_state.selected_asset_ids.count(ui_state.results[i].id) > 0;
-
-    // Draw selection highlight border around the actual thumbnail bounds if this asset is selected
-    if (is_selected) {
-      ImGui::GetWindowDrawList()->AddRect(
-        thumbnail_min,
-        thumbnail_max,
-        Theme::ToImU32(Theme::ACCENT_BLUE_1),
-        4.0f,  // Corner rounding
-        0,     // Flags
-        3.0f   // Border thickness
-      );
-    }
-
-    if (is_container_hovered) {
-      float label_height = 24.0f;
-      ImVec2 text_region_pos(container_pos.x,
-                             container_pos.y + Config::THUMBNAIL_SIZE - label_height);
-      std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
-      ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
-
-      ImVec2 text_bg_min(text_region_pos.x, text_region_pos.y);
-      ImVec2 text_bg_max(text_region_pos.x + Config::THUMBNAIL_SIZE,
-                         text_region_pos.y + label_height);
-
-      ImVec2 text_pos(
-        text_region_pos.x + (Config::THUMBNAIL_SIZE - text_size.x) * 0.5f,
-        text_region_pos.y + (label_height - text_size.y) * 0.5f
-      );
-
-      ImU32 background_color = Theme::ToImU32(
-        is_selected ? Theme::ACCENT_BLUE_1_ALPHA_80 : Theme::FRAME_LIGHT_BLUE_4
-      );
-      ImU32 border_color = Theme::ToImU32(
-        is_selected ? Theme::ACCENT_BLUE_1 : Theme::BORDER_LIGHT_BLUE_1
-      );
-      ImU32 text_color = is_selected ? Theme::COLOR_WHITE_U32 : Theme::ToImU32(Theme::TEXT_DARK);
-
-      ImDrawList* foreground = ImGui::GetForegroundDrawList();
-      foreground->AddRectFilled(text_bg_min, text_bg_max, background_color, 3.0f);
-      foreground->AddRect(text_bg_min, text_bg_max, border_color, 3.0f, 0, 1.0f);
-      foreground->AddText(text_pos, text_color, truncated_name.c_str());
-    }
-
-    ImGui::EndGroup();
   }
 
   // Show message if no assets found
@@ -1220,26 +1288,23 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       ui_state.selected_asset_ids.clear();
     }
 
-    // Calculate which grid cells intersect with the selection rectangle
-    // Convert screen coordinates to grid coordinates
-    float cell_width = Config::THUMBNAIL_SIZE + Config::GRID_SPACING;
-    float cell_height = item_height + Config::GRID_SPACING;
+    for (int i = 0; i < loaded_count; ++i) {
+      const ItemLayout& layout = item_layouts[i];
 
-    int first_col = std::max(0, static_cast<int>((rect_min.x - grid_screen_start.x) / cell_width));
-    int last_col = std::min(columns - 1, static_cast<int>((rect_max.x - grid_screen_start.x) / cell_width));
-    int first_row = std::max(0, static_cast<int>((rect_min.y - grid_screen_start.y) / cell_height));
-    int last_row = static_cast<int>((rect_max.y - grid_screen_start.y) / cell_height);
+      ImVec2 offset(layout.position.x - grid_start_pos.x, layout.position.y - grid_start_pos.y);
+      ImVec2 item_min(grid_screen_start.x + offset.x, grid_screen_start.y + offset.y);
+      ImVec2 item_max(item_min.x + layout.display_size.x, item_min.y + layout.row_height);
 
-    // Select all assets in intersecting grid cells
-    for (int row = first_row; row <= last_row; row++) {
-      for (int col = first_col; col <= last_col; col++) {
-        int index = row * columns + col;
-        if (index >= 0 && index < static_cast<int>(ui_state.results.size())) {
-          ui_state.selected_asset_ids.insert(ui_state.results[index].id);
-          // Update preview to last selected asset
-          ui_state.selected_asset_index = index;
-          ui_state.selected_asset = ui_state.results[index];
-        }
+      bool intersects = !(item_max.x < rect_min.x || item_min.x > rect_max.x ||
+                          item_max.y < rect_min.y || item_min.y > rect_max.y);
+      if (!intersects) {
+        continue;
+      }
+
+      if (i < static_cast<int>(ui_state.results.size())) {
+        ui_state.selected_asset_ids.insert(ui_state.results[i].id);
+        ui_state.selected_asset_index = i;
+        ui_state.selected_asset = ui_state.results[i];
       }
     }
 
