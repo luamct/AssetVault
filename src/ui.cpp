@@ -918,25 +918,23 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       if (texture_entry.width > 0 && texture_entry.height > 0) {
         float width = static_cast<float>(texture_entry.width);
         float height = static_cast<float>(texture_entry.height);
-        float max_dim = std::max(width, height);
+        float scaled_height = std::min(static_cast<float>(Config::THUMBNAIL_SIZE), height);
+        float scale = scaled_height / height;
+        float scaled_width = width * scale;
 
-        if (asset.type == AssetType::_2D) {
-          float scale = Config::MAX_THUMBNAIL_UPSCALE_FACTOR;
-          if (scale <= 0.0f) {
-            scale = 1.0f;
+        if (asset.type == AssetType::_2D && scaled_height < static_cast<float>(Config::THUMBNAIL_SIZE)) {
+          float upscale = Config::MAX_THUMBNAIL_UPSCALE_FACTOR;
+          if (upscale <= 0.0f) {
+            upscale = 1.0f;
           }
-          if (max_dim > 0.0f) {
-            float max_allowed_scale = Config::THUMBNAIL_SIZE / max_dim;
-            scale = std::min(scale, max_allowed_scale);
-          }
-          size = ImVec2(width * scale, height * scale);
-        } else if (asset.type == AssetType::_3D) {
-          float scale = 1.0f;
-          if (max_dim > Config::THUMBNAIL_SIZE && max_dim > 0.0f) {
-            scale = Config::THUMBNAIL_SIZE / max_dim;
-          }
-          size = ImVec2(width * scale, height * scale);
+          float target_height = scaled_height * upscale;
+          target_height = std::min(target_height, static_cast<float>(Config::THUMBNAIL_SIZE));
+          scale = target_height / height;
+          scaled_height = target_height;
+          scaled_width = width * scale;
         }
+
+        size = ImVec2(scaled_width, scaled_height);
       }
 
       base_sizes[i] = size;
@@ -967,7 +965,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         item_layouts[index].position = ImVec2(x_pos, y_cursor);
         item_layouts[index].display_size = display;
         row_width += spacing + display.x;
-        row_height = std::max(row_height, std::max(display.y, label_height));
+        row_height = std::max(row_height, display.y);
         row_item_count++;
         index++;
       }
@@ -982,12 +980,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         item_layouts[index].position = ImVec2(grid_start_pos.x, y_cursor);
         item_layouts[index].display_size = display;
         row_width = display.x;
-        row_height = std::max(row_height, std::max(display.y, label_height));
+        row_height = std::max(row_height, display.y);
         row_item_count = 1;
         index++;
       }
 
-      row_height = std::max(row_height, label_height);
+      row_height = std::max(row_height, 1.0f);
 
       RowInfo row;
       row.start_index = row_start;
@@ -1058,19 +1056,19 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(ui_state.results[i]);
 
-      ImVec2 container_size(layout.display_size.x, layout.row_height);
+      float container_height = layout.row_height;
+      ImVec2 container_size(layout.display_size.x, container_height);
       ImVec2 container_pos = ImGui::GetCursorScreenPos();
 
       ImGui::GetWindowDrawList()->AddRectFilled(
         container_pos,
-        ImVec2(container_pos.x + container_size.x, container_pos.y + container_size.y),
+        ImVec2(container_pos.x + container_size.x, container_pos.y + container_height),
         Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
 
       float image_x_offset = std::max(0.0f, (container_size.x - layout.display_size.x) * 0.5f);
-      float image_area_height = std::max(0.0f, layout.row_height - label_height);
       float image_y_offset = 0.0f;
-      if (image_area_height > 0.0f) {
-        image_y_offset = std::max(0.0f, (image_area_height - layout.display_size.y) * 0.5f);
+      if (container_height > 0.0f) {
+        image_y_offset = std::max(0.0f, (container_height - layout.display_size.y) * 0.5f);
       }
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
 
@@ -1135,7 +1133,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       ImVec2 thumbnail_min = ImGui::GetItemRectMin();
       ImVec2 thumbnail_max = ImGui::GetItemRectMax();
-      ImVec2 container_max(container_pos.x + container_size.x, container_pos.y + container_size.y);
+      ImVec2 container_max(container_pos.x + container_size.x, container_pos.y + container_height);
       bool is_container_hovered = ImGui::IsMouseHoveringRect(container_pos, container_max);
 
       // Handle drag-and-drop to external applications (Finder, Explorer, etc.)
@@ -1193,16 +1191,20 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       bool can_show_label = is_container_hovered && !ui_state.assets_directory_modal_open;
       if (can_show_label) {
         ImVec2 text_region_pos(container_pos.x,
-                               container_pos.y + layout.row_height - label_height);
+                               container_pos.y + container_height);
         std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
         ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
 
-        ImVec2 text_bg_min(text_region_pos.x, text_region_pos.y);
-        ImVec2 text_bg_max(text_region_pos.x + container_size.x,
+        float horizontal_padding = 8.0f;
+        float label_width = text_size.x + horizontal_padding * 2.0f;
+        float label_x = text_region_pos.x + (container_size.x - label_width) * 0.5f;
+
+        ImVec2 text_bg_min(label_x, text_region_pos.y);
+        ImVec2 text_bg_max(label_x + label_width,
                            text_region_pos.y + label_height);
 
         ImVec2 text_pos(
-          text_region_pos.x + (container_size.x - text_size.x) * 0.5f,
+          label_x + horizontal_padding,
           text_region_pos.y + (label_height - text_size.y) * 0.5f
         );
 

@@ -200,7 +200,7 @@ void load_model_animations(const aiScene* scene, Model& model) {
     model.animated_local_transforms.resize(model.bones.size(), glm::mat4(1.0f));
     model.animated_node_local_transforms.resize(model.skeleton_nodes.size(), glm::mat4(1.0f));
     model.animated_node_global_transforms.resize(model.skeleton_nodes.size(), glm::mat4(1.0f));
-    LOG_INFO("[ANIMATION] Loaded {} animation clip(s)", model.animations.size());
+    LOG_DEBUG("[ANIMATION] Loaded {} animation clip(s)", model.animations.size());
   }
 }
 
