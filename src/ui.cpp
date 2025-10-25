@@ -893,6 +893,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   };
 
   constexpr float GRID_RIGHT_MARGIN = 24.0f;  // Extra space so the last column stays clear of the scrollbar
+  const float label_height = Config::TEXT_HEIGHT;
   float available_width = panel_width - 20.0f - GRID_RIGHT_MARGIN; // Account for padding and scrollbar margin
   available_width = std::max(available_width, Config::THUMBNAIL_SIZE);
 
@@ -914,16 +915,28 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       ImVec2 size(Config::THUMBNAIL_SIZE * Config::ICON_SCALE,
                   Config::THUMBNAIL_SIZE * Config::ICON_SCALE);
 
-      if ((asset.type == AssetType::_2D || asset.type == AssetType::_3D) &&
-          texture_entry.width > 0 && texture_entry.height > 0) {
+      if (texture_entry.width > 0 && texture_entry.height > 0) {
         float width = static_cast<float>(texture_entry.width);
         float height = static_cast<float>(texture_entry.height);
         float max_dim = std::max(width, height);
-        float scale = 1.0f;
-        if (max_dim > Config::THUMBNAIL_SIZE) {
-          scale = Config::THUMBNAIL_SIZE / max_dim;
+
+        if (asset.type == AssetType::_2D) {
+          float scale = Config::MAX_THUMBNAIL_UPSCALE_FACTOR;
+          if (scale <= 0.0f) {
+            scale = 1.0f;
+          }
+          if (max_dim > 0.0f) {
+            float max_allowed_scale = Config::THUMBNAIL_SIZE / max_dim;
+            scale = std::min(scale, max_allowed_scale);
+          }
+          size = ImVec2(width * scale, height * scale);
+        } else if (asset.type == AssetType::_3D) {
+          float scale = 1.0f;
+          if (max_dim > Config::THUMBNAIL_SIZE && max_dim > 0.0f) {
+            scale = Config::THUMBNAIL_SIZE / max_dim;
+          }
+          size = ImVec2(width * scale, height * scale);
         }
-        size = ImVec2(width * scale, height * scale);
       }
 
       base_sizes[i] = size;
@@ -954,7 +967,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         item_layouts[index].position = ImVec2(x_pos, y_cursor);
         item_layouts[index].display_size = display;
         row_width += spacing + display.x;
-        row_height = std::max(row_height, display.y);
+        row_height = std::max(row_height, std::max(display.y, label_height));
         row_item_count++;
         index++;
       }
@@ -969,12 +982,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         item_layouts[index].position = ImVec2(grid_start_pos.x, y_cursor);
         item_layouts[index].display_size = display;
         row_width = display.x;
-        row_height = std::max(row_height, display.y);
+        row_height = std::max(row_height, std::max(display.y, label_height));
         row_item_count = 1;
         index++;
       }
 
-      row_height = std::max(row_height, Config::THUMBNAIL_SIZE);
+      row_height = std::max(row_height, label_height);
 
       RowInfo row;
       row.start_index = row_start;
@@ -1054,7 +1067,11 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
 
       float image_x_offset = std::max(0.0f, (container_size.x - layout.display_size.x) * 0.5f);
-      float image_y_offset = std::max(0.0f, (layout.row_height - layout.display_size.y) * 0.5f);
+      float image_area_height = std::max(0.0f, layout.row_height - label_height);
+      float image_y_offset = 0.0f;
+      if (image_area_height > 0.0f) {
+        image_y_offset = std::max(0.0f, (image_area_height - layout.display_size.y) * 0.5f);
+      }
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
 
       ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
@@ -1175,7 +1192,6 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       bool can_show_label = is_container_hovered && !ui_state.assets_directory_modal_open;
       if (can_show_label) {
-        float label_height = Config::TEXT_HEIGHT;
         ImVec2 text_region_pos(container_pos.x,
                                container_pos.y + layout.row_height - label_height);
         std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
