@@ -126,6 +126,9 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
 
             if (assets.size() != 5) {  // racer.fbx, racer.glb, racer.obj, racer.png, zombie.svg
                 LOG_ERROR("[TEST] Expected 5 assets, got {}", assets.size());
+                for (const auto& asset : assets) {
+                    LOG_ERROR("[TEST] Unexpected asset entry: {} ({})", asset.name, asset.path);
+                }
                 shutdown_requested = true;
                 return;
             }

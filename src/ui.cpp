@@ -20,6 +20,95 @@
 #include <chrono>
 #include <iomanip>
 #include <filesystem>
+#include <limits>
+
+constexpr float GRID_ZOOM_BASE_UNIT = 80.0f;
+constexpr float GRID_ZOOM_STEP = 0.4f;
+constexpr ZoomLevel GRID_ZOOM_DEFAULT_LEVEL = ZoomLevel::Level3;
+constexpr int GRID_ZOOM_MIN_LEVEL = static_cast<int>(ZoomLevel::Level0);
+constexpr int GRID_ZOOM_MAX_LEVEL = static_cast<int>(ZoomLevel::Level5);
+
+constexpr int zoom_level_index(ZoomLevel level) {
+  return static_cast<int>(level);
+}
+
+float zoom_level_to_multiplier(ZoomLevel level) {
+  return 1.0f + zoom_level_index(level) * GRID_ZOOM_STEP;
+}
+
+float zoom_level_to_thumbnail_size(ZoomLevel level) {
+  return zoom_level_to_multiplier(level) * GRID_ZOOM_BASE_UNIT;
+}
+
+bool apply_grid_zoom_delta(UIState& ui_state, int delta) {
+  int current = zoom_level_index(ui_state.grid_zoom_level);
+  int next = std::clamp(current + delta, GRID_ZOOM_MIN_LEVEL, GRID_ZOOM_MAX_LEVEL);
+  if (next == current) {
+    return false;
+  }
+  ui_state.grid_zoom_level = static_cast<ZoomLevel>(next);
+  return true;
+}
+
+void ensure_grid_zoom_level(UIState& ui_state) {
+  int level = zoom_level_index(ui_state.grid_zoom_level);
+  if (level < GRID_ZOOM_MIN_LEVEL || level > GRID_ZOOM_MAX_LEVEL) {
+    ui_state.grid_zoom_level = GRID_ZOOM_DEFAULT_LEVEL;
+  }
+}
+
+bool draw_grid_scale_button(const char* id, const char* label, const ImVec2& cursor_pos,
+  float button_size, bool enabled) {
+  ImGui::SetCursorPos(cursor_pos);
+  ImGui::PushID(id);
+
+  ImVec2 size(button_size, button_size);
+  if (!enabled) {
+    ImGui::BeginDisabled();
+  }
+
+  bool clicked = ImGui::InvisibleButton("Button", size);
+
+  if (!enabled) {
+    ImGui::EndDisabled();
+  }
+
+  bool hovered = enabled && ImGui::IsItemHovered();
+  bool active = enabled && ImGui::IsItemActive();
+
+  ImVec2 min = ImGui::GetItemRectMin();
+  ImVec2 max = ImGui::GetItemRectMax();
+
+  ImVec4 bg_color = Theme::TOGGLE_OFF_BG;
+  if (active) {
+    bg_color = Theme::TOGGLE_ON_BG;
+  }
+  else if (hovered) {
+    bg_color = Theme::TOGGLE_HOVER_BG;
+  }
+  else if (!enabled) {
+    bg_color.w *= 0.7f;
+  }
+
+  ImVec4 border_color = Theme::TOGGLE_OFF_BORDER;
+  ImGui::GetWindowDrawList()->AddRectFilled(min, max, Theme::ToImU32(bg_color), 8.0f);
+  ImGui::GetWindowDrawList()->AddRect(min, max, Theme::ToImU32(border_color), 8.0f, 0, 2.0f);
+
+  ImVec4 text_color = active ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
+  if (!enabled && !active) {
+    text_color.w *= 0.7f;
+  }
+
+  ImVec2 text_size = ImGui::CalcTextSize(label);
+  ImVec2 text_pos(
+    min.x + (size.x - text_size.x) * 0.5f,
+    min.y + (size.y - text_size.y) * 0.5f
+  );
+  ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(text_color), label);
+
+  ImGui::PopID();
+  return enabled && clicked;
+}
 
 // Clear all search and UI state when changing directories
 void clear_ui_state(UIState& ui_state) {
@@ -870,9 +959,82 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   SafeAssets& safe_assets, float panel_width, float panel_height) {
   ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), true);
 
+  ensure_grid_zoom_level(ui_state);
+  float zoom_multiplier = 1.0f;
+  float thumbnail_size = 0.0f;
+  int zoom_index = 0;
+  bool can_zoom_out = false;
+  bool can_zoom_in = false;
+
+  auto refresh_zoom_state = [&]() {
+    zoom_multiplier = zoom_level_to_multiplier(ui_state.grid_zoom_level);
+    thumbnail_size = zoom_level_to_thumbnail_size(ui_state.grid_zoom_level);
+    zoom_index = zoom_level_index(ui_state.grid_zoom_level);
+    can_zoom_out = zoom_index > GRID_ZOOM_MIN_LEVEL;
+    can_zoom_in = zoom_index < GRID_ZOOM_MAX_LEVEL;
+  };
+
+  refresh_zoom_state();
+
+  auto log_zoom_change = [&](const char* direction) {
+    LOG_INFO("Grid zoom {}: level={} upscale={:.1f} thumbnail={:.1f}",
+      direction, zoom_index, zoom_multiplier, thumbnail_size);
+  };
+
+  auto apply_zoom_delta_and_log = [&](int delta, const char* direction) {
+    if (apply_grid_zoom_delta(ui_state, delta)) {
+      refresh_zoom_state();
+      log_zoom_change(direction);
+    }
+  };
+
+  // Keyboard shortcuts: Cmd/Ctrl + '=' or '-' to adjust zoom
+  ImGuiIO& grid_io = ImGui::GetIO();
+  bool modifier_down = (grid_io.KeySuper || grid_io.KeyCtrl);
+  if (modifier_down && !grid_io.WantTextInput) {
+    bool zoom_in_pressed = ImGui::IsKeyPressed(ImGuiKey_Equal, false) ||
+      ImGui::IsKeyPressed(ImGuiKey_KeypadAdd, false);
+    bool zoom_out_pressed = ImGui::IsKeyPressed(ImGuiKey_Minus, false) ||
+      ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract, false);
+
+    if (zoom_in_pressed) {
+      apply_zoom_delta_and_log(1, "increased");
+    }
+    if (zoom_out_pressed) {
+      apply_zoom_delta_and_log(-1, "decreased");
+    }
+  }
+
   // Show total results count if we have results
   if (!ui_state.results.empty()) {
+    ImVec2 label_pos = ImGui::GetCursorPos();
     ImGui::Text("Showing %d of %zu results", ui_state.loaded_end_index, ui_state.results.size());
+    ImVec2 label_size = ImGui::GetItemRectSize();
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    float button_size = ImGui::GetFrameHeight();
+    float total_button_width = button_size * 2.0f + style.ItemSpacing.x;
+    float button_x = ImGui::GetWindowContentRegionMax().x - total_button_width;
+    float button_y = label_pos.y;
+
+    ImVec2 minus_pos(button_x, button_y);
+    ImVec2 plus_pos(button_x + button_size + style.ItemSpacing.x, button_y);
+
+    if (draw_grid_scale_button("GridScaleMinus", "-", minus_pos, button_size, can_zoom_out)) {
+      apply_zoom_delta_and_log(-1, "decreased");
+    }
+
+    if (draw_grid_scale_button("GridScalePlus", "+", plus_pos, button_size, can_zoom_in)) {
+      apply_zoom_delta_and_log(1, "increased");
+    }
+
+    // Reset cursor to line height below the taller of text/buttons before separator
+    float header_height = std::max(label_size.y, button_size);
+    ImVec2 cursor = ImGui::GetCursorPos();
+    cursor.x = label_pos.x;
+    cursor.y = label_pos.y + header_height + style.ItemSpacing.y;
+    ImGui::SetCursorPos(cursor);
+
     ImGui::Separator();
   }
 
@@ -882,20 +1044,20 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   struct ItemLayout {
     ImVec2 position;
     ImVec2 display_size;
-    float row_height = Config::THUMBNAIL_SIZE;
+    float row_height = 0.0f;
   };
 
   struct RowInfo {
     int start_index = 0;
     int end_index = 0; // exclusive
     float y = 0.0f;
-    float height = Config::THUMBNAIL_SIZE;
+    float height = 0.0f;
   };
 
   constexpr float GRID_RIGHT_MARGIN = 24.0f;  // Extra space so the last column stays clear of the scrollbar
   const float label_height = Config::TEXT_HEIGHT;
   float available_width = panel_width - 20.0f - GRID_RIGHT_MARGIN; // Account for padding and scrollbar margin
-  available_width = std::max(available_width, Config::THUMBNAIL_SIZE);
+  available_width = std::max(available_width, thumbnail_size);
 
   ImVec2 grid_start_pos = ImGui::GetCursorPos();
   ImVec2 grid_screen_start = ImGui::GetCursorScreenPos();
@@ -912,29 +1074,34 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       const Asset& asset = ui_state.results[i];
       const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(asset);
 
-      ImVec2 size(Config::THUMBNAIL_SIZE * Config::ICON_SCALE,
-                  Config::THUMBNAIL_SIZE * Config::ICON_SCALE);
+      ImVec2 size(thumbnail_size * Config::ICON_SCALE,
+                  thumbnail_size * Config::ICON_SCALE);
 
       if (texture_entry.width > 0 && texture_entry.height > 0) {
         float width = static_cast<float>(texture_entry.width);
         float height = static_cast<float>(texture_entry.height);
-        float scaled_height = std::min(static_cast<float>(Config::THUMBNAIL_SIZE), height);
-        float scale = scaled_height / height;
-        float scaled_width = width * scale;
 
-        if (asset.type == AssetType::_2D && scaled_height < static_cast<float>(Config::THUMBNAIL_SIZE)) {
-          float upscale = Config::MAX_THUMBNAIL_UPSCALE_FACTOR;
-          if (upscale <= 0.0f) {
-            upscale = 1.0f;
+        if (height > 0.0f) {
+          float target_height = thumbnail_size;
+          float scale = target_height / height;
+
+          if (asset.type == AssetType::_3D && scale > 1.0f) {
+            scale = 1.0f;
+            target_height = height;
+          } else {
+            target_height = height * scale;
           }
-          float target_height = scaled_height * upscale;
-          target_height = std::min(target_height, static_cast<float>(Config::THUMBNAIL_SIZE));
-          scale = target_height / height;
-          scaled_height = target_height;
-          scaled_width = width * scale;
-        }
 
-        size = ImVec2(scaled_width, scaled_height);
+          float target_width = width * scale;
+
+          if (target_height > thumbnail_size) {
+            float clamp_scale = thumbnail_size / target_height;
+            target_height = thumbnail_size;
+            target_width *= clamp_scale;
+          }
+
+          size = ImVec2(target_width, target_height);
+        }
       }
 
       base_sizes[i] = size;

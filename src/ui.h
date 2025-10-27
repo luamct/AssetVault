@@ -22,6 +22,16 @@ struct Model;
 struct Camera3D;
 struct AnimationData;
 
+// Grid zoom levels for the results pane
+enum class ZoomLevel : int {
+  Level0 = 0,
+  Level1 = 1,
+  Level2 = 2,
+  Level3 = 3,
+  Level4 = 4,
+  Level5 = 5
+};
+
 // UI state structure
 struct UIState {
   std::atomic<bool> update_needed{ true };
@@ -55,6 +65,9 @@ struct UIState {
   static constexpr int LOAD_BATCH_SIZE = 50;
   int loaded_start_index = 0;    // Always 0, never changes
   int loaded_end_index = 0;      // Grows as user scrolls down
+
+  // Thumbnail zoom level for results grid
+  ZoomLevel grid_zoom_level = ZoomLevel::Level3;
 
   // Model preview state
   int model_preview_row = -1;    // Which row has the expanded preview
