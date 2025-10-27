@@ -143,6 +143,9 @@ void EventProcessor::process_events() {
             processed_count_ += batch.size();
         }
     }
+
+    // Release shader resources owned by this thread before exit
+    cleanup_3d_shaders();
 }
 
 void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
@@ -338,6 +341,12 @@ bool EventProcessor::setup_thumbnail_opengl_context() {
 
     // Set up OpenGL state for 3D rendering (shared with preview viewport)
     setup_3d_rendering_state();
+
+    // Ensure this thread has its own shader program instance
+    if (!initialize_3d_shaders()) {
+        LOG_ERROR("Failed to initialize 3D shaders on thumbnail context");
+        return false;
+    }
 
     LOG_DEBUG("OpenGL context set up for thumbnail generation thread");
     return true;

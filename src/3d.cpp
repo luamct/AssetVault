@@ -25,7 +25,7 @@
 // Model state is now managed by the caller
 
 // Unified shader program for all 3D rendering (loaded from external files)
-static unsigned int shader_ = 0;
+thread_local unsigned int shader_ = 0;
 
 namespace {
 
@@ -935,20 +935,20 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   GLint bone_matrices_uniform = glGetUniformLocation(shader_, "boneMatrices");
 
   size_t bone_count = std::min(model.bones.size(), static_cast<size_t>(MAX_SHADER_BONES));
-  static bool warned_bone_limit = false;
+  thread_local static bool warned_bone_limit = false;
   if (model.has_skinned_meshes && model.bones.size() > MAX_SHADER_BONES && !warned_bone_limit) {
     LOG_WARN("[SKINNING] Model '{}' uses {} bones but shader supports {}. Extra bones will be ignored.",
       model.path, model.bones.size(), MAX_SHADER_BONES);
     warned_bone_limit = true;
   }
-  static bool warned_missing_bones = false;
+  thread_local static bool warned_missing_bones = false;
   if (model.has_skinned_meshes && bone_count == 0 && !warned_missing_bones) {
     LOG_WARN("[SKINNING] Model '{}' has skinned meshes but no bones were loaded; rendering may be incorrect.",
       model.path);
     warned_missing_bones = true;
   }
 
-  static std::vector<glm::mat4> bone_matrices;
+  thread_local static std::vector<glm::mat4> bone_matrices;
   if (bone_count_uniform >= 0) {
     glUniform1i(bone_count_uniform, static_cast<int>(bone_count));
   }
