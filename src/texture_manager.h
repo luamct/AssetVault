@@ -30,6 +30,7 @@ typedef unsigned int GLuint;
 #endif
 
 #include "asset.h" // For AssetType and Asset
+#include "animation.h" // For Animation2D
 
 // Forward declarations
 struct GLFWwindow;
@@ -122,34 +123,6 @@ private:
     void cleanup(); // Implementation in .cpp file
 };
 
-// Animated asset data (GIFs, sprite sheets, etc.)
-struct AnimationData {
-  std::vector<unsigned int> frame_textures;  // OpenGL texture ID for each frame
-  std::vector<int> frame_delays;             // Delay for each frame in milliseconds (stb_image returns ms, not centiseconds)
-  std::vector<int> cumulative_frame_delays; // Prefix sums for quick lookup
-  int width;                                 // Frame width
-  int height;                                // Frame height
-  int total_duration;                        // Total animation loop duration (ms)
-
-  AnimationData()
-    : width(0), height(0), total_duration(0) {}
-
-  ~AnimationData(); // Implementation in .cpp file
-
-  // Disable copy (move-only type)
-  AnimationData(const AnimationData&) = delete;
-  AnimationData& operator=(const AnimationData&) = delete;
-  AnimationData(AnimationData&&) = default;
-  AnimationData& operator=(AnimationData&&) = default;
-
-  // Recompute the cumulative delay array and loop length after loading frames.
-  void rebuild_timing_cache();
-  bool empty() const { return frame_textures.empty(); }
-  int frame_count() const { return static_cast<int>(frame_textures.size()); }
-  // Return the texture ID that should be displayed at the provided elapsed time.
-  unsigned int frame_texture_at_time(int elapsed_ms) const;
-};
-
 // Texture cache entry structure
 struct TextureCacheEntry {
   unsigned int texture_id;          // The owned texture ID for this specific asset (deleted during cleanup)
@@ -213,7 +186,7 @@ public:
 
   // Animated GIF loading (on-demand, for preview panel)
   // Return a cached animation if available, otherwise load it and store a weak reference.
-  std::shared_ptr<AnimationData> get_or_load_animated_gif(const std::string& filepath);
+  std::shared_ptr<Animation2D> get_or_load_animated_gif(const std::string& filepath);
 
   // Texture cache cleanup (thread-safe)
   virtual void queue_texture_cleanup(const std::string& file_path);
@@ -243,7 +216,7 @@ private:
   unsigned int default_texture_;
   std::unordered_map<AssetType, unsigned int> type_icons_;
   std::unordered_map<std::string, TextureCacheEntry> texture_cache_;
-  std::unordered_map<std::string, std::weak_ptr<AnimationData>> animation_cache_;
+  std::unordered_map<std::string, std::weak_ptr<Animation2D>> animation_cache_;
 
   // 3D Preview system
   unsigned int preview_texture_;
@@ -265,6 +238,6 @@ private:
 
   // Helper methods
   void cleanup_all_textures();
-  // Internal loader that builds AnimationData for a GIF file path.
-  std::shared_ptr<AnimationData> load_animated_gif_internal(const std::string& filepath);
+  // Internal loader that builds Animation2D for a GIF file path.
+  std::shared_ptr<Animation2D> load_animated_gif_internal(const std::string& filepath);
 };

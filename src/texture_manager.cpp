@@ -30,10 +30,6 @@
 #include "3d.h" // For Model, load_model, render_model, cleanup_model
 #include "animation.h" // For advance_model_animation
 
-namespace {
-constexpr int GIF_DEFAULT_FRAME_DELAY_MS = 100;
-}
-
 TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
   preview_framebuffer_(0), preview_initialized_(false),
@@ -60,45 +56,6 @@ void TextureData::cleanup() {
     }
     data = nullptr;
   }
-}
-
-// AnimationData destructor implementation
-AnimationData::~AnimationData() {
-  // Cleanup all frame textures
-  if (!frame_textures.empty()) {
-    glDeleteTextures(static_cast<GLsizei>(frame_textures.size()), frame_textures.data());
-  }
-}
-
-void AnimationData::rebuild_timing_cache() {
-  cumulative_frame_delays.clear();
-  cumulative_frame_delays.reserve(frame_delays.size());
-
-  int running_total = 0;
-  for (size_t i = 0; i < frame_delays.size(); ++i) {
-    int delay = frame_delays[i] > 0 ? frame_delays[i] : GIF_DEFAULT_FRAME_DELAY_MS;
-    running_total += delay;
-    cumulative_frame_delays.push_back(running_total);
-  }
-  total_duration = running_total;
-}
-
-unsigned int AnimationData::frame_texture_at_time(int elapsed_ms) const {
-  if (frame_textures.empty()) {
-    return 0;
-  }
-
-  if (frame_textures.size() == 1 || total_duration <= 0) {
-    return frame_textures.front();
-  }
-
-  int wrapped_time = elapsed_ms % total_duration;
-  auto it = std::upper_bound(cumulative_frame_delays.begin(), cumulative_frame_delays.end(), wrapped_time);
-  size_t index = static_cast<size_t>(std::distance(cumulative_frame_delays.begin(), it));
-  if (index >= frame_textures.size()) {
-    index = frame_textures.size() - 1;
-  }
-  return frame_textures[index];
 }
 
 bool TextureManager::initialize() {
@@ -154,7 +111,7 @@ void TextureManager::cleanup_all_textures() {
   if (pause_icon_ != 0) glDeleteTextures(1, &pause_icon_);
   if (speaker_icon_ != 0) glDeleteTextures(1, &speaker_icon_);
 
-  std::vector<std::shared_ptr<AnimationData>> animations;
+  std::vector<std::shared_ptr<Animation2D>> animations;
   {
     std::lock_guard<std::mutex> lock(animation_mutex_);
     for (auto& [_, weak_anim] : animation_cache_) {
@@ -166,7 +123,7 @@ void TextureManager::cleanup_all_textures() {
   }
 }
 
-std::shared_ptr<AnimationData> TextureManager::load_animated_gif_internal(const std::string& filepath) {
+std::shared_ptr<Animation2D> TextureManager::load_animated_gif_internal(const std::string& filepath) {
   LOG_TRACE("[GIF] Loading animated GIF: {}", filepath);
 
   // Read file into memory
@@ -217,8 +174,8 @@ std::shared_ptr<AnimationData> TextureManager::load_animated_gif_internal(const 
 
   LOG_INFO("[GIF] Loaded {} frames ({}x{}) from {}", frame_count, width, height, filepath);
 
-  // Create AnimationData
-  auto anim_data = std::make_shared<AnimationData>();
+  // Create 2D animation container
+  auto anim_data = std::make_shared<Animation2D>();
   anim_data->width = width;
   anim_data->height = height;
   anim_data->frame_delays.assign(delays, delays + frame_count);
@@ -263,7 +220,7 @@ std::shared_ptr<AnimationData> TextureManager::load_animated_gif_internal(const 
   return anim_data;
 }
 
-std::shared_ptr<AnimationData> TextureManager::get_or_load_animated_gif(const std::string& filepath) {
+std::shared_ptr<Animation2D> TextureManager::get_or_load_animated_gif(const std::string& filepath) {
   {
     std::lock_guard<std::mutex> lock(animation_mutex_);
     auto it = animation_cache_.find(filepath);
@@ -275,7 +232,7 @@ std::shared_ptr<AnimationData> TextureManager::get_or_load_animated_gif(const st
     }
   }
 
-  std::shared_ptr<AnimationData> animation = load_animated_gif_internal(filepath);
+  std::shared_ptr<Animation2D> animation = load_animated_gif_internal(filepath);
   if (!animation) {
     return nullptr;
   }

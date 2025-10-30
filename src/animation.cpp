@@ -11,6 +11,8 @@
 
 namespace {
 
+constexpr int ANIMATION2D_DEFAULT_FRAME_DELAY_MS = 100;
+
 double sanitize_ticks_per_second(double ticks_per_second) {
   return (ticks_per_second > 0.0) ? ticks_per_second : 25.0;
 }
@@ -70,6 +72,94 @@ glm::quat interpolate_quat(const std::vector<AnimationKeyframeQuat>& keys, doubl
 }
 
 } // namespace
+
+Animation2D::Animation2D()
+  : width(0), height(0), total_duration(0) {}
+
+Animation2D::~Animation2D() {
+  if (!frame_textures.empty()) {
+    glDeleteTextures(static_cast<GLsizei>(frame_textures.size()), frame_textures.data());
+  }
+}
+
+void Animation2D::rebuild_timing_cache() {
+  cumulative_frame_delays.clear();
+  cumulative_frame_delays.reserve(frame_delays.size());
+
+  int running_total = 0;
+  for (size_t i = 0; i < frame_delays.size(); ++i) {
+    int delay = frame_delays[i] > 0 ? frame_delays[i] : ANIMATION2D_DEFAULT_FRAME_DELAY_MS;
+    running_total += delay;
+    cumulative_frame_delays.push_back(running_total);
+  }
+  total_duration = running_total;
+}
+
+bool Animation2D::empty() const {
+  return frame_textures.empty();
+}
+
+int Animation2D::frame_count() const {
+  return static_cast<int>(frame_textures.size());
+}
+
+unsigned int Animation2D::frame_texture_at_time(int elapsed_ms) const {
+  if (frame_textures.empty()) {
+    return 0;
+  }
+
+  if (frame_textures.size() == 1 || total_duration <= 0) {
+    return frame_textures.front();
+  }
+
+  int wrapped_time = elapsed_ms % total_duration;
+  auto it = std::upper_bound(cumulative_frame_delays.begin(), cumulative_frame_delays.end(), wrapped_time);
+  size_t index = static_cast<size_t>(std::distance(cumulative_frame_delays.begin(), it));
+  if (index >= frame_textures.size()) {
+    index = frame_textures.size() - 1;
+  }
+  return frame_textures[index];
+}
+
+Animation2DPlaybackState::Animation2DPlaybackState()
+  : start_time(), started(false) {}
+
+void Animation2DPlaybackState::set_animation(const std::shared_ptr<Animation2D>& new_animation,
+  TimePoint now) {
+  if (animation != new_animation) {
+    animation = new_animation;
+    if (animation) {
+      start_time = now;
+      started = true;
+    }
+    else {
+      started = false;
+      start_time = {};
+    }
+  }
+  else if (animation && !started) {
+    start_time = now;
+    started = true;
+  }
+}
+
+void Animation2DPlaybackState::reset() {
+  animation.reset();
+  start_time = {};
+  started = false;
+}
+
+unsigned int Animation2DPlaybackState::current_texture(TimePoint now) const {
+  if (!animation || !started) {
+    return 0;
+  }
+
+  auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+  if (elapsed_ms < 0) {
+    elapsed_ms = 0;
+  }
+  return animation->frame_texture_at_time(static_cast<int>(elapsed_ms));
+}
 
 // Convert Assimp animation clips into our runtime format and start playback when available.
 void load_model_animations(const aiScene* scene, Model& model) {

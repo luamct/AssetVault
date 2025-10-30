@@ -6,6 +6,9 @@
 #include <filesystem>
 #include <map>
 #include <vector>
+#include <chrono>
+
+using TimePoint = std::chrono::steady_clock::time_point;
 
 // Forward declarations
 struct Asset;

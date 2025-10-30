@@ -110,44 +110,6 @@ bool draw_grid_scale_button(const char* id, const char* label, const ImVec2& cur
   return enabled && clicked;
 }
 
-// Ensure the playback timer is aligned with the currently displayed animation.
-void AnimationPlaybackState::set_animation(const std::shared_ptr<AnimationData>& new_animation,
-  std::chrono::steady_clock::time_point now) {
-  if (animation != new_animation) {
-    animation = new_animation;
-    if (animation) {
-      start_time = now;
-      started = true;
-    } else {
-      started = false;
-      start_time = {};
-    }
-  } else if (animation && !started) {
-    start_time = now;
-    started = true;
-  }
-}
-
-// Drop any cached animation reference and timer.
-void AnimationPlaybackState::reset() {
-  animation.reset();
-  start_time = {};
-  started = false;
-}
-
-// Compute which frame texture should be rendered for the supplied timestamp.
-unsigned int AnimationPlaybackState::current_texture(std::chrono::steady_clock::time_point now) const {
-  if (!animation || !started) {
-    return 0;
-  }
-
-  auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
-  if (elapsed_ms < 0) {
-    elapsed_ms = 0;
-  }
-  return animation->frame_texture_at_time(static_cast<int>(elapsed_ms));
-}
-
 // Clear all search and UI state when changing directories
 void clear_ui_state(UIState& ui_state) {
   ui_state.results.clear();

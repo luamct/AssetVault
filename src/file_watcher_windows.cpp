@@ -21,7 +21,7 @@
 struct PendingFileEvent {
   FileEventType original_type;
   std::string path;  // UTF-8 encoded path with normalized separators
-  std::chrono::steady_clock::time_point last_activity;
+  TimePoint last_activity;
   bool is_active;
 
   PendingFileEvent() : original_type(FileEventType::Created), is_active(false) {}

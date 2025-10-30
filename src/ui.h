@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "imgui.h"
+#include "animation.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -21,22 +22,7 @@ class SearchIndex;
 struct Asset;
 struct Model;
 struct Camera3D;
-struct AnimationData;
-
-struct AnimationPlaybackState {
-  std::shared_ptr<AnimationData> animation;
-  std::chrono::steady_clock::time_point start_time;
-  bool started = false;
-
-  // Attach a new animation (or reuse the cached one) and reset the timer when needed.
-  void set_animation(const std::shared_ptr<AnimationData>& new_animation,
-    std::chrono::steady_clock::time_point now);
-  // Clear any cached animation/clock data.
-  void reset();
-  // Fetch the texture that should be displayed for the given timestamp.
-  unsigned int current_texture(std::chrono::steady_clock::time_point now) const;
-  bool has_animation() const { return animation != nullptr; }
-};
+struct Animation2D;
 
 // Grid zoom levels for the results pane
 enum class ZoomLevel : int {
@@ -57,7 +43,7 @@ struct UIState {
   std::string input_tracking = ""; // Track input to detect real changes
 
   // Debouncing state
-  std::chrono::steady_clock::time_point last_keypress_time;
+  TimePoint last_keypress_time;
   bool pending_search = false;
 
   // UI state
@@ -89,10 +75,10 @@ struct UIState {
   int model_preview_row = -1;    // Which row has the expanded preview
 
   // Animation preview state (loaded on-demand, similar to 3D models)
-  std::shared_ptr<AnimationData> current_animation;
+  std::shared_ptr<Animation2D> current_animation;
   std::string current_animation_path;  // Track which animation is loaded to detect asset changes
-  AnimationPlaybackState preview_animation_state;
-  std::unordered_map<std::string, AnimationPlaybackState> grid_animation_states;
+  Animation2DPlaybackState preview_animation_state;
+  std::unordered_map<std::string, Animation2DPlaybackState> grid_animation_states;
 
   // Audio playback settings
   bool auto_play_audio = true;
