@@ -110,6 +110,44 @@ bool draw_grid_scale_button(const char* id, const char* label, const ImVec2& cur
   return enabled && clicked;
 }
 
+// Ensure the playback timer is aligned with the currently displayed animation.
+void AnimationPlaybackState::set_animation(const std::shared_ptr<AnimationData>& new_animation,
+  std::chrono::steady_clock::time_point now) {
+  if (animation != new_animation) {
+    animation = new_animation;
+    if (animation) {
+      start_time = now;
+      started = true;
+    } else {
+      started = false;
+      start_time = {};
+    }
+  } else if (animation && !started) {
+    start_time = now;
+    started = true;
+  }
+}
+
+// Drop any cached animation reference and timer.
+void AnimationPlaybackState::reset() {
+  animation.reset();
+  start_time = {};
+  started = false;
+}
+
+// Compute which frame texture should be rendered for the supplied timestamp.
+unsigned int AnimationPlaybackState::current_texture(std::chrono::steady_clock::time_point now) const {
+  if (!animation || !started) {
+    return 0;
+  }
+
+  auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+  if (elapsed_ms < 0) {
+    elapsed_ms = 0;
+  }
+  return animation->frame_texture_at_time(static_cast<int>(elapsed_ms));
+}
+
 // Clear all search and UI state when changing directories
 void clear_ui_state(UIState& ui_state) {
   ui_state.results.clear();
@@ -122,6 +160,10 @@ void clear_ui_state(UIState& ui_state) {
   ui_state.pending_search = false;
   ui_state.update_needed = true;
   ui_state.assets_directory_modal_open = false;
+  ui_state.current_animation.reset();
+  ui_state.current_animation_path.clear();
+  ui_state.preview_animation_state.reset();
+  ui_state.grid_animation_states.clear();
 }
 
 // TODO: move to utils.cpp
@@ -1041,6 +1083,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Create an inner scrolling region so the header above stays visible
   ImGui::BeginChild("AssetGridScroll", ImVec2(0, 0), false);
 
+  const auto animation_now = std::chrono::steady_clock::now();
+
   struct ItemLayout {
     ImVec2 position;
     ImVec2 display_size;
@@ -1066,8 +1110,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   std::vector<RowInfo> row_infos;
 
   int loaded_count = std::min(ui_state.loaded_end_index, static_cast<int>(ui_state.results.size()));
+  // Track which GIFs are rendered this frame so we can prune stale playback state later.
+  std::unordered_set<std::string> active_gif_paths;
+
   if (loaded_count > 0) {
     item_layouts.resize(loaded_count);
+    active_gif_paths.reserve(static_cast<size_t>(loaded_count));
 
     std::vector<ImVec2> base_sizes(loaded_count);
     for (int i = 0; i < loaded_count; ++i) {
@@ -1221,7 +1269,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       ImGui::BeginGroup();
 
-      const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(ui_state.results[i]);
+      const Asset& asset = ui_state.results[i];
+      const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(asset);
 
       float container_height = layout.row_height;
       ImVec2 container_size(layout.display_size.x, container_height);
@@ -1245,9 +1294,28 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
 
       ImGui::SetCursorScreenPos(image_pos);
+      unsigned int display_texture_id = texture_entry.get_texture_id();
+
+      if (asset.extension == ".gif") {
+        auto animation = texture_manager.get_or_load_animated_gif(asset.path);
+        if (animation && !animation->empty()) {
+          active_gif_paths.insert(asset.path);
+          auto& playback = ui_state.grid_animation_states[asset.path];
+          playback.set_animation(animation, animation_now);
+          unsigned int animated_texture = playback.current_texture(animation_now);
+          if (animated_texture != 0) {
+            display_texture_id = animated_texture;
+          } else if (!animation->frame_textures.empty()) {
+            display_texture_id = animation->frame_textures.front();
+          }
+        } else {
+          ui_state.grid_animation_states.erase(asset.path);
+        }
+      }
+
       if (ImGui::ImageButton(
         ("##Thumbnail" + std::to_string(i)).c_str(),
-        (ImTextureID) (intptr_t) texture_entry.get_texture_id(),
+        (ImTextureID) (intptr_t) display_texture_id,
         layout.display_size)) {
 
         ImGuiIO& io = ImGui::GetIO();
@@ -1393,6 +1461,16 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     }
   }
 
+  if (!ui_state.grid_animation_states.empty()) {
+    for (auto it = ui_state.grid_animation_states.begin(); it != ui_state.grid_animation_states.end();) {
+      if (active_gif_paths.find(it->first) == active_gif_paths.end()) {
+        it = ui_state.grid_animation_states.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
   // Show message if no assets found
   if (ui_state.results.empty()) {
     bool assets_empty;
@@ -1487,7 +1565,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       }
 
       if (i < static_cast<int>(ui_state.results.size())) {
-        ui_state.selected_asset_ids.insert(ui_state.results[i].id);
+          ui_state.selected_asset_ids.insert(ui_state.results[i].id);
         ui_state.selected_asset_index = i;
         ui_state.selected_asset = ui_state.results[i];
       }
@@ -1863,77 +1941,50 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       render_common_asset_info(selected_asset, ui_state);
     }
     else if (selected_asset.extension == ".gif") {
-      // Animated GIF Preview - load on-demand (similar to 3D models)
-      // Check if we need to load the animation
-      if (!ui_state.current_animation || ui_state.current_animation_path != selected_asset.path) {
+      auto now = std::chrono::steady_clock::now();
+
+      if (ui_state.current_animation_path != selected_asset.path || !ui_state.current_animation) {
         LOG_DEBUG("[UI] Loading animated GIF on-demand: {}", selected_asset.path);
-        ui_state.current_animation = texture_manager.load_animated_gif(selected_asset.path);
+        ui_state.current_animation = texture_manager.get_or_load_animated_gif(selected_asset.path);
         ui_state.current_animation_path = selected_asset.path;
+        ui_state.preview_animation_state.reset();
       }
 
-      if (ui_state.current_animation && !ui_state.current_animation->frame_textures.empty()) {
-        // Calculate current frame based on elapsed time
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-          now - ui_state.current_animation->animation_start_time).count();
+      if (!ui_state.current_animation) {
+        ui_state.preview_animation_state.reset();
+      } else {
+        ui_state.preview_animation_state.set_animation(ui_state.current_animation, now);
+      }
 
-        // Note: stb_image returns delays in milliseconds (despite GIF spec using centiseconds)
-        const int DEFAULT_FRAME_DELAY = 100; // 100ms default for frames with 0 delay
+      const auto& animation = ui_state.current_animation;
 
-        // Calculate total animation duration in milliseconds
-        int total_delay = 0;
-        for (int delay : ui_state.current_animation->frame_delays) {
-          total_delay += (delay > 0) ? delay : DEFAULT_FRAME_DELAY;
-        }
-
-        // Find current frame based on accumulated delays
-        int current_frame = 0;
-        if (total_delay > 0) {
-          // Loop animation
-          int time_in_loop = static_cast<int>(elapsed_ms % total_delay);
-
-          // Find which frame corresponds to this time
-          int accumulated = 0;
-          for (size_t i = 0; i < ui_state.current_animation->frame_delays.size(); i++) {
-            int frame_delay = (ui_state.current_animation->frame_delays[i] > 0)
-              ? ui_state.current_animation->frame_delays[i]
-              : DEFAULT_FRAME_DELAY;
-            accumulated += frame_delay;
-            if (time_in_loop < accumulated) {
-              current_frame = static_cast<int>(i);
-              break;
-            }
-          }
-        }
-
-        // Calculate preview size
+      if (animation && !animation->empty()) {
         ImVec2 preview_size(avail_width, avail_height);
-        if (ui_state.current_animation->width > 0 && ui_state.current_animation->height > 0) {
+        if (animation->width > 0 && animation->height > 0) {
           preview_size = calculate_thumbnail_size(
-            ui_state.current_animation->width,
-            ui_state.current_animation->height,
+            animation->width,
+            animation->height,
             avail_width, avail_height,
             Config::MAX_PREVIEW_UPSCALE_FACTOR
           );
         }
 
-        // Center the preview image in the panel
         ImVec2 container_pos = ImGui::GetCursorScreenPos();
         float image_x_offset = (avail_width - preview_size.x) * 0.5f;
         float image_y_offset = (avail_height - preview_size.y) * 0.5f;
         ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
         ImGui::SetCursorScreenPos(image_pos);
 
-        // Draw border around the image
         ImVec2 border_min = image_pos;
         ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
         ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
-        // Display current frame
-        unsigned int frame_texture = ui_state.current_animation->frame_textures[current_frame];
+        unsigned int frame_texture = ui_state.preview_animation_state.current_texture(now);
+        if (frame_texture == 0 && !animation->frame_textures.empty()) {
+          frame_texture = animation->frame_textures.front();
+        }
         ImGui::Image((ImTextureID) (intptr_t) frame_texture, preview_size);
 
-        // Restore cursor for info below
         ImGui::SetCursorScreenPos(container_pos);
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
@@ -1946,14 +1997,14 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       render_common_asset_info(selected_asset, ui_state);
 
       // GIF-specific information (dimensions)
-      if (ui_state.current_animation) {
+      if (animation) {
         ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
         ImGui::SameLine();
-        ImGui::Text("%dx%d", ui_state.current_animation->width, ui_state.current_animation->height);
+        ImGui::Text("%dx%d", animation->width, animation->height);
 
         ImGui::TextColored(Theme::TEXT_LABEL, "Frames: ");
         ImGui::SameLine();
-        ImGui::Text("%zu", ui_state.current_animation->frame_textures.size());
+        ImGui::Text("%d", animation->frame_count());
       }
     }
     else {

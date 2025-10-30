@@ -30,6 +30,10 @@
 #include "3d.h" // For Model, load_model, render_model, cleanup_model
 #include "animation.h" // For advance_model_animation
 
+namespace {
+constexpr int GIF_DEFAULT_FRAME_DELAY_MS = 100;
+}
+
 TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
   preview_framebuffer_(0), preview_initialized_(false),
@@ -64,6 +68,37 @@ AnimationData::~AnimationData() {
   if (!frame_textures.empty()) {
     glDeleteTextures(static_cast<GLsizei>(frame_textures.size()), frame_textures.data());
   }
+}
+
+void AnimationData::rebuild_timing_cache() {
+  cumulative_frame_delays.clear();
+  cumulative_frame_delays.reserve(frame_delays.size());
+
+  int running_total = 0;
+  for (size_t i = 0; i < frame_delays.size(); ++i) {
+    int delay = frame_delays[i] > 0 ? frame_delays[i] : GIF_DEFAULT_FRAME_DELAY_MS;
+    running_total += delay;
+    cumulative_frame_delays.push_back(running_total);
+  }
+  total_duration = running_total;
+}
+
+unsigned int AnimationData::frame_texture_at_time(int elapsed_ms) const {
+  if (frame_textures.empty()) {
+    return 0;
+  }
+
+  if (frame_textures.size() == 1 || total_duration <= 0) {
+    return frame_textures.front();
+  }
+
+  int wrapped_time = elapsed_ms % total_duration;
+  auto it = std::upper_bound(cumulative_frame_delays.begin(), cumulative_frame_delays.end(), wrapped_time);
+  size_t index = static_cast<size_t>(std::distance(cumulative_frame_delays.begin(), it));
+  if (index >= frame_textures.size()) {
+    index = frame_textures.size() - 1;
+  }
+  return frame_textures[index];
 }
 
 bool TextureManager::initialize() {
@@ -118,9 +153,20 @@ void TextureManager::cleanup_all_textures() {
   if (play_icon_ != 0) glDeleteTextures(1, &play_icon_);
   if (pause_icon_ != 0) glDeleteTextures(1, &pause_icon_);
   if (speaker_icon_ != 0) glDeleteTextures(1, &speaker_icon_);
+
+  std::vector<std::shared_ptr<AnimationData>> animations;
+  {
+    std::lock_guard<std::mutex> lock(animation_mutex_);
+    for (auto& [_, weak_anim] : animation_cache_) {
+      if (auto anim = weak_anim.lock()) {
+        animations.push_back(std::move(anim));
+      }
+    }
+    animation_cache_.clear();
+  }
 }
 
-std::unique_ptr<AnimationData> TextureManager::load_animated_gif(const std::string& filepath) {
+std::shared_ptr<AnimationData> TextureManager::load_animated_gif_internal(const std::string& filepath) {
   LOG_TRACE("[GIF] Loading animated GIF: {}", filepath);
 
   // Read file into memory
@@ -172,7 +218,7 @@ std::unique_ptr<AnimationData> TextureManager::load_animated_gif(const std::stri
   LOG_INFO("[GIF] Loaded {} frames ({}x{}) from {}", frame_count, width, height, filepath);
 
   // Create AnimationData
-  auto anim_data = std::make_unique<AnimationData>();
+  auto anim_data = std::make_shared<AnimationData>();
   anim_data->width = width;
   anim_data->height = height;
   anim_data->frame_delays.assign(delays, delays + frame_count);
@@ -211,8 +257,34 @@ std::unique_ptr<AnimationData> TextureManager::load_animated_gif(const std::stri
   // Free the frames data allocated by stbi
   stbi_image_free(frames_data);
 
+  anim_data->rebuild_timing_cache();
+
   LOG_DEBUG("[GIF] Created {} OpenGL textures for animated GIF: {}", frame_count, filepath);
   return anim_data;
+}
+
+std::shared_ptr<AnimationData> TextureManager::get_or_load_animated_gif(const std::string& filepath) {
+  {
+    std::lock_guard<std::mutex> lock(animation_mutex_);
+    auto it = animation_cache_.find(filepath);
+    if (it != animation_cache_.end()) {
+      if (auto existing = it->second.lock()) {
+        return existing;
+      }
+      animation_cache_.erase(it);
+    }
+  }
+
+  std::shared_ptr<AnimationData> animation = load_animated_gif_internal(filepath);
+  if (!animation) {
+    return nullptr;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(animation_mutex_);
+    animation_cache_[filepath] = animation;
+  }
+  return animation;
 }
 
 unsigned int TextureManager::load_texture(const char* filename) {

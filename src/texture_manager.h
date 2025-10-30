@@ -126,13 +126,13 @@ private:
 struct AnimationData {
   std::vector<unsigned int> frame_textures;  // OpenGL texture ID for each frame
   std::vector<int> frame_delays;             // Delay for each frame in milliseconds (stb_image returns ms, not centiseconds)
+  std::vector<int> cumulative_frame_delays; // Prefix sums for quick lookup
   int width;                                 // Frame width
   int height;                                // Frame height
-  mutable int current_frame_index;
-  mutable std::chrono::steady_clock::time_point animation_start_time;
+  int total_duration;                        // Total animation loop duration (ms)
 
-  AnimationData() : width(0), height(0), current_frame_index(0),
-    animation_start_time(std::chrono::steady_clock::now()) {}
+  AnimationData()
+    : width(0), height(0), total_duration(0) {}
 
   ~AnimationData(); // Implementation in .cpp file
 
@@ -141,6 +141,13 @@ struct AnimationData {
   AnimationData& operator=(const AnimationData&) = delete;
   AnimationData(AnimationData&&) = default;
   AnimationData& operator=(AnimationData&&) = default;
+
+  // Recompute the cumulative delay array and loop length after loading frames.
+  void rebuild_timing_cache();
+  bool empty() const { return frame_textures.empty(); }
+  int frame_count() const { return static_cast<int>(frame_textures.size()); }
+  // Return the texture ID that should be displayed at the provided elapsed time.
+  unsigned int frame_texture_at_time(int elapsed_ms) const;
 };
 
 // Texture cache entry structure
@@ -205,7 +212,8 @@ public:
   virtual void generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path);
 
   // Animated GIF loading (on-demand, for preview panel)
-  std::unique_ptr<AnimationData> load_animated_gif(const std::string& filepath);
+  // Return a cached animation if available, otherwise load it and store a weak reference.
+  std::shared_ptr<AnimationData> get_or_load_animated_gif(const std::string& filepath);
 
   // Texture cache cleanup (thread-safe)
   virtual void queue_texture_cleanup(const std::string& file_path);
@@ -235,6 +243,7 @@ private:
   unsigned int default_texture_;
   std::unordered_map<AssetType, unsigned int> type_icons_;
   std::unordered_map<std::string, TextureCacheEntry> texture_cache_;
+  std::unordered_map<std::string, std::weak_ptr<AnimationData>> animation_cache_;
 
   // 3D Preview system
   unsigned int preview_texture_;
@@ -245,6 +254,7 @@ private:
   // Cleanup queue for thread-safe texture cache updates and thumbnail deletion
   std::queue<std::string> cleanup_queue_;
   mutable std::mutex cleanup_mutex_;
+  mutable std::mutex animation_mutex_;
   
 
   // Audio control icons
@@ -255,4 +265,6 @@ private:
 
   // Helper methods
   void cleanup_all_textures();
+  // Internal loader that builds AnimationData for a GIF file path.
+  std::shared_ptr<AnimationData> load_animated_gif_internal(const std::string& filepath);
 };
