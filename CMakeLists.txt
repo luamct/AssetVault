@@ -102,9 +102,9 @@ list(SORT EMBEDDED_ASSET_FILES)
 add_custom_command(
     OUTPUT ${EMBEDDED_ASSETS_CPP}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${EMBEDDED_ASSETS_OUTPUT_DIR}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_embedded_assets.py
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/embed_assets.py
             ${EMBEDDED_ASSETS_CPP} ${CMAKE_CURRENT_SOURCE_DIR} ${EMBEDDED_ASSET_FILES}
-    DEPENDS ${EMBEDDED_ASSET_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_embedded_assets.py
+    DEPENDS ${EMBEDDED_ASSET_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/embed_assets.py
     COMMENT "Generating embedded asset data"
     VERBATIM
 )
