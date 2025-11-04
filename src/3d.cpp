@@ -1,13 +1,14 @@
 #include "3d.h"
 #include "logger.h"
 #include "animation.h"
+#include "builder/embedded_assets.h"
 #include <iostream>
-#include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include <set>
 #include <unordered_map>
 #include <functional>
+#include <optional>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -1572,23 +1573,32 @@ static unsigned int compile_shader(unsigned int type, const std::string& source,
 // Load shader source code from file and compile/link into OpenGL shader program
 // Read, compile, and link the unified shader program used by all preview passes.
 unsigned int load_shader_program(const std::string& vertex_path, const std::string& fragment_path) {
-  // Read vertex shader source
-  std::ifstream v_file(vertex_path);
-  if (!v_file.is_open()) {
-    LOG_ERROR("Failed to open vertex shader file: {}", vertex_path);
-    return 0;
-  }
-  std::string vertex_source((std::istreambuf_iterator<char>(v_file)), std::istreambuf_iterator<char>());
-  v_file.close();
+  auto load_source = [](const std::string& path) -> std::optional<std::string> {
+    if (auto embedded = embedded_assets::get(path)) {
+      LOG_TRACE("[3D] Using embedded shader source: {}", path);
+      const char* begin = reinterpret_cast<const char*>(embedded->data);
+      const char* end = begin + embedded->size;
+      return std::string(begin, end);
+    }
 
-  // Read fragment shader source
-  std::ifstream f_file(fragment_path);
-  if (!f_file.is_open()) {
-    LOG_ERROR("Failed to open fragment shader file: {}", fragment_path);
+    LOG_ERROR("Embedded shader source not found: {}", path);
+    return std::nullopt;
+  };
+
+  auto vertex_result = load_source(vertex_path);
+  if (!vertex_result.has_value()) {
+    LOG_ERROR("Failed to load vertex shader source: {}", vertex_path);
     return 0;
   }
-  std::string fragment_source((std::istreambuf_iterator<char>(f_file)), std::istreambuf_iterator<char>());
-  f_file.close();
+
+  auto fragment_result = load_source(fragment_path);
+  if (!fragment_result.has_value()) {
+    LOG_ERROR("Failed to load fragment shader source: {}", fragment_path);
+    return 0;
+  }
+
+  std::string vertex_source = std::move(*vertex_result);
+  std::string fragment_source = std::move(*fragment_result);
 
   // Compile shaders
   unsigned int vertex_shader = compile_shader(GL_VERTEX_SHADER, vertex_source, vertex_path);

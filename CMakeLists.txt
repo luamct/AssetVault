@@ -77,6 +77,39 @@ find_package(glm CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(Catch2 CONFIG REQUIRED)
 find_package(lunasvg CONFIG REQUIRED)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+set(SHADER_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/unified.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/unified.frag
+)
+
+set(EMBEDDED_ASSETS_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/src/builder)
+set(EMBEDDED_ASSETS_CPP ${EMBEDDED_ASSETS_OUTPUT_DIR}/embedded_assets_generated.cpp)
+
+set(EMBEDDED_FONT_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Roboto-Regular.ttf
+)
+
+file(GLOB EMBEDDED_IMAGE_FILES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/images/*)
+list(SORT EMBEDDED_IMAGE_FILES)
+
+set(EMBEDDED_ASSET_FILES ${SHADER_FILES})
+list(APPEND EMBEDDED_ASSET_FILES ${EMBEDDED_IMAGE_FILES})
+list(APPEND EMBEDDED_ASSET_FILES ${EMBEDDED_FONT_FILES})
+list(SORT EMBEDDED_ASSET_FILES)
+
+add_custom_command(
+    OUTPUT ${EMBEDDED_ASSETS_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${EMBEDDED_ASSETS_OUTPUT_DIR}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_embedded_assets.py
+            ${EMBEDDED_ASSETS_CPP} ${CMAKE_CURRENT_SOURCE_DIR} ${EMBEDDED_ASSET_FILES}
+    DEPENDS ${EMBEDDED_ASSET_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_embedded_assets.py
+    COMMENT "Generating embedded asset data"
+    VERBATIM
+)
+
+set_source_files_properties(${EMBEDDED_ASSETS_CPP} PROPERTIES GENERATED TRUE)
 
 # ============================================================================
 # External Libraries (source-built)
@@ -156,8 +189,10 @@ add_library(AssetInventoryCore STATIC
     src/ui.cpp
     src/audio_manager.cpp
     src/stb_vorbis_impl.cpp
+    src/builder/embedded_assets.cpp
     ${FILE_WATCHER_SOURCES}
     ${DRAG_DROP_SOURCES}
+    ${EMBEDDED_ASSETS_CPP}
 )
 
 target_include_directories(AssetInventoryCore PUBLIC
@@ -342,22 +377,6 @@ endif()
 add_test(NAME IntegrationTests COMMAND IntegrationTest)
 set_tests_properties(IntegrationTests PROPERTIES WORKING_DIRECTORY $<TARGET_FILE_DIR:IntegrationTest>)
 
-# Copy resources for IntegrationTest
-add_custom_command(TARGET IntegrationTest POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying resources for IntegrationTest"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Roboto-Regular.ttf
-    $<TARGET_FILE_DIR:IntegrationTest>/external/fonts/Roboto-Regular.ttf
-
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/images
-    $<TARGET_FILE_DIR:IntegrationTest>/images
-
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders
-    $<TARGET_FILE_DIR:IntegrationTest>/shaders
-)
-
 # Set compiler warnings for our code
 if(MSVC)
     target_compile_options(AssetInventory PRIVATE
@@ -378,33 +397,9 @@ elseif(APPLE)
     )
 endif()
 
-# Shader files - track as dependencies so changes trigger rebuild
-set(SHADER_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/unified.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/unified.frag
-)
-
 # Add shaders as sources so CMake tracks them (won't compile them, just track for changes)
 target_sources(AssetInventory PRIVATE ${SHADER_FILES})
 set_source_files_properties(${SHADER_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
-
-# Resource copying
-add_custom_command(TARGET AssetInventory POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying Roboto font to build directory"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Roboto-Regular.ttf
-    $<IF:$<BOOL:${PLATFORM_MACOS}>,$<TARGET_BUNDLE_DIR:AssetInventory>/Contents/Resources,$<TARGET_FILE_DIR:AssetInventory>>/external/fonts/Roboto-Regular.ttf
-
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying images directory to build directory"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/images
-    $<IF:$<BOOL:${PLATFORM_MACOS}>,$<TARGET_BUNDLE_DIR:AssetInventory>/Contents/Resources,$<TARGET_FILE_DIR:AssetInventory>>/images
-
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying shaders directory to build directory"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders
-    $<IF:$<BOOL:${PLATFORM_MACOS}>,$<TARGET_BUNDLE_DIR:AssetInventory>/Contents/Resources,$<TARGET_FILE_DIR:AssetInventory>>/shaders
-)
 
 # ============================================================================
 # Installation & Packaging

@@ -3,6 +3,7 @@
 #include "config.h"
 #include <iostream>
 #include "logger.h"
+#include "builder/embedded_assets.h"
 
 namespace Theme {
 
@@ -198,21 +199,32 @@ namespace Theme {
 
   // Font loading function
   inline bool load_roboto_font(ImGuiIO& io) {
-    // Load embedded Roboto font from external/fonts directory with Unicode support
     ImFontConfig font_config;
+    font_config.FontDataOwnedByAtlas = false;  // Embedded data is owned by the binary
 
     // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
     const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
 
-    ImFont* font = io.Fonts->AddFontFromFileTTF(Config::FONT_PATH, Config::FONT_SIZE, &font_config, glyph_ranges);
-    if (font) {
-      LOG_INFO("Roboto font loaded successfully with Unicode support!");
-      return true;
+    auto font_asset = embedded_assets::get(Config::FONT_PATH);
+    if (!font_asset.has_value()) {
+      LOG_ERROR("Embedded font asset not found: {}", Config::FONT_PATH);
+      return false;
     }
 
-    // If embedded font fails to load, log error and use default font
-    LOG_ERROR("Failed to load embedded Roboto font. Check that {} exists.", Config::FONT_PATH);
-    return false;
+    ImFont* font = io.Fonts->AddFontFromMemoryTTF(
+        const_cast<unsigned char*>(font_asset->data),
+        static_cast<int>(font_asset->size),
+        Config::FONT_SIZE,
+        &font_config,
+        glyph_ranges);
+
+    if (!font) {
+      LOG_ERROR("Failed to load Roboto font from embedded asset: {}", Config::FONT_PATH);
+      return false;
+    }
+
+    LOG_INFO("Roboto font loaded successfully from embedded asset with Unicode support!");
+    return true;
   }
 
 } // namespace Theme

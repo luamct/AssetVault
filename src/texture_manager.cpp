@@ -6,12 +6,14 @@
 #include <sstream>
 #include <chrono>
 #include <cmath>
+#include <optional>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <assimp/scene.h>
 #include "logger.h"
 #include "utils.h"
+#include "builder/embedded_assets.h"
 
 // Include stb_image for PNG loading
 #ifdef _WIN32
@@ -60,7 +62,7 @@ void TextureData::cleanup() {
 
 bool TextureManager::initialize() {
   // Load default texture
-  default_texture_ = load_texture("images/texture.png");
+  default_texture_ = load_packaged_texture("images/texture.png");
   if (default_texture_ == 0) {
     LOG_ERROR("Failed to load default texture");
     return false;
@@ -70,9 +72,9 @@ bool TextureManager::initialize() {
   load_type_textures();
 
   // Load audio control icons
-  play_icon_ = load_texture("images/play.png");
-  pause_icon_ = load_texture("images/pause.png");
-  speaker_icon_ = load_texture("images/speaker.png");
+  play_icon_ = load_packaged_texture("images/play.png");
+  pause_icon_ = load_packaged_texture("images/pause.png");
+  speaker_icon_ = load_packaged_texture("images/speaker.png");
 
   LOG_INFO("TextureManager initialized successfully");
   return true;
@@ -253,7 +255,9 @@ unsigned int TextureManager::load_texture(const char* filename, int* out_width, 
   // For the load_texture function, we need to force RGBA format (like the original implementation)
   TextureData texture_data;
 
-  int width, height, channels;
+  int width = 0;
+  int height = 0;
+  int channels = 0;
   unsigned char* data = stbi_load(filename, &width, &height, &channels, 4); // Force RGBA
 
   if (!data) {
@@ -276,6 +280,27 @@ unsigned int TextureManager::load_texture(const char* filename, int* out_width, 
   return create_opengl_texture(texture_data, params);
 }
 
+unsigned int TextureManager::load_packaged_texture(const char* asset_path) {
+  const auto embedded = embedded_assets::get(asset_path);
+  if (!embedded.has_value()) {
+    LOG_ERROR("[TextureManager] Embedded texture not found: {}", asset_path);
+    return 0;
+  }
+
+  TextureData texture_data = load_texture_data_from_memory(
+      embedded->data,
+      static_cast<int>(embedded->size),
+      asset_path);
+
+  if (!texture_data.is_valid()) {
+    LOG_ERROR("[TextureManager] Failed to decode embedded texture: {}", asset_path);
+    return 0;
+  }
+
+  TextureParameters params = TextureParameters::ui_texture();
+  return create_opengl_texture(texture_data, params);
+}
+
 
 void TextureManager::load_type_textures() {
   const std::unordered_map<AssetType, const char*> texture_paths = {
@@ -292,7 +317,7 @@ void TextureManager::load_type_textures() {
   };
 
   for (const auto& [type, path] : texture_paths) {
-    unsigned int texture_id = load_texture(path);
+    unsigned int texture_id = load_packaged_texture(path);
     type_icons_[type] = texture_id;
     if (texture_id == 0) {
       LOG_ERROR("Failed to load type texture: {}", path);

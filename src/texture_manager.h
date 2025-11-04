@@ -157,6 +157,7 @@ public:
   // Asset texture management
   unsigned int load_texture(const char* filename);
   unsigned int load_texture(const char* filename, int* out_width, int* out_height);
+  unsigned int load_packaged_texture(const char* asset_path);
   const TextureCacheEntry& get_asset_texture(const Asset& asset);
   const std::string& u8_path(const Asset& asset);
   void load_type_textures();
