@@ -1988,7 +1988,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       if (preview_entry.get_texture_id() != 0) {
         ImVec2 preview_size(avail_width, avail_height);
 
-        if (selected_asset.type == AssetType::_2D) {
+        if (selected_asset.type == AssetType::_2D || selected_asset.type == AssetType::Font) {
           // TextureCacheEntry already contains dimensions
           if (preview_entry.width > 0 && preview_entry.height > 0) {
             preview_size = calculate_thumbnail_size(preview_entry.width, preview_entry.height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
