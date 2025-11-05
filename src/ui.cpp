@@ -1067,6 +1067,9 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
   ImVec2 grid_start_pos = ImGui::GetCursorPos();
   ImVec2 grid_screen_start = ImGui::GetCursorScreenPos();
+  ImDrawList* grid_draw_list = ImGui::GetWindowDrawList();
+  grid_draw_list->ChannelsSplit(2);
+  grid_draw_list->ChannelsSetCurrent(0);
 
   std::vector<ItemLayout> item_layouts;
   std::vector<RowInfo> row_infos;
@@ -1115,6 +1118,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       }
 
       base_sizes[i] = size;
+
     }
 
     float y_cursor = grid_start_pos.y;
@@ -1238,7 +1242,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       ImVec2 container_size(layout.display_size.x, container_height);
       ImVec2 container_pos = ImGui::GetCursorScreenPos();
 
-      ImGui::GetWindowDrawList()->AddRectFilled(
+      grid_draw_list->AddRectFilled(
         container_pos,
         ImVec2(container_pos.x + container_size.x, container_pos.y + container_height),
         Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
@@ -1375,7 +1379,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       bool is_selected = ui_state.selected_asset_ids.count(ui_state.results[i].id) > 0;
 
       if (is_selected) {
-        ImGui::GetWindowDrawList()->AddRect(
+        grid_draw_list->AddRect(
           thumbnail_min,
           thumbnail_max,
           Theme::ToImU32(Theme::ACCENT_BLUE_1),
@@ -1385,38 +1389,44 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         );
       }
 
-      bool can_show_label = is_container_hovered && !ui_state.assets_directory_modal_open;
+      int current_zoom_level = zoom_level_index(ui_state.grid_zoom_level);
+      bool show_label_always = (asset.type != AssetType::_2D && asset.type != AssetType::_3D) &&
+                               current_zoom_level >= zoom_level_index(ZoomLevel::Level2);
+
+      bool can_show_label = (is_container_hovered && !ui_state.assets_directory_modal_open) || show_label_always;
+
       if (can_show_label) {
-        ImVec2 text_region_pos(container_pos.x,
-                               container_pos.y + container_height);
         std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
         ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
+        grid_draw_list->ChannelsSetCurrent(1);
 
-        float horizontal_padding = 8.0f;
-        float label_width = text_size.x + horizontal_padding * 2.0f;
-        float label_x = text_region_pos.x + (container_size.x - label_width) * 0.5f;
+        float label_top = std::max(container_pos.y, container_pos.y + container_height - label_height);
+        float label_bottom = container_pos.y + container_height;
 
-        ImVec2 text_bg_min(label_x, text_region_pos.y);
-        ImVec2 text_bg_max(label_x + label_width,
-                           text_region_pos.y + label_height);
+        float available_label_height = std::max(0.0f, label_bottom - label_top);
+        float text_y = label_top + std::max(0.0f, (available_label_height - text_size.y) * 0.5f);
 
-        ImVec2 text_pos(
-          label_x + horizontal_padding,
-          text_region_pos.y + (label_height - text_size.y) * 0.5f
-        );
+        float text_width = text_size.x;
+        float background_width = std::max(container_size.x, text_width);
+        float background_x = container_pos.x + (container_size.x - background_width) * 0.5f;
+        ImVec2 text_bg_min(background_x, label_top);
+        ImVec2 text_bg_max(background_x + background_width, label_bottom);
+
+        float text_x = background_x + (background_width - text_size.x) * 0.5f;
+        ImVec2 text_pos(text_x, text_y);
 
         ImU32 background_color = Theme::ToImU32(
-          is_selected ? Theme::ACCENT_BLUE_1_ALPHA_80 : Theme::FRAME_LIGHT_BLUE_4
+          is_selected ? Theme::ACCENT_BLUE_1_ALPHA_95 : Theme::FRAME_LIGHT_BLUE_5
         );
         ImU32 border_color = Theme::ToImU32(
           is_selected ? Theme::ACCENT_BLUE_1 : Theme::BORDER_LIGHT_BLUE_1
         );
         ImU32 text_color = is_selected ? Theme::COLOR_WHITE_U32 : Theme::ToImU32(Theme::TEXT_DARK);
 
-        ImDrawList* foreground = ImGui::GetForegroundDrawList();
-        foreground->AddRectFilled(text_bg_min, text_bg_max, background_color, 3.0f);
-        foreground->AddRect(text_bg_min, text_bg_max, border_color, 3.0f, 0, 1.0f);
-        foreground->AddText(text_pos, text_color, truncated_name.c_str());
+        grid_draw_list->AddRectFilled(text_bg_min, text_bg_max, background_color, 3.0f);
+        grid_draw_list->AddRect(text_bg_min, text_bg_max, border_color, 3.0f, 0, 1.0f);
+        grid_draw_list->AddText(text_pos, text_color, truncated_name.c_str());
+        grid_draw_list->ChannelsSetCurrent(0);
       }
 
       ImGui::EndGroup();
@@ -1491,10 +1501,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     );
 
     // Draw filled rectangle with transparency
-    ImGui::GetWindowDrawList()->AddRectFilled(rect_min, rect_max, Theme::SELECTION_FILL_U32, 0.0f);
+    grid_draw_list->ChannelsSetCurrent(1);
+    grid_draw_list->AddRectFilled(rect_min, rect_max, Theme::SELECTION_FILL_U32, 0.0f);
 
     // Draw border
-    ImGui::GetWindowDrawList()->AddRect(rect_min, rect_max, Theme::SELECTION_BORDER_U32, 0.0f, 0, 1.5f);
+    grid_draw_list->AddRect(rect_min, rect_max, Theme::SELECTION_BORDER_U32, 0.0f, 0, 1.5f);
+    grid_draw_list->ChannelsSetCurrent(0);
   }
 
   // Complete selection on mouse release (handles both clicks and drags)
@@ -1539,6 +1551,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   }
 
   // End inner scrolling region (grid)
+  grid_draw_list->ChannelsMerge();
   ImGui::EndChild();
 
   // Reset drag state when mouse button is released
