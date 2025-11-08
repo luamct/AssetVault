@@ -217,6 +217,10 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
                 fs::path thumbnail_path = get_thumbnail_path(file_info.relative_path);
                 Services::texture_manager().generate_svg_thumbnail(file_info.path, thumbnail_path);
             }
+            else if (file_info.type == AssetType::Font) {
+                fs::path thumbnail_path = get_thumbnail_path(file_info.relative_path);
+                Services::texture_manager().generate_font_thumbnail(file_info.path, thumbnail_path);
+            }
 
             // Add asset to database (exceptions prevent reaching this point on failure)
             files_to_insert.push_back(file_info);

@@ -185,6 +185,9 @@ public:
   // SVG thumbnail generation
   virtual void generate_svg_thumbnail(const std::filesystem::path& svg_path, const std::filesystem::path& thumbnail_path);
 
+  // Generates a font thumbnail by rasterizing a sample string via stb_truetype and writing a PNG.
+  virtual void generate_font_thumbnail(const std::filesystem::path& font_path, const std::filesystem::path& thumbnail_path);
+
   // Animated GIF loading (on-demand, for preview panel)
   // Return a cached animation if available, otherwise load it and store a weak reference.
   std::shared_ptr<Animation2D> get_or_load_animated_gif(const std::string& filepath);

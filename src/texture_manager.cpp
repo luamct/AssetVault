@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <optional>
+#include <vector>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -14,6 +15,7 @@
 #include "logger.h"
 #include "utils.h"
 #include "builder/embedded_assets.h"
+#include "fonts.h"
 
 // Include stb_image for PNG loading
 #ifdef _WIN32
@@ -379,6 +381,36 @@ const TextureCacheEntry& TextureManager::get_asset_texture(const Asset& asset) {
     return entry;
   }
 
+  if (asset.type == AssetType::Font) {
+    std::filesystem::path thumbnail_path = get_thumbnail_path(asset.relative_path);
+    if (std::filesystem::exists(thumbnail_path)) {
+      int width = 0;
+      int height = 0;
+      unsigned int texture_id = load_texture(thumbnail_path.u8string().c_str(), &width, &height);
+
+      if (texture_id != 0) {
+        entry.texture_id = texture_id;
+        entry.file_path = thumbnail_path.generic_u8string();
+        entry.width = width > 0 ? width : static_cast<int>(Config::THUMBNAIL_SIZE);
+        entry.height = height > 0 ? height : static_cast<int>(Config::THUMBNAIL_SIZE);
+        entry.loaded = true;
+        LOG_TRACE("[TextureManager] Font asset '{}': thumbnail loaded, texture_id: {}", relative_path, texture_id);
+        return entry;
+      }
+
+      LOG_WARN("[TextureManager] Font asset '{}': failed to load thumbnail at {}", relative_path, thumbnail_path.generic_u8string());
+    }
+    else {
+      LOG_TRACE("[TextureManager] Font asset '{}': thumbnail not found, using default icon", relative_path);
+    }
+
+    auto icon_it = type_icons_.find(asset.type);
+    entry.default_texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
+    entry.width = Config::THUMBNAIL_SIZE;
+    entry.height = Config::THUMBNAIL_SIZE;
+    return entry;
+  }
+
   // For other non-texture assets, return type-specific icon
   if (asset.type != AssetType::_2D) {
     auto icon_it = type_icons_.find(asset.type);
@@ -691,6 +723,15 @@ void TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_pat
   }
 
   LOG_TRACE("[SVG] Generated thumbnail via lunasvg: {} -> {} ({}x{})", svg_path_str, out_path, out_w, out_h);
+}
+
+void TextureManager::generate_font_thumbnail(const std::filesystem::path& font_path, const std::filesystem::path& thumbnail_path) {
+  try {
+    Fonts::generate_font_thumbnail(font_path, thumbnail_path);
+  }
+  catch (const std::exception& e) {
+    throw ThumbnailGenerationException(e.what());
+  }
 }
 
 unsigned int TextureManager::load_texture_for_model(const std::string& filepath) {
