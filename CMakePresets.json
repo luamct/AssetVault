@@ -19,6 +19,23 @@
       }
     },
     {
+      "name": "windows-static",
+      "displayName": "Windows Static Build",
+      "description": "Windows build with static runtime and libraries",
+      "inherits": "windows",
+      "binaryDir": "build/windows-static",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "VCPKG_HOST_TRIPLET": "x64-windows-static",
+        "ASSET_INVENTORY_STATIC_MSVC_RUNTIME": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
       "name": "macos",
       "displayName": "macOS Build",
       "description": "macOS build with app bundle support",
@@ -61,6 +78,11 @@
       "configuration": "Release"
     },
     {
+      "name": "windows-static",
+      "configurePreset": "windows-static",
+      "configuration": "Release"
+    },
+    {
       "name": "macos",
       "configurePreset": "macos"
     },
@@ -73,6 +95,18 @@
     {
       "name": "windows",
       "configurePreset": "windows",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "windows-static",
+      "configurePreset": "windows-static",
       "configuration": "Release",
       "output": {
         "outputOnFailure": true

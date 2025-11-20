@@ -7,6 +7,12 @@ else()
     project(AssetInventory VERSION 1.0.0 LANGUAGES C CXX)
 endif()
 
+option(ASSET_INVENTORY_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
+
+if(MSVC AND ASSET_INVENTORY_STATIC_MSVC_RUNTIME)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
+endif()
+
 # ============================================================================
 # Project Configuration
 # ============================================================================
@@ -135,6 +141,9 @@ set(IMGUI_SOURCES
 add_library(imgui STATIC ${IMGUI_SOURCES})
 target_include_directories(imgui PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_link_libraries(imgui PRIVATE glfw)
+if(PLATFORM_WINDOWS)
+    target_compile_definitions(imgui PRIVATE GLFW_STATIC)
+endif()
 
 # File watcher sources - native implementations only
 if(PLATFORM_WINDOWS)
@@ -168,6 +177,25 @@ if(PLATFORM_WINDOWS)
     )
 elseif(PLATFORM_MACOS)
     add_definitions(-DIMGUI_IMPL_OPENGL_LOADER_GLAD)
+endif()
+
+if(PLATFORM_WINDOWS)
+    set(WINDOWS_SYSTEM_LIBS
+        legacy_stdio_definitions
+        kernel32
+        user32
+        gdi32
+        shell32
+        uuid
+        ole32
+        oleaut32
+        advapi32
+        ws2_32
+        winmm
+        imm32
+        version
+        setupapi
+    )
 endif()
 
 # ============================================================================
@@ -214,6 +242,10 @@ target_link_libraries(AssetInventoryCore PUBLIC
     imgui
     glad
 )
+
+if(PLATFORM_WINDOWS)
+    target_compile_definitions(AssetInventoryCore PUBLIC GLFW_STATIC)
+endif()
 
 # Disable warnings for external library files in core
 if(APPLE OR (UNIX AND NOT APPLE))
@@ -275,11 +307,7 @@ target_link_libraries(AssetInventory PRIVATE
 
 # Platform-specific system libraries
 if(PLATFORM_WINDOWS)
-    target_link_libraries(AssetInventory PRIVATE 
-        legacy_stdio_definitions
-        # Additional Windows runtime libraries for static linking
-        kernel32 user32 shell32 uuid ole32 oleaut32 advapi32 ws2_32
-    )
+    target_link_libraries(AssetInventory PRIVATE ${WINDOWS_SYSTEM_LIBS})
 elseif(PLATFORM_MACOS)
     # macOS frameworks
     find_library(COCOA_LIBRARY Cocoa)
@@ -312,7 +340,7 @@ add_executable(SearchTest
 target_include_directories(SearchTest PRIVATE ${TEST_INCLUDE_DIRS})
 target_link_libraries(SearchTest PRIVATE ${TEST_LIBRARIES})
 if(PLATFORM_WINDOWS)
-    target_link_libraries(SearchTest PRIVATE legacy_stdio_definitions)
+    target_link_libraries(SearchTest PRIVATE ${WINDOWS_SYSTEM_LIBS})
 endif()
 add_test(NAME SearchTests COMMAND SearchTest)
 
@@ -330,6 +358,7 @@ elseif(WIN32)
     add_executable(FileWatcherWindowsTest tests/test_file_watcher_windows.cpp tests/test_helpers.cpp)
     target_include_directories(FileWatcherWindowsTest PRIVATE ${TEST_INCLUDE_DIRS})
     target_link_libraries(FileWatcherWindowsTest PRIVATE ${TEST_LIBRARIES})
+    target_link_libraries(FileWatcherWindowsTest PRIVATE ${WINDOWS_SYSTEM_LIBS})
     add_test(NAME FileWatcherWindowsTests COMMAND FileWatcherWindowsTest)
 endif()
 
@@ -337,18 +366,27 @@ endif()
 add_executable(DbTest tests/test_db.cpp)
 target_include_directories(DbTest PRIVATE ${TEST_INCLUDE_DIRS})
 target_link_libraries(DbTest PRIVATE ${TEST_LIBRARIES})
+if(PLATFORM_WINDOWS)
+    target_link_libraries(DbTest PRIVATE ${WINDOWS_SYSTEM_LIBS})
+endif()
 add_test(NAME DbTests COMMAND DbTest)
 
 # Add EventProcessor test executable
 add_executable(EventProcessorTest tests/test_event_processor.cpp tests/test_helpers.cpp)
 target_include_directories(EventProcessorTest PRIVATE ${TEST_INCLUDE_DIRS})
 target_link_libraries(EventProcessorTest PRIVATE ${TEST_LIBRARIES})
+if(PLATFORM_WINDOWS)
+    target_link_libraries(EventProcessorTest PRIVATE ${WINDOWS_SYSTEM_LIBS})
+endif()
 add_test(NAME EventProcessorTests COMMAND EventProcessorTest)
 
 # Add Utils test executable
 add_executable(UtilsTest tests/test_utils.cpp tests/test_helpers.cpp)
 target_include_directories(UtilsTest PRIVATE ${TEST_INCLUDE_DIRS})
 target_link_libraries(UtilsTest PRIVATE ${TEST_LIBRARIES})
+if(PLATFORM_WINDOWS)
+    target_link_libraries(UtilsTest PRIVATE ${WINDOWS_SYSTEM_LIBS})
+endif()
 add_test(NAME UtilsTests COMMAND UtilsTest)
 
 # Add Integration test executable
@@ -361,10 +399,7 @@ target_compile_definitions(IntegrationTest PRIVATE MAX_FRAMES_TESTS=60)
 
 # Platform-specific libraries for IntegrationTest
 if(PLATFORM_WINDOWS)
-    target_link_libraries(IntegrationTest PRIVATE
-        legacy_stdio_definitions
-        kernel32 user32 shell32 uuid ole32 oleaut32 advapi32 ws2_32
-    )
+    target_link_libraries(IntegrationTest PRIVATE ${WINDOWS_SYSTEM_LIBS})
 elseif(PLATFORM_MACOS)
     target_link_libraries(IntegrationTest PRIVATE
         ${COCOA_LIBRARY}
