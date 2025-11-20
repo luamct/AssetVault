@@ -259,8 +259,15 @@ int run(std::atomic<bool>* shutdown_requested) {
 
     // Create main window that fits perfectly to viewport
     ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(viewport->Size);
+    const float WINDOW_FRAME_MARGIN = 20.0f;
+    ImVec2 window_pos = ImVec2(
+      viewport->Pos.x + WINDOW_FRAME_MARGIN,
+      viewport->Pos.y + WINDOW_FRAME_MARGIN);
+    ImVec2 window_size = ImVec2(
+      std::max(0.0f, viewport->Size.x - WINDOW_FRAME_MARGIN * 2.0f),
+      std::max(0.0f, viewport->Size.y - WINDOW_FRAME_MARGIN * 2.0f));
+    ImGui::SetNextWindowPos(window_pos);
+    ImGui::SetNextWindowSize(window_size);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -275,24 +282,34 @@ int run(std::atomic<bool>* shutdown_requested) {
     float content_width = ImGui::GetContentRegionAvail().x;
     float content_height = ImGui::GetContentRegionAvail().y;
     float WINDOW_MARGIN = 6.0f;
+    float spacing_y = ImGui::GetStyle().ItemSpacing.y;
     float left_width = content_width * 0.75f - WINDOW_MARGIN;
     float right_width = content_width * 0.25f - WINDOW_MARGIN;
-    float top_height = content_height * 0.20f - WINDOW_MARGIN;
-    float bottom_height = content_height * 0.80f - WINDOW_MARGIN;
+    float top_height = Config::SEARCH_PANEL_HEIGHT;
+    float bottom_height = content_height - top_height - spacing_y;
+    if (bottom_height < 0.0f) {
+      bottom_height = 0.0f;
+    }
 
-    // ============ TOP LEFT: Search Box ============
+    float progress_height = 35.0f;
+    float preview_height = content_height - progress_height - spacing_y;
+    if (preview_height < 0.0f) {
+      preview_height = 0.0f;
+    }
+
+    // Left column (search + grid)
+    ImGui::BeginGroup();
     render_search_panel(ui_state, safe_assets, left_width, top_height);
-
-    // ============ TOP RIGHT: Progress and Messages ============
-    ImGui::SameLine();
-    render_progress_panel(ui_state, safe_assets, right_width, top_height);
-
-    // ============ BOTTOM LEFT: Search Results ============
     render_asset_grid(ui_state, texture_manager, safe_assets, left_width, bottom_height);
+    ImGui::EndGroup();
 
-    // ============ BOTTOM RIGHT: Preview Panel ============
     ImGui::SameLine();
-    render_preview_panel(ui_state, texture_manager, current_model, camera, right_width, bottom_height);
+
+    // Right column (preview + progress)
+    ImGui::BeginGroup();
+    render_preview_panel(ui_state, texture_manager, current_model, camera, right_width, preview_height);
+    render_progress_panel(ui_state, safe_assets, right_width, progress_height);
+    ImGui::EndGroup();
 
     ImGui::End();
 

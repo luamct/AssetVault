@@ -497,14 +497,26 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
     mouse_pos.y >= button_min.y && mouse_pos.y <= button_max.y);
 
   // Choose colors based on state
-  ImVec4 bg_color = toggle_state ? Theme::TOGGLE_ON_BG :
-    (is_hovered ? Theme::TOGGLE_HOVER_BG : Theme::TOGGLE_OFF_BG);
+  ImVec4 bg_color;
+  if (toggle_state) {
+    bg_color = Theme::TOGGLE_ON_BG;
+  }
+  else if (is_hovered) {
+    bg_color = Theme::TOGGLE_HOVER_BG;
+  }
+  else {
+    bg_color = Theme::BACKGROUND_WHITE;
+  }
+
   ImVec4 border_color = toggle_state ? Theme::TOGGLE_ON_BORDER : Theme::TOGGLE_OFF_BORDER;
   ImVec4 text_color = toggle_state ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
 
-  // Draw button background with border
-  ImGui::GetWindowDrawList()->AddRectFilled(button_min, button_max, Theme::ToImU32(bg_color), 8.0f);
-  ImGui::GetWindowDrawList()->AddRect(button_min, button_max, Theme::ToImU32(border_color), 8.0f, 0, 2.0f);
+  float button_rounding = button_height * 0.5f;
+  float border_thickness = 1.0f;
+
+  // Draw button background (capsule style)
+  ImGui::GetWindowDrawList()->AddRectFilled(button_min, button_max, Theme::ToImU32(bg_color), button_rounding);
+  ImGui::GetWindowDrawList()->AddRect(button_min, button_max, Theme::ToImU32(border_color), button_rounding, 0, border_thickness);
 
   // Draw text centered in button
   ImVec2 text_size = ImGui::CalcTextSize(label);
@@ -533,22 +545,35 @@ void render_search_panel(
   UIState& ui_state,
   const SafeAssets& safe_assets,
   float panel_width, float panel_height) {
-  ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), true);
+  ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), false);
 
-  // Get the actual usable content area (accounts for child window borders/padding)
-  ImVec2 content_region = ImGui::GetContentRegionAvail();
+  const float top_padding = 14.0f;
+  const float bottom_padding = 24.0f;
+  const float toggle_gap = 20.0f;
 
-  // Calculate centered position within content region - move search box up
+  ImVec2 child_origin = ImGui::GetCursorScreenPos();
+  ImVec2 initial_region = ImGui::GetContentRegionAvail();
+
+  // Show FPS in the top-left corner for quick reference
+  ImGuiIO& search_io = ImGui::GetIO();
+  char search_fps_buf[32];
+  snprintf(search_fps_buf, sizeof(search_fps_buf), "%.1f FPS", search_io.Framerate);
+  ImGui::TextColored(Theme::TEXT_SECONDARY, "%s", search_fps_buf);
+
+  ImVec2 content_region = initial_region;
+  ImVec2 content_start = child_origin;
+
   float content_search_x = (content_region.x - Config::SEARCH_BOX_WIDTH) * 0.5f;
-  float content_search_y = (content_region.y - Config::SEARCH_BOX_HEIGHT) * 0.3f;
-
-  // Get screen position for drawing (content area start + our offset)
-  ImVec2 content_start = ImGui::GetCursorScreenPos();
+  content_search_x = std::max(0.0f, content_search_x);
+  float content_search_y = top_padding;
 
   // Position and draw the fancy search text input
   ImGui::SetCursorPos(ImVec2(content_search_x, content_search_y));
   bool enter_pressed = fancy_text_input("##Search", ui_state.buffer, sizeof(ui_state.buffer),
     Config::SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f);
+
+  ImVec2 search_rect_max = ImGui::GetItemRectMax();
+  float search_bottom_y = search_rect_max.y - content_start.y;
 
   // Handle search input
   std::string current_input(ui_state.buffer);
@@ -570,9 +595,11 @@ void render_search_panel(
   // ============ TYPE FILTER TOGGLE BUTTONS ============
 
   // Position toggle buttons below the search box
-  float toggles_y = content_search_y + Config::SEARCH_BOX_HEIGHT + 30.0f; // 30px gap below search box
+  float toggles_y = search_bottom_y + toggle_gap;
   float toggle_button_height = 35.0f;
   float toggle_spacing = 20.0f;
+  float toggles_bottom_limit = panel_height - bottom_padding - toggle_button_height;
+  toggles_y = std::min(toggles_y, toggles_bottom_limit);
 
   // Individual button widths - tweak these as needed
   float button_width_2d = 48.0f;      // "2D" is short
@@ -592,6 +619,7 @@ void render_search_panel(
   }
 
   float toggles_start_x = content_search_x + (Config::SEARCH_BOX_WIDTH - total_toggle_width) * 0.5f;
+  toggles_start_x = std::max(0.0f, toggles_start_x);
 
   // Draw all toggle buttons using the dedicated function
   bool any_toggle_changed = false;
@@ -858,28 +886,10 @@ namespace {
 
 void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
   float panel_width, float panel_height) {
-  ImGui::BeginChild("ProgressRegion", ImVec2(panel_width, panel_height), true);
+  ImGui::BeginChild("ProgressRegion", ImVec2(panel_width, panel_height), false);
 
   // Unified progress bar for all asset processing
   bool show_progress = Services::event_processor().has_pending_work();
-
-  // Header row: left = status (only when processing), right = FPS
-  {
-    // Left: status label only when processing
-    if (show_progress) {
-      ImGui::TextColored(Theme::TEXT_HEADER, "Processing Assets");
-    }
-
-    // Right: FPS
-    ImGuiIO& io = ImGui::GetIO();
-    char fps_buf[32];
-    snprintf(fps_buf, sizeof(fps_buf), "%.1f FPS", io.Framerate);
-    ImVec2 fps_size = ImGui::CalcTextSize(fps_buf);
-    float right_x = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - fps_size.x;
-    ImGui::SameLine();
-    ImGui::SetCursorPosX(right_x);
-    ImGui::Text("%s", fps_buf);
-  }
 
   if (show_progress) {
     // Progress bar data from event processor
@@ -888,18 +898,20 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
     size_t total = Services::event_processor().get_total_queued();
 
     // Vertically center the progress bar within the panel child
-    float bar_height = ImGui::GetFrameHeight();
+    float bar_height = 35.0f;
     float target_y = (panel_height - bar_height) * 0.5f;
     if (target_y > ImGui::GetCursorPosY()) {
       ImGui::SetCursorPosY(target_y);
     }
 
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 18.0f);
     // Draw progress bar without text overlay
-    ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "");
+    ImGui::ProgressBar(progress, ImVec2(-1.0f, bar_height), "");
+    ImGui::PopStyleVar();
 
     // Overlay centered text on the progress bar
     char progress_text[64];
-    snprintf(progress_text, sizeof(progress_text), "%zu/%zu", processed, total);
+    snprintf(progress_text, sizeof(progress_text), "Processing %zu out of %zu", processed, total);
 
     ImVec2 text_size = ImGui::CalcTextSize(progress_text);
     ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
@@ -913,15 +925,17 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
     ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(Theme::TEXT_DARK), progress_text);
   }
 
-  // Bottom-left assets path button
-  float button_height = ImGui::GetFrameHeight();
-  float bottom_margin = 12.0f;
-  float left_margin = 12.0f;
-  ImVec2 button_pos(left_margin, panel_height - button_height - bottom_margin);
-  button_pos.y = std::max(button_pos.y, ImGui::GetCursorPosY());
-  ImGui::SetCursorPos(button_pos);
-  if (ImGui::Button("Assets Path", ImVec2(150.0f, 0.0f))) {
-    g_request_assets_path_popup = true;
+  const bool SHOW_ASSETS_PATH_BUTTON = false;
+  if (SHOW_ASSETS_PATH_BUTTON) {
+    float button_height = ImGui::GetFrameHeight();
+    float bottom_margin = 12.0f;
+    float left_margin = 12.0f;
+    ImVec2 button_pos(left_margin, panel_height - button_height - bottom_margin);
+    button_pos.y = std::max(button_pos.y, ImGui::GetCursorPosY());
+    ImGui::SetCursorPos(button_pos);
+    if (ImGui::Button("Assets Path", ImVec2(150.0f, 0.0f))) {
+      g_request_assets_path_popup = true;
+    }
   }
 
   ImGui::EndChild();
@@ -961,7 +975,7 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
 
 void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   SafeAssets& safe_assets, float panel_width, float panel_height) {
-  ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), true);
+  ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), false);
 
   ensure_grid_zoom_level(ui_state);
   float zoom_multiplier = 1.0f;
@@ -1254,10 +1268,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       }
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
 
+      ImGui::PushStyleColor(ImGuiCol_Border, Theme::COLOR_TRANSPARENT);
       ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
       ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_TRANSPARENT);
       ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+      ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 
       ImGui::SetCursorScreenPos(image_pos);
       unsigned int display_texture_id = texture_entry.get_texture_id();
@@ -1330,10 +1346,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         }
       }
 
-      ImGui::PopStyleVar();  // Restore frame padding
+      ImGui::PopStyleVar(2);  // Restore frame padding/border size
 
-      ImVec2 thumbnail_min = ImGui::GetItemRectMin();
-      ImVec2 thumbnail_max = ImGui::GetItemRectMax();
       ImVec2 container_max(container_pos.x + container_size.x, container_pos.y + container_height);
       bool is_container_hovered = ImGui::IsMouseHoveringRect(container_pos, container_max);
 
@@ -1374,20 +1388,9 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       render_asset_context_menu(ui_state.results[i], "AssetContextMenu##" + std::to_string(i));
 
-      ImGui::PopStyleColor(3);
+      ImGui::PopStyleColor(4);
 
       bool is_selected = ui_state.selected_asset_ids.count(ui_state.results[i].id) > 0;
-
-      if (is_selected) {
-        grid_draw_list->AddRect(
-          thumbnail_min,
-          thumbnail_max,
-          Theme::ToImU32(Theme::ACCENT_BLUE_1),
-          4.0f,
-          0,
-          3.0f
-        );
-      }
 
       int current_zoom_level = zoom_level_index(ui_state.grid_zoom_level);
       bool show_label_always = (asset.type != AssetType::_2D && asset.type != AssetType::_3D) &&

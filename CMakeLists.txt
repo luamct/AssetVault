@@ -302,7 +302,6 @@ target_include_directories(AssetInventory PRIVATE
 target_link_libraries(AssetInventory PRIVATE
     AssetInventoryCore
     OpenGL::GL
-    glfw
 )
 
 # Platform-specific system libraries
