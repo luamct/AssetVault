@@ -105,7 +105,8 @@ Thumbs.db
 vcpkg_installed/
 
 # Asset files (user content)
-/assets/
+/assets
+/prototype/assets
 /db
 jgl_demos/
 /thumbnails
