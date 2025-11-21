@@ -292,10 +292,9 @@ int run(std::atomic<bool>* shutdown_requested) {
     }
 
     float progress_height = 35.0f;
-    float preview_height = content_height - progress_height - spacing_y;
-    if (preview_height < 0.0f) {
-      preview_height = 0.0f;
-    }
+    float preview_folder_available = std::max(0.0f, content_height - progress_height);
+    float preview_height = preview_folder_available * 0.7f;
+    float folder_tree_height = preview_folder_available - preview_height;
 
     // Left column (search + grid)
     ImGui::BeginGroup();
@@ -308,6 +307,7 @@ int run(std::atomic<bool>* shutdown_requested) {
     // Right column (preview + progress)
     ImGui::BeginGroup();
     render_preview_panel(ui_state, texture_manager, current_model, camera, right_width, preview_height);
+    render_folder_tree_panel(ui_state, right_width, folder_tree_height);
     render_progress_panel(ui_state, safe_assets, right_width, progress_height);
     ImGui::EndGroup();
 

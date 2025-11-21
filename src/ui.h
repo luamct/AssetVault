@@ -80,6 +80,9 @@ struct UIState {
   Animation2DPlaybackState preview_animation_state;
   std::unordered_map<std::string, Animation2DPlaybackState> grid_animation_states;
 
+  // Folder tree checkbox states
+  std::unordered_map<std::string, bool> folder_checkbox_states;
+
   // Audio playback settings
   bool auto_play_audio = true;
 
@@ -142,3 +145,5 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
     Model& current_model, Camera3D& camera, float panel_width, float panel_height);
+
+void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_height);
