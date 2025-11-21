@@ -13,6 +13,7 @@
 #include <optional>
 #include <unordered_set>
 #include <unordered_map>
+#include <filesystem>
 
 // Forward declarations
 class TextureManager;
@@ -82,6 +83,7 @@ struct UIState {
 
   // Folder tree checkbox states
   std::unordered_map<std::string, bool> folder_checkbox_states;
+  std::unordered_map<std::string, std::vector<std::string>> folder_children_cache;
 
   // Audio playback settings
   bool auto_play_audio = true;
@@ -147,3 +149,10 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
     Model& current_model, Camera3D& camera, float panel_width, float panel_height);
 
 void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_height);
+
+namespace folder_tree_utils {
+  const std::vector<std::string>& ensure_children_loaded(UIState& ui_state,
+    const std::filesystem::path& dir_path);
+  bool collect_folder_filters(UIState& ui_state, const std::filesystem::path& dir_path,
+    const std::filesystem::path& root_path, std::vector<std::string>& filters);
+}

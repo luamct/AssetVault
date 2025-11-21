@@ -126,6 +126,8 @@ void clear_ui_state(UIState& ui_state) {
   ui_state.current_animation_path.clear();
   ui_state.preview_animation_state.reset();
   ui_state.grid_animation_states.clear();
+  ui_state.folder_checkbox_states.clear();
+  ui_state.folder_children_cache.clear();
 }
 
 // TODO: move to utils.cpp
@@ -601,16 +603,10 @@ void render_search_panel(
   float button_width_audio = 84.0f;   // "Audio" is longer
   float button_width_shader = 96.0f;  // "Shader" is longer
   float button_width_font = 72.0f;    // "Font" is medium
-  float button_width_path = 72.0f;    // "Path" is medium
 
   // Calculate total width including path button if visible
   float total_toggle_width = button_width_2d + button_width_3d + button_width_audio +
     button_width_shader + button_width_font + (toggle_spacing * 4);
-
-  // Add path button width if there's an active path filter
-  if (!ui_state.path_filters.empty()) {
-    total_toggle_width += button_width_path + toggle_spacing;
-  }
 
   float toggles_start_x = (content_width - total_toggle_width) * 0.5f;
   toggles_start_x = std::max(0.0f, toggles_start_x);
@@ -644,30 +640,6 @@ void render_search_panel(
     button_width_font, toggle_button_height);
   current_x += button_width_font + toggle_spacing;
 
-  // Draw Path filter button if there's a path filter set
-  if (!ui_state.path_filters.empty()) {
-    // Draw the Path button
-    bool path_clicked = draw_type_toggle_button("Path", ui_state.path_filter_active,
-      content_origin.x + current_x, content_origin.y + toggles_y,
-      button_width_path, toggle_button_height);
-
-    // Add tooltip showing the full path on hover
-    ImVec2 button_min(content_origin.x + current_x, content_origin.y + toggles_y);
-    ImVec2 button_max(button_min.x + button_width_path, button_min.y + toggle_button_height);
-    ImVec2 mouse_pos = ImGui::GetMousePos();
-    bool is_hovered = (mouse_pos.x >= button_min.x && mouse_pos.x <= button_max.x &&
-      mouse_pos.y >= button_min.y && mouse_pos.y <= button_max.y);
-
-    if (is_hovered && !ui_state.path_filters.empty()) {
-      ImGui::SetTooltip("%s", ui_state.path_filters[0].c_str());
-    }
-
-    // Handle path filter toggle
-    if (path_clicked) {
-      any_toggle_changed = true;
-    }
-  }
-
   // If any toggle changed, trigger immediate search
   if (any_toggle_changed) {
     filter_assets(ui_state, safe_assets);
@@ -680,8 +652,6 @@ void render_search_panel(
 
 namespace {
   bool g_request_assets_path_popup = false;
-  void render_folder_tree_node(UIState& ui_state, const std::filesystem::path& dir_path);
-  void set_folder_subtree_checked(UIState& ui_state, const std::filesystem::path& dir_path, bool checked);
 
   bool render_assets_directory_modal(UIState& ui_state) {
     bool directory_changed = false;
@@ -881,91 +851,7 @@ namespace {
   }
 }
 
-namespace {
-  std::string get_display_name_for_path(const std::filesystem::path& path) {
-    std::string name = path.filename().u8string();
-    if (name.empty()) {
-      name = path.u8string();
-    }
-    return name;
-  }
-
-  void set_folder_subtree_checked(UIState& ui_state, const std::filesystem::path& dir_path, bool checked) {
-    namespace fs = std::filesystem;
-    std::string path_id = dir_path.u8string();
-    ui_state.folder_checkbox_states[path_id] = checked;
-    std::error_code ec;
-    for (fs::directory_iterator it(dir_path, ec); it != fs::directory_iterator(); it.increment(ec)) {
-      if (ec) {
-        break;
-      }
-      if (it->is_directory(ec)) {
-        set_folder_subtree_checked(ui_state, it->path(), checked);
-      }
-    }
-  }
-
-  void render_folder_tree_node(UIState& ui_state, const std::filesystem::path& dir_path) {
-    namespace fs = std::filesystem;
-    std::error_code iter_error;
-    if (!fs::exists(dir_path, iter_error) || !fs::is_directory(dir_path, iter_error)) {
-      return;
-    }
-
-    std::vector<fs::path> subdirectories;
-    for (fs::directory_iterator it(dir_path, iter_error); it != fs::directory_iterator(); it.increment(iter_error)) {
-      if (iter_error) {
-        break;
-      }
-      if (it->is_directory(iter_error)) {
-        subdirectories.push_back(it->path());
-      }
-    }
-
-    std::sort(subdirectories.begin(), subdirectories.end(), [](const fs::path& a, const fs::path& b) {
-      return a.filename().u8string() < b.filename().u8string();
-    });
-
-    std::string display_name = get_display_name_for_path(dir_path);
-    std::string path_id = dir_path.u8string();
-    std::string checkbox_id = "##FolderCheck" + path_id;
-    bool stored_checked = ui_state.folder_checkbox_states[path_id];
-
-    ImGui::PushID(checkbox_id.c_str());
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::FRAME_LIGHT_BLUE_5);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::FRAME_LIGHT_BLUE_6);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::ACCENT_BLUE_1_ALPHA_80);
-    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::ACCENT_BLUE_1));
-    bool checkbox_value = stored_checked;
-    if (ImGui::Checkbox("", &checkbox_value)) {
-      set_folder_subtree_checked(ui_state, dir_path, checkbox_value);
-      stored_checked = checkbox_value;
-    }
-    ImGui::PopStyleColor(4);
-    ImGui::PopStyleVar();
-    ImGui::PopID();
-    ImGui::SameLine(0.0f, 4.0f);
-
-    bool has_children = !subdirectories.empty();
-    std::string tree_label = display_name + "##FolderNode" + path_id;
-    ImGuiTreeNodeFlags node_flags = 0;
-    if (!has_children) {
-      node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    }
-
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
-    bool open = ImGui::TreeNodeEx(tree_label.c_str(), node_flags);
-    ImGui::PopStyleVar();
-
-    if (has_children && open) {
-      for (const auto& child : subdirectories) {
-        render_folder_tree_node(ui_state, child);
-      }
-      ImGui::TreePop();
-    }
-  }
-}
+// tree panel helpers moved to src/ui/tree_panel.cpp
 
 void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
   float panel_width, float panel_height) {
@@ -2132,59 +2018,4 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   ImGui::EndChild();
 }
 
-void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_height) {
-  ImGuiWindowFlags folder_flags = ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::FRAME_LIGHT_BLUE_3);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::FRAME_LIGHT_BLUE_4);
-  ImGui::BeginChild("FolderTreeRegion", ImVec2(panel_width, panel_height), true, folder_flags);
-
-  ImGuiIO& tree_io = ImGui::GetIO();
-  if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup) && tree_io.MouseWheel != 0.0f) {
-    float current_scroll = ImGui::GetScrollY();
-    ImGui::SetScrollY(current_scroll - tree_io.MouseWheel * 10.0f);
-  }
-
-  if (ui_state.assets_directory.empty()) {
-    ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "Set an assets directory to view folders.");
-    ImGui::EndChild();
-    ImGui::PopStyleColor(2);
-    return;
-  }
-
-  namespace fs = std::filesystem;
-  fs::path root_path(ui_state.assets_directory);
-  std::error_code ec;
-  if (!fs::exists(root_path, ec) || !fs::is_directory(root_path, ec)) {
-    ImGui::TextColored(Theme::TEXT_WARNING, "Assets path unavailable: %s", ui_state.assets_directory.c_str());
-    ImGui::EndChild();
-    ImGui::PopStyleColor(2);
-    return;
-  }
-
-  ImGui::TextColored(Theme::TEXT_LABEL, "%s", ui_state.assets_directory.c_str());
-  ImGui::Separator();
-
-  std::vector<fs::path> root_subdirectories;
-  std::error_code iter_error;
-  for (fs::directory_iterator it(root_path, iter_error); it != fs::directory_iterator(); it.increment(iter_error)) {
-    if (iter_error) {
-      break;
-    }
-    if (it->is_directory(iter_error)) {
-      root_subdirectories.push_back(it->path());
-    }
-  }
-
-  std::sort(root_subdirectories.begin(), root_subdirectories.end(), [](const fs::path& a, const fs::path& b) {
-    return a.filename().u8string() < b.filename().u8string();
-  });
-
-  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
-  for (const auto& child : root_subdirectories) {
-    render_folder_tree_node(ui_state, child);
-  }
-  ImGui::PopStyleVar();
-
-  ImGui::EndChild();
-  ImGui::PopStyleColor(2);
-}
+// tree panel implementation moved to src/ui/tree_panel.cpp

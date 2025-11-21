@@ -5,6 +5,7 @@
 #include "utils.h"
 #include "asset.h" 
 #include "test_helpers.h"
+#include "ui.h"
 
 namespace fs = std::filesystem;
 

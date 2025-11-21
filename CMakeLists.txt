@@ -216,6 +216,7 @@ add_library(AssetInventoryCore STATIC
     src/fonts.cpp
     src/utils.cpp
     src/ui.cpp
+    src/ui/tree_panel.cpp
     src/audio_manager.cpp
     src/stb_vorbis_impl.cpp
     src/builder/embedded_assets.cpp
@@ -387,6 +388,15 @@ if(PLATFORM_WINDOWS)
     target_link_libraries(UtilsTest PRIVATE ${WINDOWS_SYSTEM_LIBS})
 endif()
 add_test(NAME UtilsTests COMMAND UtilsTest)
+
+# Add UI test executable
+add_executable(UITest tests/test_ui.cpp tests/test_helpers.cpp)
+target_include_directories(UITest PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(UITest PRIVATE ${TEST_LIBRARIES})
+if(PLATFORM_WINDOWS)
+    target_link_libraries(UITest PRIVATE ${WINDOWS_SYSTEM_LIBS})
+endif()
+add_test(NAME UITests COMMAND UITest)
 
 # Add Integration test executable
 add_executable(IntegrationTest tests/test_integration.cpp tests/test_helpers.cpp)
