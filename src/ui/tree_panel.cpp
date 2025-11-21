@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -33,36 +34,6 @@ namespace {
     return it->second;
   }
 
-  const std::vector<std::string>& ensure_children_loaded_impl(UIState& ui_state, const fs::path& dir_path) {
-    std::string parent_id = path_key(dir_path);
-    auto cache_it = ui_state.folder_children_cache.find(parent_id);
-    if (cache_it != ui_state.folder_children_cache.end()) {
-      return cache_it->second;
-    }
-
-    std::vector<std::string> children;
-    std::error_code ec;
-    for (fs::directory_iterator it(dir_path, ec); it != fs::directory_iterator(); it.increment(ec)) {
-      if (ec) {
-        break;
-      }
-      if (it->is_directory(ec)) {
-        children.push_back(it->path().u8string());
-      }
-    }
-
-    std::sort(children.begin(), children.end(), [](const std::string& a, const std::string& b) {
-      return fs::path(a).filename().u8string() < fs::path(b).filename().u8string();
-    });
-
-    auto [inserted_it, inserted] = ui_state.folder_children_cache.emplace(parent_id, std::move(children));
-    bool parent_checked = get_checkbox_state(ui_state, parent_id);
-    for (const std::string& child_id : inserted_it->second) {
-      ui_state.folder_checkbox_states.emplace(child_id, parent_checked);
-    }
-    return inserted_it->second;
-  }
-
   void set_folder_subtree_checked(UIState& ui_state, const fs::path& dir_path, bool checked) {
     std::string path_id = path_key(dir_path);
     ui_state.folder_checkbox_states[path_id] = checked;
@@ -75,51 +46,6 @@ namespace {
     for (const std::string& child_id : cache_it->second) {
       set_folder_subtree_checked(ui_state, fs::path(child_id), checked);
     }
-  }
-
-  bool collect_folder_filters_impl(UIState& ui_state, const fs::path& dir_path,
-    const fs::path& root_path, std::vector<std::string>& filters) {
-    std::string path_id = path_key(dir_path);
-    bool checked = get_checkbox_state(ui_state, path_id);
-
-    auto cache_it = ui_state.folder_children_cache.find(path_id);
-    bool has_cached_children = cache_it != ui_state.folder_children_cache.end();
-    bool has_children = has_cached_children && !cache_it->second.empty();
-
-    if (!has_cached_children) {
-      // If the folder was never expanded we treat it as a leaf from the cache perspective.
-      has_children = false;
-    }
-
-    if (!has_children) {
-      if (checked) {
-        std::string relative = dir_path.lexically_relative(root_path).generic_u8string();
-        if (!relative.empty()) {
-          filters.push_back(relative);
-        }
-      }
-      return checked;
-    }
-
-    std::vector<std::string> child_filters;
-    bool all_children_selected = true;
-    for (const std::string& child_id : cache_it->second) {
-      bool child_full = collect_folder_filters_impl(ui_state, fs::path(child_id), root_path, child_filters);
-      if (!child_full) {
-        all_children_selected = false;
-      }
-    }
-
-    if (checked && all_children_selected) {
-      std::string relative = dir_path.lexically_relative(root_path).generic_u8string();
-      if (!relative.empty()) {
-        filters.push_back(relative);
-      }
-      return true;
-    }
-
-    filters.insert(filters.end(), child_filters.begin(), child_filters.end());
-    return false;
   }
 
   void render_folder_tree_node(UIState& ui_state, const fs::path& dir_path) {
@@ -229,22 +155,8 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   }
   ImGui::PopStyleVar();
 
-  std::vector<std::string> new_folder_filters;
-  bool all_selected = true;
-  for (const auto& child : root_subdirectories) {
-    bool full = collect_folder_filters_impl(ui_state, fs::path(child), root_path, new_folder_filters);
-    if (!full) {
-      all_selected = false;
-    }
-  }
-
-  if (!all_selected) {
-    std::sort(new_folder_filters.begin(), new_folder_filters.end());
-    new_folder_filters.erase(std::unique(new_folder_filters.begin(), new_folder_filters.end()), new_folder_filters.end());
-  }
-  else {
-    new_folder_filters.clear();
-  }
+  std::vector<std::string> new_folder_filters = folder_tree_utils::collect_active_filters(
+    ui_state, root_path, root_subdirectories);
 
   bool filters_changed = (new_folder_filters != ui_state.path_filters) ||
     (ui_state.path_filter_active != !new_folder_filters.empty());
@@ -262,11 +174,98 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
 namespace folder_tree_utils {
   const std::vector<std::string>& ensure_children_loaded(UIState& ui_state,
     const std::filesystem::path& dir_path) {
-    return ::ensure_children_loaded_impl(ui_state, dir_path);
+    std::string parent_id = path_key(dir_path);
+    auto cache_it = ui_state.folder_children_cache.find(parent_id);
+    if (cache_it != ui_state.folder_children_cache.end()) {
+      return cache_it->second;
+    }
+
+    std::vector<std::string> children;
+    std::error_code ec;
+    for (fs::directory_iterator it(dir_path, ec); it != fs::directory_iterator(); it.increment(ec)) {
+      if (ec) {
+        break;
+      }
+      if (it->is_directory(ec)) {
+        children.push_back(it->path().u8string());
+      }
+    }
+
+    std::sort(children.begin(), children.end(), [](const std::string& a, const std::string& b) {
+      return fs::path(a).filename().u8string() < fs::path(b).filename().u8string();
+    });
+
+    auto [inserted_it, inserted] = ui_state.folder_children_cache.emplace(parent_id, std::move(children));
+    bool parent_checked = get_checkbox_state(ui_state, parent_id);
+    for (const std::string& child_id : inserted_it->second) {
+      ui_state.folder_checkbox_states.emplace(child_id, parent_checked);
+    }
+    return inserted_it->second;
   }
 
   bool collect_folder_filters(UIState& ui_state, const std::filesystem::path& dir_path,
     const std::filesystem::path& root_path, std::vector<std::string>& filters) {
-    return ::collect_folder_filters_impl(ui_state, dir_path, root_path, filters);
+    std::function<bool(const fs::path&, std::vector<std::string>&)> traverse;
+    traverse = [&](const fs::path& current, std::vector<std::string>& out) -> bool {
+      std::string path_id = path_key(current);
+      bool checked = get_checkbox_state(ui_state, path_id);
+
+      auto cache_it = ui_state.folder_children_cache.find(path_id);
+      bool has_children = cache_it != ui_state.folder_children_cache.end() && !cache_it->second.empty();
+
+      if (!has_children) {
+        if (checked) {
+          std::string relative = current.lexically_relative(root_path).generic_u8string();
+          if (!relative.empty()) {
+            out.push_back(relative);
+          }
+        }
+        return checked;
+      }
+
+      std::vector<std::string> child_filters;
+      bool all_children_selected = true;
+      for (const std::string& child_id : cache_it->second) {
+        bool child_full = traverse(fs::path(child_id), child_filters);
+        if (!child_full) {
+          all_children_selected = false;
+        }
+      }
+
+      if (checked && all_children_selected) {
+        std::string relative = current.lexically_relative(root_path).generic_u8string();
+        if (!relative.empty()) {
+          out.push_back(relative);
+        }
+        return true;
+      }
+
+      out.insert(out.end(), child_filters.begin(), child_filters.end());
+      return false;
+    };
+
+    return traverse(dir_path, filters);
+  }
+
+  std::vector<std::string> collect_active_filters(UIState& ui_state,
+    const std::filesystem::path& root_path, const std::vector<std::string>& root_children) {
+    std::vector<std::string> filters;
+    bool all_selected = true;
+    for (const auto& child : root_children) {
+      bool full = collect_folder_filters(ui_state, fs::path(child), root_path, filters);
+      if (!full) {
+        all_selected = false;
+      }
+    }
+
+    if (!all_selected) {
+      std::sort(filters.begin(), filters.end());
+      filters.erase(std::unique(filters.begin(), filters.end()), filters.end());
+    }
+    else {
+      filters.clear();
+    }
+
+    return filters;
   }
 }

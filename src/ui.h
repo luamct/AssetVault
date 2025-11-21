@@ -155,4 +155,6 @@ namespace folder_tree_utils {
     const std::filesystem::path& dir_path);
   bool collect_folder_filters(UIState& ui_state, const std::filesystem::path& dir_path,
     const std::filesystem::path& root_path, std::vector<std::string>& filters);
+  std::vector<std::string> collect_active_filters(UIState& ui_state,
+    const std::filesystem::path& root_path, const std::vector<std::string>& root_children);
 }

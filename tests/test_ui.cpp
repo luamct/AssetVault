@@ -26,23 +26,9 @@ void set_children(UIState& state, const fs::path& parent, const std::vector<fs::
 }
 
 std::vector<std::string> gather_filters(UIState& state, const fs::path& root) {
-  std::vector<std::string> filters;
-  bool all_selected = true;
   const auto cache_it = state.folder_children_cache.find(root.u8string());
   REQUIRE(cache_it != state.folder_children_cache.end());
-  for (const auto& child : cache_it->second) {
-    bool full = folder_tree_utils::collect_folder_filters(state, fs::path(child), root, filters);
-    if (!full) {
-      all_selected = false;
-    }
-  }
-  if (all_selected) {
-    filters.clear();
-  } else {
-    std::sort(filters.begin(), filters.end());
-    filters.erase(std::unique(filters.begin(), filters.end()), filters.end());
-  }
-  return filters;
+  return folder_tree_utils::collect_active_filters(state, root, cache_it->second);
 }
 
 struct StubTree {
