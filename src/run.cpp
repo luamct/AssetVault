@@ -57,7 +57,7 @@ static ImGuiIO* initialize_imgui(GLFWwindow* window) {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
   io.IniFilename = nullptr;  // Disable imgui.ini file
 
-  Theme::load_roboto_font(io);
+  Theme::load_fonts(io);
   Theme::setup_light_fun_theme();
 
   ImGui_ImplGlfw_InitForOpenGL(window, true);

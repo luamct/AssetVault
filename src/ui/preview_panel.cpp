@@ -8,11 +8,115 @@
 #include "logger.h"
 #include "utils.h"
 
+#include <functional>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 #include <vector>
+
+using AttributeRenderer = std::function<void()>;
+
+struct AttributeRow {
+  std::string label;
+  std::string value;
+  AttributeRenderer renderer;
+
+  AttributeRow() = default;
+  AttributeRow(const std::string& label_in, const std::string& value_in)
+    : label(label_in), value(value_in), renderer(nullptr) {}
+  AttributeRow(const std::string& label_in, AttributeRenderer renderer_in)
+    : label(label_in), value(""), renderer(std::move(renderer_in)) {}
+};
+
+static std::string uppercase_copy(std::string text) {
+  std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
+    return static_cast<char>(std::toupper(c));
+  });
+  return text;
+}
+
+static void draw_tag_chip(const std::string& text, const ImVec4& fill_color,
+  const ImVec4& text_color, const char* id_suffix) {
+  const float rounding = 14.0f;
+  const ImVec2 padding(14.0f, 4.0f);
+  const float border_size = 1.0f;
+
+  std::string label = text;
+  label.append("##");
+  label.append(id_suffix);
+
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, rounding);
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, padding);
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, border_size);
+  ImGui::PushStyleColor(ImGuiCol_Border, Theme::TAG_PILL_BORDER);
+  ImGui::PushStyleColor(ImGuiCol_Button, fill_color);
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, fill_color);
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, fill_color);
+  ImGui::PushStyleColor(ImGuiCol_Text, text_color);
+
+  ImFont* tag_font = Theme::get_tag_font();
+  if (tag_font) {
+    ImGui::PushFont(tag_font);
+  }
+
+  ImGui::Button(label.c_str());
+
+  if (tag_font) {
+    ImGui::PopFont();
+  }
+
+  ImGui::PopStyleColor(5);
+  ImGui::PopStyleVar(3);
+}
+
+static ImVec4 get_type_tag_color(AssetType type) {
+  switch (type) {
+    case AssetType::_2D:
+      return Theme::TAG_TYPE_2D;
+    case AssetType::_3D:
+      return Theme::TAG_TYPE_3D;
+    case AssetType::Audio:
+      return Theme::TAG_TYPE_AUDIO;
+    case AssetType::Font:
+      return Theme::TAG_TYPE_FONT;
+    case AssetType::Shader:
+      return Theme::TAG_TYPE_SHADER;
+    case AssetType::Document:
+      return Theme::TAG_TYPE_DOCUMENT;
+    case AssetType::Archive:
+      return Theme::TAG_TYPE_ARCHIVE;
+    case AssetType::Directory:
+      return Theme::TAG_TYPE_DIRECTORY;
+    case AssetType::Auxiliary:
+      return Theme::TAG_TYPE_AUXILIARY;
+    default:
+      return Theme::TAG_TYPE_UNKNOWN;
+  }
+}
+
+static void render_asset_tags(const Asset& asset) {
+  std::string type_text = uppercase_copy(get_asset_type_string(asset.type));
+  if (type_text.empty()) {
+    type_text = "UNKNOWN";
+  }
+
+  std::string extension_text = asset.extension;
+  if (!extension_text.empty() && extension_text.front() == '.') {
+    extension_text.erase(extension_text.begin());
+  }
+  extension_text = uppercase_copy(extension_text);
+  if (extension_text.empty()) {
+    extension_text = "NO EXT";
+  }
+
+  draw_tag_chip(type_text, get_type_tag_color(asset.type), Theme::TAG_TYPE_TEXT, "TypeTag");
+  ImGui::SameLine(0.0f, 8.0f);
+  draw_tag_chip(extension_text, Theme::TAG_EXTENSION_FILL, Theme::TAG_EXTENSION_TEXT, "ExtTag");
+  ImGui::Spacing();
+}
 
 void render_clickable_path(const Asset& asset, UIState& ui_state) {
   const std::string& relative_path = asset.relative_path;
@@ -113,21 +217,13 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
 
       // Handle click
       if (is_hovered && ImGui::IsMouseClicked(0)) {
-        // Single path filter mode - only one can be active at a time
-        if (is_active) {
-          // If this path is already active, deactivate it (clear all filters)
-          ui_state.path_filters.clear();
-          ui_state.path_filter_active = false;
-        }
-        else {
-          // Clear all existing filters and add this one
+        if (!is_active) {
           ui_state.path_filters.clear();
           ui_state.path_filters.push_back(path_to_segment);
           ui_state.path_filter_active = true;
+          ui_state.pending_tree_selection = path_to_segment;
+          ui_state.update_needed = true;
         }
-
-        // Trigger search update
-        ui_state.update_needed = true;
       }
     }
     else {
@@ -137,39 +233,54 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
   }
 }
 
-// Renders common asset information in standard order: Path, Extension, Type, Size, Modified
-void render_common_asset_info(const Asset& asset, UIState& ui_state) {
-  // Path
-  ImGui::TextColored(Theme::TEXT_LABEL, "Path: ");
-  ImGui::SameLine();
-  render_clickable_path(asset, ui_state);
+// Renders asset attributes aligned into columns
+void render_attribute_rows(const std::vector<AttributeRow>& rows) {
+  float max_label_width = 0.0f;
+  for (const auto& row : rows) {
+    std::string label = uppercase_copy(row.label);
+    float width = ImGui::CalcTextSize(label.c_str()).x;
+    max_label_width = std::max(max_label_width, width);
+  }
 
-  // Extension
-  ImGui::TextColored(Theme::TEXT_LABEL, "Extension: ");
-  ImGui::SameLine();
-  ImGui::Text("%s", asset.extension.c_str());
+  float label_column_x = ImGui::GetCursorPosX();
+  float value_column_x = label_column_x + max_label_width + 30.0f;
 
-  // Type
-  ImGui::TextColored(Theme::TEXT_LABEL, "Type: ");
-  ImGui::SameLine();
-  ImGui::Text("%s", get_asset_type_string(asset.type).c_str());
+  for (const auto& row : rows) {
+    std::string label = uppercase_copy(row.label);
+    ImGui::SetCursorPosX(label_column_x);
+    ImFont* tag_font = Theme::get_tag_font();
+    if (tag_font) ImGui::PushFont(tag_font);
+    ImGui::TextColored(Theme::TEXT_LABEL, "%s", label.c_str());
+    if (tag_font) ImGui::PopFont();
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(value_column_x);
+    ImGui::PushStyleColor(ImGuiCol_Text, Theme::TEXT_DARK);
+    if (row.renderer) {
+      row.renderer();
+    }
+    else {
+      ImGui::Text("%s", row.value.c_str());
+    }
+    ImGui::PopStyleColor();
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
+  }
+}
 
-  // Size
-  ImGui::TextColored(Theme::TEXT_LABEL, "Size: ");
-  ImGui::SameLine();
-  ImGui::Text("%s", format_file_size(asset.size).c_str());
+void append_common_asset_rows(const Asset& asset, UIState& ui_state,
+  std::vector<AttributeRow>& rows) {
+  AttributeRow path_row("Path", [&asset, &ui_state]() {
+    render_clickable_path(asset, ui_state);
+  });
+  rows.push_back(std::move(path_row));
+  rows.emplace_back("Size", format_file_size(asset.size));
 
-  // Modified
   auto time_t = std::chrono::system_clock::to_time_t(asset.last_modified);
   std::tm tm_buf;
   safe_localtime(&tm_buf, &time_t);
   std::stringstream ss;
   ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
-  ImGui::TextColored(Theme::TEXT_LABEL, "Modified: ");
-  ImGui::SameLine();
-  ImGui::Text("%s", ss.str().c_str());
+  rows.emplace_back("Modified", ss.str());
 }
-
 // Custom slider component for audio seek bar
 bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width, float height) {
   ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
@@ -273,6 +384,7 @@ static ImVec2 calculate_thumbnail_size(
 
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   Model& current_model, Camera3D& camera, float panel_width, float panel_height) {
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::BACKGROUND_LIGHT_GRAY);
   ImGui::BeginChild("AssetPreview", ImVec2(panel_width, panel_height), true);
 
   // Use fixed panel dimensions for stable calculations
@@ -320,6 +432,8 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
   if (ui_state.selected_asset.has_value()) {
     const Asset& selected_asset = *ui_state.selected_asset;
+    std::vector<AttributeRow> detail_rows;
+    append_common_asset_rows(selected_asset, ui_state, detail_rows);
 
     // Check if selected asset is a model
     if (selected_asset.type == AssetType::_3D && texture_manager.is_preview_initialized()) {
@@ -357,11 +471,6 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       float image_y_offset = (avail_height - viewport_size.y) * 0.5f;
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
       ImGui::SetCursorScreenPos(image_pos);
-
-      // Draw border around the viewport
-      ImVec2 border_min = image_pos;
-      ImVec2 border_max(border_min.x + viewport_size.x, border_min.y + viewport_size.y);
-      ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
 
       // Display the 3D viewport
       ImGui::Image(
@@ -433,28 +542,18 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       // Restore cursor for info below
       ImGui::SetCursorScreenPos(container_pos);
       ImGui::Dummy(ImVec2(0, avail_height + 10));
+      render_asset_tags(selected_asset);
 
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::Spacing();
-
-      // Common asset information
-      render_common_asset_info(selected_asset, ui_state);
-
-      // 3D-specific information
       if (current_model_ref.loaded) {
         int vertex_count =
           static_cast<int>(current_model_ref.vertices.size() / MODEL_VERTEX_FLOAT_STRIDE);
         int face_count = static_cast<int>(current_model_ref.indices.size() / 3); // 3 indices per triangle
 
-        ImGui::TextColored(Theme::TEXT_LABEL, "Vertices: ");
-        ImGui::SameLine();
-        ImGui::Text("%d", vertex_count);
-
-        ImGui::TextColored(Theme::TEXT_LABEL, "Faces: ");
-        ImGui::SameLine();
-        ImGui::Text("%d", face_count);
+        detail_rows.emplace_back("Vertices", std::to_string(vertex_count));
+        detail_rows.emplace_back("Faces", std::to_string(face_count));
       }
+
+      render_attribute_rows(detail_rows);
     }
     else if (selected_asset.type == AssetType::Audio && Services::audio_manager().is_initialized()) {
       // Audio handling for sound assets
@@ -498,10 +597,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::SetCursorScreenPos(container_pos);
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
-
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::Spacing();
+      render_asset_tags(selected_asset);
 
       // Audio controls - single row layout
       if (Services::audio_manager().has_audio_loaded()) {
@@ -616,12 +712,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::Checkbox("Auto-play", &ui_state.auto_play_audio);
       }
 
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::Spacing();
-
-      // Common asset information
-      render_common_asset_info(selected_asset, ui_state);
+      render_attribute_rows(detail_rows);
     }
     else if (selected_asset.extension == ".gif") {
       auto now = std::chrono::steady_clock::now();
@@ -672,23 +763,15 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
 
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::Spacing();
+      render_asset_tags(selected_asset);
 
-      // Common asset information
-      render_common_asset_info(selected_asset, ui_state);
-
-      // GIF-specific information (dimensions)
       if (animation) {
-        ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
-        ImGui::SameLine();
-        ImGui::Text("%dx%d", animation->width, animation->height);
-
-        ImGui::TextColored(Theme::TEXT_LABEL, "Frames: ");
-        ImGui::SameLine();
-        ImGui::Text("%d", animation->frame_count());
+        std::string dimensions = std::to_string(animation->width) + "x" + std::to_string(animation->height);
+        detail_rows.emplace_back("Size", dimensions);
+        detail_rows.emplace_back("Frames", std::to_string(animation->frame_count()));
       }
+
+      render_attribute_rows(detail_rows);
     }
     else {
       // 2D Preview for non-GIF assets
@@ -728,22 +811,18 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
 
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::Spacing();
+      render_asset_tags(selected_asset);
 
-      // Common asset information
-      render_common_asset_info(selected_asset, ui_state);
-
-      // 2D-specific information
       if (selected_asset.type == AssetType::_2D) {
-        int width, height;
+        int width = 0;
+        int height = 0;
         if (texture_manager.get_texture_dimensions(selected_asset.path, width, height)) {
-          ImGui::TextColored(Theme::TEXT_LABEL, "Dimensions: ");
-          ImGui::SameLine();
-          ImGui::Text("%dx%d", width, height);
+          std::string dimensions = std::to_string(width) + "x" + std::to_string(height);
+          detail_rows.emplace_back("Size", dimensions);
         }
       }
+
+      render_attribute_rows(detail_rows);
     }
   }
   else {
@@ -752,4 +831,5 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   }
 
   ImGui::EndChild();
+  ImGui::PopStyleColor();
 }

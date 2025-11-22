@@ -109,6 +109,8 @@ struct UIState {
 
   // Path filters (set by clicking on path segments)
   std::vector<std::string> path_filters;
+  std::optional<std::string> pending_tree_selection;
+  std::unordered_set<std::string> tree_nodes_to_open;
 };
 
 // UI helper functions

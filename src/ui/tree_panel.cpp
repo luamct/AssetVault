@@ -48,6 +48,44 @@ namespace {
     }
   }
 
+  void clear_all_folder_checks(UIState& ui_state) {
+    for (auto& entry : ui_state.folder_checkbox_states) {
+      entry.second = false;
+    }
+  }
+
+  void apply_pending_tree_selection(UIState& ui_state, const fs::path& root_path) {
+    if (!ui_state.pending_tree_selection.has_value()) {
+      return;
+    }
+
+    std::string pending = *ui_state.pending_tree_selection;
+    ui_state.pending_tree_selection.reset();
+
+    clear_all_folder_checks(ui_state);
+    ui_state.folder_checkbox_states[path_key(root_path)] = true;
+    ui_state.tree_nodes_to_open.clear();
+
+    if (pending.empty()) {
+      return;
+    }
+
+    fs::path target_relative = fs::path(pending);
+    fs::path target_abs = root_path / target_relative;
+
+    folder_tree_utils::ensure_children_loaded(ui_state, root_path);
+    fs::path current = root_path;
+
+    for (const auto& part : target_relative) {
+      folder_tree_utils::ensure_children_loaded(ui_state, current);
+      current /= part;
+      ui_state.folder_checkbox_states[path_key(current)] = true;
+      ui_state.tree_nodes_to_open.insert(path_key(current));
+    }
+
+    set_folder_subtree_checked(ui_state, current, true);
+  }
+
   void render_folder_tree_node(UIState& ui_state, const fs::path& dir_path) {
     std::string path_id = path_key(dir_path);
     bool stored_checked = get_checkbox_state(ui_state, path_id);
@@ -82,6 +120,11 @@ namespace {
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+    auto open_it = ui_state.tree_nodes_to_open.find(path_id);
+    if (open_it != ui_state.tree_nodes_to_open.end()) {
+      ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+      ui_state.tree_nodes_to_open.erase(open_it);
+    }
     bool open = ImGui::TreeNodeEx(tree_label.c_str(), node_flags);
     ImGui::PopStyleVar();
 
@@ -149,6 +192,7 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   ImGui::Separator();
 
   const auto& root_subdirectories = folder_tree_utils::ensure_children_loaded(ui_state, root_path);
+  apply_pending_tree_selection(ui_state, root_path);
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
   for (const auto& child : root_subdirectories) {
     render_folder_tree_node(ui_state, fs::path(child));
@@ -166,6 +210,8 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
     ui_state.path_filter_active = !new_folder_filters.empty();
     ui_state.update_needed = true;
   }
+
+  ui_state.tree_nodes_to_open.clear();
 
   ImGui::EndChild();
   ImGui::PopStyleColor(2);

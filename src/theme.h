@@ -19,6 +19,17 @@ namespace Theme {
     return IM_COL32((int) (color.x * 255), (int) (color.y * 255), (int) (color.z * 255), (int) (color.w * 255));
   }
 
+  inline ImFont* g_primary_font = nullptr;
+  inline ImFont* g_tag_font = nullptr;
+
+  inline ImFont* get_primary_font() {
+    return g_primary_font;
+  }
+
+  inline ImFont* get_tag_font() {
+    return g_tag_font;
+  }
+
   // === TEXT COLORS ===
   constexpr ImVec4 TEXT_DARK = ImVec4(0.29f, 0.21f, 0.14f, 1.00f);          // Primary text (deep brown)
   constexpr ImVec4 TEXT_SECONDARY = ImVec4(0.49f, 0.41f, 0.33f, 1.00f);     // Disabled/secondary text (warm gray)
@@ -58,6 +69,22 @@ namespace Theme {
   constexpr ImVec4 ACCENT_BLUE_1 = ImVec4(0.725f, 0.459f, 0.227f, 1.00f); // Primary accent (burnt orange)
   constexpr ImVec4 ACCENT_BLUE_2 = ImVec4(0.604f, 0.361f, 0.153f, 1.00f); // Darker accent
   constexpr ImVec4 ACCENT_BLUE_3 = ImVec4(0.494f, 0.278f, 0.110f, 1.00f); // Darkest accent
+
+  // === TAG COLORS ===
+  constexpr ImVec4 TAG_TYPE_2D = ImVec4(0.149f, 0.451f, 0.851f, 1.00f);      // Lively blue for 2D assets
+  constexpr ImVec4 TAG_TYPE_3D = ImVec4(0.757f, 0.286f, 0.325f, 1.00f);      // Vibrant red for 3D assets
+  constexpr ImVec4 TAG_TYPE_AUDIO = ImVec4(0.180f, 0.600f, 0.404f, 1.00f);   // Fresh green for audio
+  constexpr ImVec4 TAG_TYPE_FONT = ImVec4(0.482f, 0.318f, 0.667f, 1.00f);    // Purple accent for fonts
+  constexpr ImVec4 TAG_TYPE_SHADER = ImVec4(0.129f, 0.533f, 0.600f, 1.00f);  // Teal for shaders
+  constexpr ImVec4 TAG_TYPE_DOCUMENT = ImVec4(0.620f, 0.439f, 0.188f, 1.00f); // Warm brown for documents
+  constexpr ImVec4 TAG_TYPE_ARCHIVE = ImVec4(0.702f, 0.396f, 0.196f, 1.00f); // Orange for archives
+  constexpr ImVec4 TAG_TYPE_DIRECTORY = ImVec4(0.192f, 0.451f, 0.741f, 1.00f); // Cool blue for folders
+  constexpr ImVec4 TAG_TYPE_AUXILIARY = ImVec4(0.447f, 0.447f, 0.447f, 1.00f); // Neutral gray for aux files
+  constexpr ImVec4 TAG_TYPE_UNKNOWN = ImVec4(0.424f, 0.392f, 0.357f, 1.00f);  // Default neutral tone
+  constexpr ImVec4 TAG_TYPE_TEXT = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);        // White text on colored tags
+  constexpr ImVec4 TAG_EXTENSION_FILL = ImVec4(0.176f, 0.176f, 0.165f, 1.00f); // Deep neutral for extensions
+  constexpr ImVec4 TAG_EXTENSION_TEXT = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);    // White text on extensions
+  constexpr ImVec4 TAG_PILL_BORDER = ImVec4(0.408f, 0.133f, 0.184f, 1.00f);   // Rich border for tag pills
 
   // === ACCENT COLORS WITH TRANSPARENCY ===
   constexpr ImVec4 ACCENT_BLUE_1_ALPHA_80 = ImVec4(0.725f, 0.459f, 0.227f, 0.80f); // Primary accent 80% opacity
@@ -198,33 +225,61 @@ namespace Theme {
   }
 
   // Font loading function
-  inline bool load_roboto_font(ImGuiIO& io) {
+  inline bool load_fonts(ImGuiIO& io) {
     ImFontConfig font_config;
     font_config.FontDataOwnedByAtlas = false;  // Embedded data is owned by the binary
 
     // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
     const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
 
-    auto font_asset = embedded_assets::get(Config::FONT_PATH);
-    if (!font_asset.has_value()) {
+    auto primary_asset = embedded_assets::get(Config::FONT_PATH);
+    if (!primary_asset.has_value()) {
       LOG_ERROR("Embedded font asset not found: {}", Config::FONT_PATH);
       return false;
     }
 
-    ImFont* font = io.Fonts->AddFontFromMemoryTTF(
-        const_cast<unsigned char*>(font_asset->data),
-        static_cast<int>(font_asset->size),
-        Config::FONT_SIZE,
-        &font_config,
-        glyph_ranges);
+    g_primary_font = io.Fonts->AddFontFromMemoryTTF(
+      const_cast<unsigned char*>(primary_asset->data),
+      static_cast<int>(primary_asset->size),
+      Config::FONT_SIZE,
+      &font_config,
+      glyph_ranges);
 
-    if (!font) {
-      LOG_ERROR("Failed to load Roboto font from embedded asset: {}", Config::FONT_PATH);
+    if (!g_primary_font) {
+      LOG_ERROR("Failed to load primary font from embedded asset: {}", Config::FONT_PATH);
       return false;
     }
 
-    LOG_INFO("Roboto font loaded successfully from embedded asset with Unicode support!");
-    return true;
+    auto tag_asset = embedded_assets::get(Config::TAG_FONT_PATH);
+    if (!tag_asset.has_value()) {
+      LOG_ERROR("Embedded tag font asset not found: {}", Config::TAG_FONT_PATH);
+    }
+    else {
+      ImFontConfig tag_config = font_config;
+      tag_config.OversampleH = 2;
+      tag_config.OversampleV = 2;
+      tag_config.RasterizerMultiply = 0.9f;
+
+      g_tag_font = io.Fonts->AddFontFromMemoryTTF(
+        const_cast<unsigned char*>(tag_asset->data),
+        static_cast<int>(tag_asset->size),
+        Config::TAG_FONT_SIZE,
+        &tag_config,
+        glyph_ranges);
+
+      if (!g_tag_font) {
+        LOG_ERROR("Failed to load tag font from embedded asset: {}", Config::TAG_FONT_PATH);
+      }
+    }
+
+    if (!g_tag_font) {
+      g_tag_font = g_primary_font;
+      LOG_WARN("Tag font unavailable. Falling back to primary font for pills.");
+    }
+
+    LOG_INFO("Fonts loaded successfully (primary={}, tag={})",
+      static_cast<void*>(g_primary_font), static_cast<void*>(g_tag_font));
+    return g_primary_font != nullptr;
   }
 
 } // namespace Theme

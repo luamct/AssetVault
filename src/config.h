@@ -16,8 +16,10 @@ namespace Config {
     constexpr bool DEBUG_CLEAN_START = false;
 
     // Font settings
-    constexpr const char* FONT_PATH = "external/fonts/Roboto-Regular.ttf";
+    constexpr const char* FONT_PATH = "external/fonts/Inter-Regular.ttf";
     constexpr float FONT_SIZE = 18.0f;
+    constexpr const char* TAG_FONT_PATH = "external/fonts/Inter_18pt-SemiBold.ttf";
+    constexpr float TAG_FONT_SIZE = 18.0f;
 
     // =============================================================================
     // WINDOW & UI LAYOUT
