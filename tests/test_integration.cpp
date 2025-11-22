@@ -24,7 +24,7 @@
 #include "file_watcher.h"
 #include "config.h"
 #include "logger.h"
-#include "ui.h"
+#include "ui/ui.h"
 #include "run.h"
 #include "test_helpers.h"
 

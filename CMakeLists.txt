@@ -215,7 +215,10 @@ add_library(AssetInventoryCore STATIC
     src/animation.cpp
     src/fonts.cpp
     src/utils.cpp
-    src/ui.cpp
+    src/ui/ui.cpp
+    src/ui/search_panel.cpp
+    src/ui/results_panel.cpp
+    src/ui/preview_panel.cpp
     src/ui/tree_panel.cpp
     src/audio_manager.cpp
     src/stb_vorbis_impl.cpp

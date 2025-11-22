@@ -11,7 +11,7 @@
 #include <optional>
 #include <unordered_set>
 #include "asset.h"
-#include "ui.h"
+#include "ui/ui.h"
 
 // Token types for search query parsing
 enum class SearchTokenType {

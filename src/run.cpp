@@ -35,7 +35,7 @@
 #include "audio_manager.h"
 #include "search.h"
 #include "logger.h"
-#include "ui.h"
+#include "ui/ui.h"
 #include "services.h"
 #include "drag_drop.h"
 
@@ -292,7 +292,8 @@ int run(std::atomic<bool>* shutdown_requested) {
     }
 
     float progress_height = 35.0f;
-    float preview_folder_available = std::max(0.0f, content_height - progress_height);
+    float preview_folder_available = std::max(0.0f,
+      content_height - progress_height - spacing_y * 2.0f);
     float preview_height = preview_folder_available * 0.7f;
     float folder_tree_height = preview_folder_available - preview_height;
 
