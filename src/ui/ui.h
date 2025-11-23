@@ -106,11 +106,14 @@ struct UIState {
 
   // Path filter toggle state
   bool path_filter_active = false;
+  bool folder_selection_covers_all = true;
+  bool folder_selection_empty = false;
 
   // Path filters (set by clicking on path segments)
   std::vector<std::string> path_filters;
   std::optional<std::string> pending_tree_selection;
   std::unordered_set<std::string> tree_nodes_to_open;
+  std::unordered_set<std::string> disable_child_propagation;
 };
 
 // UI helper functions
@@ -153,10 +156,14 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_height);
 
 namespace folder_tree_utils {
+  struct FilterComputationResult {
+    std::vector<std::string> filters;
+    bool all_selected = false;
+    bool any_selected = false;
+  };
+
   const std::vector<std::string>& ensure_children_loaded(UIState& ui_state,
-    const std::filesystem::path& dir_path);
-  bool collect_folder_filters(UIState& ui_state, const std::filesystem::path& dir_path,
-    const std::filesystem::path& root_path, std::vector<std::string>& filters);
-  std::vector<std::string> collect_active_filters(UIState& ui_state,
-    const std::filesystem::path& root_path, const std::vector<std::string>& root_children);
+    const std::filesystem::path& dir_path, bool propagate_parent_state = true);
+  FilterComputationResult collect_active_filters(UIState& ui_state,
+    const std::filesystem::path& root_path);
 }

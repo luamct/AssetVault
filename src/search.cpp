@@ -398,8 +398,19 @@ void filter_assets(UIState& ui_state, const SafeAssets& safe_assets) {
   // Parse the search query once before the loop, passing UI filters
   // Only include path filters if the path filter toggle is active
   std::vector<std::string> active_path_filters;
-  if (ui_state.path_filter_active && !ui_state.path_filters.empty()) {
-    active_path_filters = ui_state.path_filters;
+  bool block_all_results = false;
+  if (ui_state.path_filter_active) {
+    if (ui_state.folder_selection_empty) {
+      block_all_results = true;
+    }
+    else {
+      active_path_filters = ui_state.path_filters;
+    }
+  }
+
+  if (block_all_results) {
+    ui_state.loaded_end_index = 0;
+    return;
   }
   SearchQuery query = parse_search_query(ui_state.buffer, ui_type_filters, active_path_filters);
 

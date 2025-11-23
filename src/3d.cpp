@@ -38,6 +38,20 @@ constexpr int BONE_ID_OFFSET = 8;
 constexpr int BONE_WEIGHT_OFFSET = 12;
 constexpr int MAX_SHADER_BONES = 128;
 
+unsigned int ensure_color_texture(TextureManager& texture_manager, unsigned int& cache_slot,
+  const glm::vec3& color) {
+  if (cache_slot == 0) {
+    cache_slot = texture_manager.create_material_texture(color, glm::vec3(0.0f), 0.0f);
+  }
+  return cache_slot;
+}
+
+unsigned int fallback_material_texture_id = 0;
+unsigned int axis_red_texture_id = 0;
+unsigned int axis_green_texture_id = 0;
+unsigned int axis_blue_texture_id = 0;
+unsigned int skeleton_texture_id = 0;
+
 std::string normalize_node_name(const std::string& name) {
   std::string clean = name;
 
@@ -187,10 +201,11 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
         LOG_TRACE("[MATERIAL] Trying to load texture: '{}'", filename);
 
         // Try 1: External file at model directory
-        std::string fileloc = basepath + filename;
+        std::filesystem::path fileloc = (std::filesystem::path(basepath) / std::filesystem::path(filename)).lexically_normal();
         if (std::filesystem::exists(fileloc)) {
-          LOG_TRACE("[MATERIAL] Loading external texture: {}", fileloc);
-          material.texture_id = texture_manager.load_texture_for_model(fileloc);
+          std::string fileloc_str = fileloc.u8string();
+          LOG_TRACE("[MATERIAL] Loading external texture: {}", fileloc_str);
+          material.texture_id = texture_manager.load_texture_for_model(fileloc_str);
           if (material.texture_id != 0) {
             material.has_texture = true;
             break;
@@ -218,7 +233,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
         // If we reach here, texture loading failed completely
         if (!material.has_texture) {
           LOG_ERROR("[MATERIAL] Failed to load texture '{}' - tried external path: '{}', {} embedded textures",
-                    filename, basepath + filename, scene->mNumTextures);
+                    filename, fileloc.u8string(), scene->mNumTextures);
         }
 
         // Even if texture loading failed, don't fail the entire model - use material colors as fallback
@@ -293,7 +308,14 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
         material.emissive_color.x, material.emissive_color.y, material.emissive_color.z);
       material.texture_id = texture_manager.create_material_texture(
         material.diffuse_color, material.emissive_color, material.emissive_intensity);
+      material.has_texture = (material.texture_id != 0);
     }
+
+    LOG_DEBUG("[MATERIAL_COLOR] '{}' diffuse=({:.3f}, {:.3f}, {:.3f}) emissive=({:.3f}, {:.3f}, {:.3f}) has_texture={} texture_id={}", 
+      material.name,
+      material.diffuse_color.x, material.diffuse_color.y, material.diffuse_color.z,
+      material.emissive_color.x, material.emissive_color.y, material.emissive_color.z,
+      material.has_texture, material.texture_id);
 
     LOG_TRACE("[MATERIAL] Final material '{}': has_texture={}, texture_id={}",
       material.name, material.has_texture, material.texture_id);
@@ -934,6 +956,8 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   GLint enable_skinning_uniform = glGetUniformLocation(shader_, "enableSkinning");
   GLint bone_count_uniform = glGetUniformLocation(shader_, "boneCount");
   GLint bone_matrices_uniform = glGetUniformLocation(shader_, "boneMatrices");
+  GLint diffuse_texture_uniform = glGetUniformLocation(shader_, "diffuseTexture");
+  GLint emissive_color_uniform = glGetUniformLocation(shader_, "emissiveColor");
 
   size_t bone_count = std::min(model.bones.size(), static_cast<size_t>(MAX_SHADER_BONES));
   thread_local static bool warned_bone_limit = false;
@@ -969,64 +993,46 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
   const bool has_renderable_geometry = (model.vao != 0) && !model.indices.empty();
 
+  auto bind_material_texture = [&](const Material* material) {
+    unsigned int texture_id = (material != nullptr) ? material->texture_id : 0;
+    if (texture_id == 0) {
+      texture_id = ensure_color_texture(texture_manager, fallback_material_texture_id,
+        glm::vec3(0.7f, 0.7f, 0.7f));
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture_id);
+    if (diffuse_texture_uniform >= 0) {
+      glUniform1i(diffuse_texture_uniform, 0);
+    }
+
+    glm::vec3 emissive = (material != nullptr) ? material->emissive_color : glm::vec3(0.0f);
+    if (emissive_color_uniform >= 0) {
+      glUniform3fv(emissive_color_uniform, 1, &emissive[0]);
+    }
+  };
+
   if (has_renderable_geometry) {
     glBindVertexArray(model.vao);
 
     if (model.meshes.empty()) {
-      // Fallback: render as single mesh with first material if available
-      if (!model.materials.empty()) {
-        const Material& material = model.materials[0];
-        if (enable_skinning_uniform >= 0) {
-          glUniform1i(enable_skinning_uniform, (model.has_skinned_meshes && bone_count > 0) ? 1 : 0);
-        }
-        if (material.has_texture && material.texture_id != 0) {
-          glActiveTexture(GL_TEXTURE0);
-          glBindTexture(GL_TEXTURE_2D, material.texture_id);
-          glUniform1i(glGetUniformLocation(shader_, "diffuseTexture"), 0);
-          glUniform1i(glGetUniformLocation(shader_, "useTexture"), 1);
-        }
-        else {
-          glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
-          glUniform3fv(glGetUniformLocation(shader_, "materialColor"), 1, &material.diffuse_color[0]);
-        }
-        // Always pass emissive color (will be zero if material has no emissive)
-        glUniform3fv(glGetUniformLocation(shader_, "emissiveColor"), 1, &material.emissive_color[0]);
-      }
-      else {
-        glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
-        glm::vec3 default_color(0.7f, 0.7f, 0.7f);
-        glUniform3fv(glGetUniformLocation(shader_, "materialColor"), 1, &default_color[0]);
-        // No emissive for default material
-        glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
-        glUniform3fv(glGetUniformLocation(shader_, "emissiveColor"), 1, &no_emissive[0]);
+      if (enable_skinning_uniform >= 0) {
+        glUniform1i(enable_skinning_uniform, (model.has_skinned_meshes && bone_count > 0) ? 1 : 0);
       }
 
+      const Material* material = model.materials.empty() ? nullptr : &model.materials[0];
+      bind_material_texture(material);
       glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(model.indices.size()), GL_UNSIGNED_INT, 0);
     }
     else {
-      // Render each mesh with its correct material
       for (const auto& mesh : model.meshes) {
         if (enable_skinning_uniform >= 0) {
           glUniform1i(enable_skinning_uniform, (mesh.has_skin && bone_count > 0) ? 1 : 0);
         }
         if (mesh.material_index < model.materials.size()) {
           const Material& material = model.materials[mesh.material_index];
+          bind_material_texture(&material);
 
-          // Bind texture or set material color
-          if (material.has_texture && material.texture_id != 0) {
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, material.texture_id);
-            glUniform1i(glGetUniformLocation(shader_, "diffuseTexture"), 0);
-            glUniform1i(glGetUniformLocation(shader_, "useTexture"), 1);
-          }
-          else {
-            glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
-            glUniform3fv(glGetUniformLocation(shader_, "materialColor"), 1, &material.diffuse_color[0]);
-          }
-          // Always pass emissive color for this material
-          glUniform3fv(glGetUniformLocation(shader_, "emissiveColor"), 1, &material.emissive_color[0]);
-
-          // Draw this specific mesh (indices are already properly offset)
           glDrawElements(
             GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, (void*) (mesh.index_offset * sizeof(unsigned int))
           );
@@ -1036,27 +1042,23 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
     glBindVertexArray(0);
   }
-  else {
-    glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
-    if (enable_skinning_uniform >= 0) {
-      glUniform1i(enable_skinning_uniform, 0);
-    }
+  else if (enable_skinning_uniform >= 0) {
+    glUniform1i(enable_skinning_uniform, 0);
   }
 
   if (enable_skinning_uniform >= 0) {
     glUniform1i(enable_skinning_uniform, 0);
   }
 
-  // Ensure subsequent passes (debug axes, skeleton overlay) render with solid colors.
+  // Ensure subsequent passes start from a known texture state.
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, 0);
-  glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
 
   // Render debug axes at origin (scaled relative to model size)
   // Pass the same view and projection matrices to ensure consistency
   if (draw_axes && Config::PREVIEW_DRAW_DEBUG_AXES) {
     float axis_scale = max_size * 0.7f;
-    render_debug_axes(axis_scale, view_matrix, projection_matrix, light_direction);
+    render_debug_axes(texture_manager, axis_scale, view_matrix, projection_matrix, light_direction);
   }
 }
 
@@ -1131,10 +1133,14 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   // Use dedicated skeleton shader with directional lighting
   glUseProgram(shader_);
 
-  // Ensure shader samples constant color instead of any residual texture state.
-  glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
+  unsigned int skeleton_tex = ensure_color_texture(texture_manager, skeleton_texture_id,
+    glm::vec3(Theme::SKELETON_BONE.x, Theme::SKELETON_BONE.y, Theme::SKELETON_BONE.z));
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindTexture(GL_TEXTURE_2D, skeleton_tex);
+  GLint diffuse_uniform = glGetUniformLocation(shader_, "diffuseTexture");
+  if (diffuse_uniform >= 0) {
+    glUniform1i(diffuse_uniform, 0);
+  }
   GLint enable_skinning_uniform = glGetUniformLocation(shader_, "enableSkinning");
   if (enable_skinning_uniform >= 0) {
     glUniform1i(enable_skinning_uniform, 0);
@@ -1246,11 +1252,11 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
   glEnableVertexAttribArray(2);
 
-  // Set skeleton color (brighter to compensate for dim lighting, creating uniform matte grey)
-  glm::vec3 skeleton_color(Theme::SKELETON_BONE.x, Theme::SKELETON_BONE.y, Theme::SKELETON_BONE.z);
-  glUniform3fv(glGetUniformLocation(shader_, "materialColor"), 1, &skeleton_color[0]);
   glm::vec3 no_emissive(0.0f, 0.0f, 0.0f);
-  glUniform3fv(glGetUniformLocation(shader_, "emissiveColor"), 1, &no_emissive[0]);
+  GLint emissive_uniform = glGetUniformLocation(shader_, "emissiveColor");
+  if (emissive_uniform >= 0) {
+    glUniform3fv(emissive_uniform, 1, &no_emissive[0]);
+  }
 
   // Draw bone geometry
   glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(bone_indices.size()), GL_UNSIGNED_INT, 0);
@@ -1319,7 +1325,8 @@ const Model& get_current_model(const Model& current_model) {
 }
 
 // Draw origin axes so users have spatial reference inside the preview cube.
-void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& projection, const glm::vec3& light_direction) {
+void render_debug_axes(TextureManager& texture_manager, float scale, const glm::mat4& view,
+  const glm::mat4& projection, const glm::vec3& light_direction) {
   static unsigned int axes_vao = 0;
   static unsigned int axes_vbo = 0;
   static bool initialized = false;
@@ -1445,9 +1452,16 @@ void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& proj
   // Render the axes using skeleton shader (simple directional lighting)
   glUseProgram(shader_);
 
+  unsigned int red_tex = ensure_color_texture(texture_manager, axis_red_texture_id, glm::vec3(1.0f, 0.0f, 0.0f));
+  unsigned int green_tex = ensure_color_texture(texture_manager, axis_green_texture_id, glm::vec3(0.0f, 1.0f, 0.0f));
+  unsigned int blue_tex = ensure_color_texture(texture_manager, axis_blue_texture_id, glm::vec3(0.0f, 0.0f, 1.0f));
+  GLint diffuse_uniform = glGetUniformLocation(shader_, "diffuseTexture");
+  GLint emissive_uniform = glGetUniformLocation(shader_, "emissiveColor");
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, 0);
-  glUniform1i(glGetUniformLocation(shader_, "useTexture"), 0);
+  glBindTexture(GL_TEXTURE_2D, red_tex);
+  if (diffuse_uniform >= 0) {
+    glUniform1i(diffuse_uniform, 0);
+  }
   GLint enable_skinning_uniform = glGetUniformLocation(shader_, "enableSkinning");
   if (enable_skinning_uniform >= 0) {
     glUniform1i(enable_skinning_uniform, 0);
@@ -1463,7 +1477,9 @@ void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& proj
 
   glUniform3fv(glGetUniformLocation(shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
-  glUniform3f(glGetUniformLocation(shader_, "emissiveColor"), 0.0f, 0.0f, 0.0f);
+  if (emissive_uniform >= 0) {
+    glUniform3f(emissive_uniform, 0.0f, 0.0f, 0.0f);
+  }
 
   // Lighting intensity controls (high ambient to mostly show axis colors)
   glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.8f);
@@ -1472,17 +1488,16 @@ void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& proj
   glBindVertexArray(axes_vao);
 
   // Draw X-axis (red) - 2 vertices for line + 12 vertices for arrow (4 triangles)
-  glUniform3f(glGetUniformLocation(shader_, "materialColor"), 1.0f, 0.0f, 0.0f);
   glDrawArrays(GL_LINES, 0, 2);
   glDrawArrays(GL_TRIANGLES, 2, 12);
 
   // Draw Y-axis (green) - starts at vertex 14
-  glUniform3f(glGetUniformLocation(shader_, "materialColor"), 0.0f, 1.0f, 0.0f);
+  glBindTexture(GL_TEXTURE_2D, green_tex);
   glDrawArrays(GL_LINES, 14, 2);
   glDrawArrays(GL_TRIANGLES, 16, 12);
 
   // Draw Z-axis (blue) - starts at vertex 28
-  glUniform3f(glGetUniformLocation(shader_, "materialColor"), 0.0f, 0.0f, 1.0f);
+  glBindTexture(GL_TEXTURE_2D, blue_tex);
   glDrawArrays(GL_LINES, 28, 2);
   glDrawArrays(GL_TRIANGLES, 30, 12);
 

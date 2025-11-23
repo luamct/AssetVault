@@ -111,3 +111,5 @@ vcpkg_installed/
 jgl_demos/
 /thumbnails
 /data_directory
+# AI agent artifacts
+/agents

@@ -767,6 +767,19 @@ TEST_CASE("filter_assets functionality", "[search]") {
         REQUIRE(search_state.results.size() == assets_size);
     }
 
+    SECTION("Folder selection empty returns no results") {
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "");
+        search_state.path_filter_active = true;
+        search_state.folder_selection_empty = true;
+        search_state.folder_selection_covers_all = false;
+        search_state.path_filters.clear();
+
+        filter_assets(search_state, test_assets);
+
+        REQUIRE(search_state.results.empty());
+        REQUIRE(search_state.loaded_end_index == 0);
+    }
+
     SECTION("Search state initialization") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster");
         search_state.selected_asset_index = 5;

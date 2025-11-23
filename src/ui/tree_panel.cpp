@@ -34,9 +34,63 @@ namespace {
     return it->second;
   }
 
+  std::string relative_path_from_root(const fs::path& current, const fs::path& root_path) {
+    if (current == root_path) {
+      return std::string();
+    }
+
+    std::string relative = current.lexically_relative(root_path).generic_u8string();
+    if (relative == ".") {
+      return std::string();
+    }
+    return relative;
+  }
+
+  bool gather_folder_filters(UIState& ui_state, const fs::path& root_path,
+      const fs::path& current, std::vector<std::string>& collected, bool& any_selected) {
+    std::string path_id = path_key(current);
+    bool checked = get_checkbox_state(ui_state, path_id);
+
+    auto cache_it = ui_state.folder_children_cache.find(path_id);
+    bool has_children = cache_it != ui_state.folder_children_cache.end() &&
+      !cache_it->second.empty();
+
+    if (!has_children) {
+      if (checked) {
+        any_selected = true;
+        collected.push_back(relative_path_from_root(current, root_path));
+        return true;
+      }
+      return false;
+    }
+
+    std::vector<std::string> child_filters;
+    bool all_children_selected = true;
+    for (const std::string& child_id : cache_it->second) {
+      bool child_full = gather_folder_filters(ui_state, root_path, fs::path(child_id),
+        child_filters, any_selected);
+      if (!child_full) {
+        all_children_selected = false;
+      }
+    }
+
+    if (checked) {
+      any_selected = true;
+    }
+
+    if (checked && all_children_selected) {
+      collected.push_back(relative_path_from_root(current, root_path));
+      return true;
+    }
+
+    collected.insert(collected.end(), child_filters.begin(), child_filters.end());
+    return false;
+  }
+
   void set_folder_subtree_checked(UIState& ui_state, const fs::path& dir_path, bool checked) {
     std::string path_id = path_key(dir_path);
     ui_state.folder_checkbox_states[path_id] = checked;
+    ui_state.disable_child_propagation.erase(path_id);
 
     auto cache_it = ui_state.folder_children_cache.find(path_id);
     if (cache_it == ui_state.folder_children_cache.end()) {
@@ -52,6 +106,7 @@ namespace {
     for (auto& entry : ui_state.folder_checkbox_states) {
       entry.second = false;
     }
+    ui_state.disable_child_propagation.clear();
   }
 
   void apply_pending_tree_selection(UIState& ui_state, const fs::path& root_path) {
@@ -63,27 +118,32 @@ namespace {
     ui_state.pending_tree_selection.reset();
 
     clear_all_folder_checks(ui_state);
-    ui_state.folder_checkbox_states[path_key(root_path)] = true;
     ui_state.tree_nodes_to_open.clear();
 
     if (pending.empty()) {
+      set_folder_subtree_checked(ui_state, root_path, true);
       return;
     }
 
     fs::path target_relative = fs::path(pending);
-    fs::path target_abs = root_path / target_relative;
-
-    folder_tree_utils::ensure_children_loaded(ui_state, root_path);
     fs::path current = root_path;
+    const std::string root_key = path_key(root_path);
+    ui_state.folder_checkbox_states[root_key] = true;
+    ui_state.disable_child_propagation.insert(root_key);
 
-    for (const auto& part : target_relative) {
-      folder_tree_utils::ensure_children_loaded(ui_state, current);
-      current /= part;
-      ui_state.folder_checkbox_states[path_key(current)] = true;
-      ui_state.tree_nodes_to_open.insert(path_key(current));
+    for (auto it = target_relative.begin(); it != target_relative.end(); ++it) {
+      folder_tree_utils::ensure_children_loaded(ui_state, current, false);
+      current /= *it;
+      const std::string current_key = path_key(current);
+      ui_state.folder_checkbox_states[current_key] = true;
+      ui_state.disable_child_propagation.insert(current_key);
+
+      auto next_it = it;
+      ++next_it;
+      if (next_it != target_relative.end()) {
+        ui_state.tree_nodes_to_open.insert(current_key);
+      }
     }
-
-    set_folder_subtree_checked(ui_state, current, true);
   }
 
   void render_folder_tree_node(UIState& ui_state, const fs::path& dir_path) {
@@ -105,6 +165,7 @@ namespace {
     ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::ACCENT_BLUE_1));
     bool checkbox_value = stored_checked;
     if (ImGui::Checkbox("", &checkbox_value)) {
+      ui_state.disable_child_propagation.clear();
       set_folder_subtree_checked(ui_state, dir_path, checkbox_value);
       stored_checked = checkbox_value;
     }
@@ -144,16 +205,11 @@ namespace {
 }
 
 void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_height) {
-  ImGuiWindowFlags folder_flags = ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+  ImGuiWindowFlags scroll_flags = ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+  ImGuiWindowFlags container_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
   ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::FRAME_LIGHT_BLUE_3);
   ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::FRAME_LIGHT_BLUE_4);
-  ImGui::BeginChild("FolderTreeRegion", ImVec2(panel_width, panel_height), true, folder_flags);
-
-  ImGuiIO& tree_io = ImGui::GetIO();
-  if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup) && tree_io.MouseWheel != 0.0f) {
-    float current_scroll = ImGui::GetScrollY();
-    ImGui::SetScrollY(current_scroll - tree_io.MouseWheel * 10.0f);
-  }
+  ImGui::BeginChild("FolderTreeRegion", ImVec2(panel_width, panel_height), true, container_flags);
 
   if (ui_state.assets_directory.empty()) {
     ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "Set an assets directory to view folders.");
@@ -180,6 +236,7 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::ACCENT_BLUE_1));
   bool root_checkbox_value = root_checked;
   if (ImGui::Checkbox("", &root_checkbox_value)) {
+    ui_state.disable_child_propagation.clear();
     set_folder_subtree_checked(ui_state, root_path, root_checkbox_value);
   }
   ImGui::PopStyleColor(4);
@@ -191,6 +248,14 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   ImGui::TextColored(Theme::TEXT_LABEL, "%s", ui_state.assets_directory.c_str());
   ImGui::Separator();
 
+  ImGui::BeginChild("FolderTreeScrollRegion", ImVec2(0, 0), false, scroll_flags);
+
+  ImGuiIO& tree_io = ImGui::GetIO();
+  if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup) && tree_io.MouseWheel != 0.0f) {
+    float current_scroll = ImGui::GetScrollY();
+    ImGui::SetScrollY(current_scroll - tree_io.MouseWheel * 10.0f);
+  }
+
   const auto& root_subdirectories = folder_tree_utils::ensure_children_loaded(ui_state, root_path);
   apply_pending_tree_selection(ui_state, root_path);
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
@@ -199,27 +264,35 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   }
   ImGui::PopStyleVar();
 
-  std::vector<std::string> new_folder_filters = folder_tree_utils::collect_active_filters(
-    ui_state, root_path, root_subdirectories);
+  folder_tree_utils::FilterComputationResult filter_result =
+    folder_tree_utils::collect_active_filters(ui_state, root_path);
+  std::vector<std::string> new_folder_filters = filter_result.filters;
+  bool new_path_filter_active = !filter_result.all_selected;
+  bool new_selection_empty = !filter_result.any_selected;
 
   bool filters_changed = (new_folder_filters != ui_state.path_filters) ||
-    (ui_state.path_filter_active != !new_folder_filters.empty());
+    (ui_state.path_filter_active != new_path_filter_active) ||
+    (ui_state.folder_selection_covers_all != filter_result.all_selected) ||
+    (ui_state.folder_selection_empty != new_selection_empty);
 
   if (filters_changed) {
-    ui_state.path_filters = new_folder_filters;
-    ui_state.path_filter_active = !new_folder_filters.empty();
+    ui_state.path_filters = std::move(new_folder_filters);
+    ui_state.path_filter_active = new_path_filter_active;
+    ui_state.folder_selection_covers_all = filter_result.all_selected;
+    ui_state.folder_selection_empty = new_selection_empty;
     ui_state.update_needed = true;
   }
 
   ui_state.tree_nodes_to_open.clear();
 
   ImGui::EndChild();
+  ImGui::EndChild();
   ImGui::PopStyleColor(2);
 }
 
 namespace folder_tree_utils {
   const std::vector<std::string>& ensure_children_loaded(UIState& ui_state,
-    const std::filesystem::path& dir_path) {
+    const std::filesystem::path& dir_path, bool propagate_parent_state) {
     std::string parent_id = path_key(dir_path);
     auto cache_it = ui_state.folder_children_cache.find(parent_id);
     if (cache_it != ui_state.folder_children_cache.end()) {
@@ -242,76 +315,35 @@ namespace folder_tree_utils {
     });
 
     auto [inserted_it, inserted] = ui_state.folder_children_cache.emplace(parent_id, std::move(children));
-    bool parent_checked = get_checkbox_state(ui_state, parent_id);
-    for (const std::string& child_id : inserted_it->second) {
-      ui_state.folder_checkbox_states.emplace(child_id, parent_checked);
+    if (inserted) {
+      bool allow_propagation = propagate_parent_state &&
+        ui_state.disable_child_propagation.find(parent_id) == ui_state.disable_child_propagation.end();
+      bool child_state = allow_propagation ? get_checkbox_state(ui_state, parent_id) : false;
+      for (const std::string& child_id : inserted_it->second) {
+        ui_state.folder_checkbox_states.emplace(child_id, child_state);
+      }
     }
     return inserted_it->second;
   }
+  FilterComputationResult collect_active_filters(UIState& ui_state,
+    const std::filesystem::path& root_path) {
+    folder_tree_utils::ensure_children_loaded(ui_state, root_path);
 
-  bool collect_folder_filters(UIState& ui_state, const std::filesystem::path& dir_path,
-    const std::filesystem::path& root_path, std::vector<std::string>& filters) {
-    std::function<bool(const fs::path&, std::vector<std::string>&)> traverse;
-    traverse = [&](const fs::path& current, std::vector<std::string>& out) -> bool {
-      std::string path_id = path_key(current);
-      bool checked = get_checkbox_state(ui_state, path_id);
-
-      auto cache_it = ui_state.folder_children_cache.find(path_id);
-      bool has_children = cache_it != ui_state.folder_children_cache.end() && !cache_it->second.empty();
-
-      if (!has_children) {
-        if (checked) {
-          std::string relative = current.lexically_relative(root_path).generic_u8string();
-          if (!relative.empty()) {
-            out.push_back(relative);
-          }
-        }
-        return checked;
-      }
-
-      std::vector<std::string> child_filters;
-      bool all_children_selected = true;
-      for (const std::string& child_id : cache_it->second) {
-        bool child_full = traverse(fs::path(child_id), child_filters);
-        if (!child_full) {
-          all_children_selected = false;
-        }
-      }
-
-      if (checked && all_children_selected) {
-        std::string relative = current.lexically_relative(root_path).generic_u8string();
-        if (!relative.empty()) {
-          out.push_back(relative);
-        }
-        return true;
-      }
-
-      out.insert(out.end(), child_filters.begin(), child_filters.end());
-      return false;
-    };
-
-    return traverse(dir_path, filters);
-  }
-
-  std::vector<std::string> collect_active_filters(UIState& ui_state,
-    const std::filesystem::path& root_path, const std::vector<std::string>& root_children) {
     std::vector<std::string> filters;
-    bool all_selected = true;
-    for (const auto& child : root_children) {
-      bool full = collect_folder_filters(ui_state, fs::path(child), root_path, filters);
-      if (!full) {
-        all_selected = false;
-      }
-    }
+    bool any_selected = false;
+    bool root_full = gather_folder_filters(ui_state, root_path, root_path, filters, any_selected);
 
-    if (!all_selected) {
-      std::sort(filters.begin(), filters.end());
-      filters.erase(std::unique(filters.begin(), filters.end()), filters.end());
-    }
-    else {
+    std::sort(filters.begin(), filters.end());
+    filters.erase(std::unique(filters.begin(), filters.end()), filters.end());
+
+    if (root_full) {
       filters.clear();
     }
 
-    return filters;
+    FilterComputationResult result;
+    result.filters = std::move(filters);
+    result.all_selected = root_full;
+    result.any_selected = any_selected;
+    return result;
   }
 }

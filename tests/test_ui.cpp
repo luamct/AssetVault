@@ -25,10 +25,10 @@ void set_children(UIState& state, const fs::path& parent, const std::vector<fs::
   state.folder_children_cache[parent.u8string()] = std::move(encoded);
 }
 
-std::vector<std::string> gather_filters(UIState& state, const fs::path& root) {
+folder_tree_utils::FilterComputationResult gather_filters(UIState& state, const fs::path& root) {
   const auto cache_it = state.folder_children_cache.find(root.u8string());
   REQUIRE(cache_it != state.folder_children_cache.end());
-  return folder_tree_utils::collect_active_filters(state, root, cache_it->second);
+  return folder_tree_utils::collect_active_filters(state, root);
 }
 
 struct StubTree {
@@ -49,7 +49,7 @@ struct StubTree {
 };
 }  // namespace
 
-TEST_CASE("collect_folder_filters produces no filters when everything selected") {
+TEST_CASE("collect_active_filters produces no filters when everything selected") {
   StubTree tree;
   auto textures = tree.root / "Textures";
   auto meshes = tree.root / "Meshes";
@@ -58,11 +58,13 @@ TEST_CASE("collect_folder_filters produces no filters when everything selected")
     { textures, { textures / "SubA" } }
   });
 
-  auto filters = gather_filters(tree.state, tree.root);
-  REQUIRE(filters.empty());
+  auto result = gather_filters(tree.state, tree.root);
+  REQUIRE(result.filters.empty());
+  REQUIRE(result.all_selected);
+  REQUIRE(result.any_selected);
 }
 
-TEST_CASE("collect_folder_filters returns minimal relative paths") {
+TEST_CASE("collect_active_filters returns minimal relative paths") {
   StubTree tree;
   auto textures = tree.root / "Textures";
   auto meshes = tree.root / "Meshes";
@@ -76,12 +78,14 @@ TEST_CASE("collect_folder_filters returns minimal relative paths") {
   tree.state.folder_checkbox_states[meshes.u8string()] = false;
   tree.state.folder_checkbox_states[textures_sub1.u8string()] = false;
 
-  auto filters = gather_filters(tree.state, tree.root);
+  auto result = gather_filters(tree.state, tree.root);
   std::vector<std::string> expected = { "Textures/Sub2" };
-  REQUIRE(filters == expected);
+  REQUIRE(result.filters == expected);
+  REQUIRE_FALSE(result.all_selected);
+  REQUIRE(result.any_selected);
 }
 
-TEST_CASE("collect_folder_filters reports leaf selections") {
+TEST_CASE("collect_active_filters reports leaf selections") {
   StubTree tree;
   auto textures = tree.root / "Textures";
   auto leaf = textures / "Sub1" / "Leaf";
@@ -97,7 +101,27 @@ TEST_CASE("collect_folder_filters reports leaf selections") {
   tree.state.folder_checkbox_states[(textures / "Sub1").u8string()] = false;
   tree.state.folder_checkbox_states[leaf.u8string()] = true;
 
-  auto filters = gather_filters(tree.state, tree.root);
+  auto result = gather_filters(tree.state, tree.root);
   std::vector<std::string> expected = { "Textures/Sub1/Leaf" };
-  REQUIRE(filters == expected);
+  REQUIRE(result.filters == expected);
+  REQUIRE_FALSE(result.all_selected);
+  REQUIRE(result.any_selected);
+}
+
+TEST_CASE("collect_active_filters reports no selection when unchecked") {
+  StubTree tree;
+  auto textures = tree.root / "Textures";
+  auto meshes = tree.root / "Meshes";
+  tree.build({
+    { tree.root, { textures, meshes } }
+  });
+
+  tree.state.folder_checkbox_states[textures.u8string()] = false;
+  tree.state.folder_checkbox_states[meshes.u8string()] = false;
+  tree.state.folder_checkbox_states[tree.root.u8string()] = false;
+
+  auto result = gather_filters(tree.state, tree.root);
+  REQUIRE(result.filters.empty());
+  REQUIRE_FALSE(result.all_selected);
+  REQUIRE_FALSE(result.any_selected);
 }

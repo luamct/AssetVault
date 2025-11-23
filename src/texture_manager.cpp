@@ -746,10 +746,8 @@ unsigned int TextureManager::load_texture_for_model(const std::string& filepath)
   return create_opengl_texture(texture_data, params);
 }
 
-unsigned int TextureManager::create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive, float emissive_intensity) {
-  // Now that the shader properly handles emissive colors,
-  // we just use the diffuse color for the texture
-  // The emissive color will be passed separately to the shader
+unsigned int TextureManager::create_material_texture(const glm::vec3& diffuse, const glm::vec3& emissive,
+  float emissive_intensity) {
   glm::vec3 final_color = diffuse;
 
   LOG_TRACE("[TEXTURE] Creating material texture: diffuse=({:.3f}, {:.3f}, {:.3f}), emissive=({:.3f}, {:.3f}, {:.3f}), intensity={:.3f}, final=({:.3f}, {:.3f}, {:.3f})",
@@ -758,7 +756,6 @@ unsigned int TextureManager::create_material_texture(const glm::vec3& diffuse, c
     emissive_intensity,
     final_color.r, final_color.g, final_color.b);
 
-  // Use the new unified pipeline
   TextureData texture_data = create_solid_color_data(final_color.r, final_color.g, final_color.b);
   if (!texture_data.is_valid()) {
     LOG_ERROR("Failed to create material texture data");
@@ -934,16 +931,14 @@ TextureData TextureManager::create_solid_color_data(float r, float g, float b) {
     return texture_data; // Return invalid texture data
   }
 
-  const auto encode_linear_to_srgb = [](float linear) {
-    float clamped = std::clamp(linear, 0.0f, 1.0f);
-    float srgb = std::pow(clamped, 1.0f / 2.2f);
-    srgb = std::clamp(srgb, 0.0f, 1.0f);
-    return static_cast<unsigned char>(srgb * 255.0f + 0.5f);
+  const auto encode_srgb_byte = [](float value) {
+    float clamped = std::clamp(value, 0.0f, 1.0f);
+    return static_cast<unsigned char>(clamped * 255.0f + 0.5f);
   };
 
-  color_data[0] = encode_linear_to_srgb(r);
-  color_data[1] = encode_linear_to_srgb(g);
-  color_data[2] = encode_linear_to_srgb(b);
+  color_data[0] = encode_srgb_byte(r);
+  color_data[1] = encode_srgb_byte(g);
+  color_data[2] = encode_srgb_byte(b);
 
   texture_data.data = color_data;
   texture_data.width = 1;

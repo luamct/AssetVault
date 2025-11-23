@@ -193,7 +193,8 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
 // Render 3D coordinate axes at origin (X=red, Y=green, Z=blue) with arrow heads
 // Scale parameter adjusts axis length relative to scene
 // Uses provided view and projection matrices to ensure consistency with model rendering
-void render_debug_axes(float scale, const glm::mat4& view, const glm::mat4& projection, const glm::vec3& light_direction);
+void render_debug_axes(TextureManager& texture_manager, float scale, const glm::mat4& view,
+  const glm::mat4& projection, const glm::vec3& light_direction);
 
 // Shader management functions
 // Initialize 3D shaders by loading from external shader files

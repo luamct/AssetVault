@@ -242,6 +242,13 @@ void clear_ui_state(UIState& ui_state) {
   ui_state.current_animation_path.clear();
   ui_state.preview_animation_state.reset();
   ui_state.grid_animation_states.clear();
+  ui_state.path_filters.clear();
+  ui_state.path_filter_active = false;
+  ui_state.folder_selection_covers_all = true;
+  ui_state.folder_selection_empty = false;
+  ui_state.pending_tree_selection.reset();
+  ui_state.tree_nodes_to_open.clear();
+  ui_state.disable_child_propagation.clear();
   ui_state.folder_checkbox_states.clear();
   ui_state.folder_children_cache.clear();
 }
@@ -334,4 +341,3 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
     }
   }
 }
-
