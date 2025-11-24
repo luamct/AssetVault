@@ -273,11 +273,14 @@ void render_search_panel(UIState& ui_state,
 
   if (ImGui::BeginPopupModal(SETTINGS_MODAL_ID, nullptr,
       ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+    constexpr float SETTINGS_LABEL_Y_OFFSET = 4.0f;
     if (ImGui::BeginTable("SettingsTable", 2, ImGuiTableFlags_SizingStretchProp)) {
       ImGui::TableSetupColumn("Setting", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8.0f);
       ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableNextRow();
       ImGui::TableSetColumnIndex(0);
+      ImVec2 label_pos = ImGui::GetCursorPos();
+      ImGui::SetCursorPos(ImVec2(label_pos.x, label_pos.y + SETTINGS_LABEL_Y_OFFSET));
       ImGui::TextColored(Theme::TEXT_SECONDARY, "Assets directory");
 
       ImGui::TableSetColumnIndex(1);
@@ -307,6 +310,18 @@ void render_search_panel(UIState& ui_state,
         }
         ImGui::PopID();
         ImGui::PopStyleColor(4);
+      }
+
+      ImGui::TableNextRow();
+      ImGui::TableSetColumnIndex(0);
+      ImVec2 axes_label_pos = ImGui::GetCursorPos();
+      ImGui::SetCursorPos(ImVec2(axes_label_pos.x, axes_label_pos.y + SETTINGS_LABEL_Y_OFFSET));
+      ImGui::TextColored(Theme::TEXT_SECONDARY, "Draw debug axes");
+
+      ImGui::TableSetColumnIndex(1);
+      bool draw_axes = Config::draw_debug_axes();
+      if (ImGui::Checkbox("##DrawDebugAxes", &draw_axes)) {
+        Config::set_draw_debug_axes(draw_axes);
       }
 
       ImGui::EndTable();

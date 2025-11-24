@@ -19,6 +19,7 @@
 #include "texture_manager.h"
 #include "theme.h"
 #include "utils.h"
+#include "config.h"
 
 // 3D Preview global variables are now managed by TextureManager
 
@@ -888,7 +889,8 @@ bool load_model(const std::string& filepath, Model& model, TextureManager& textu
 }
 
 // Draw the model meshes with lighting sized to the preview camera.
-void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera, bool draw_axes) {
+void render_model(const Model& model, TextureManager& texture_manager, const Camera3D& camera,
+    bool allow_debug_axes) {
   if (!model.loaded)
     return;
 
@@ -1056,7 +1058,7 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
   // Render debug axes at origin (scaled relative to model size)
   // Pass the same view and projection matrices to ensure consistency
-  if (draw_axes && Config::PREVIEW_DRAW_DEBUG_AXES) {
+  if (allow_debug_axes && Config::draw_debug_axes()) {
     float axis_scale = max_size * 0.7f;
     render_debug_axes(texture_manager, axis_scale, view_matrix, projection_matrix, light_direction);
   }
@@ -1538,7 +1540,7 @@ void render_3d_preview(int width, int height, Model& model, TextureManager& text
       advance_model_animation(model, delta_time);
     }
 
-    render_model(model, texture_manager, camera, true);
+    render_model(model, texture_manager, camera);
 
     // Render skeleton overlay if present
     if (model.has_skeleton) {

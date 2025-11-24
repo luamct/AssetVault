@@ -21,7 +21,6 @@ FileWatcher* Services::file_watcher_ = nullptr;
 TextureManager* Services::texture_manager_ = nullptr;
 AudioManager* Services::audio_manager_ = nullptr;
 DragDropManager* Services::drag_drop_manager_ = nullptr;
-
 void Services::provide(AssetDatabase* database, SearchIndex* search_index, EventProcessor* event_processor, FileWatcher* file_watcher, TextureManager* texture_manager, AudioManager* audio_manager, DragDropManager* drag_drop_manager) {
     database_ = database;
     search_index_ = search_index;
@@ -48,9 +47,13 @@ bool Services::start(FileEventCallback file_event_callback, SafeAssets* safe_ass
         return false;
     }
 
-    // Load assets directory from config
-    std::string assets_directory;
-    if (database_->try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, assets_directory)) {
+    if (!Config::initialize(database_)) {
+        LOG_ERROR("Failed to initialize config");
+        return false;
+    }
+
+    const std::string assets_directory = Config::assets_directory();
+    if (!assets_directory.empty()) {
         LOG_INFO("Loaded assets directory from config: {}", assets_directory);
     }
 

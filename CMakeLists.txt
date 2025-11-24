@@ -214,6 +214,7 @@ add_library(AssetInventoryCore STATIC
     src/asset.cpp
     src/database.cpp
     src/services.cpp
+    src/config.cpp
     src/event_processor.cpp
     src/search.cpp
     src/texture_manager.cpp

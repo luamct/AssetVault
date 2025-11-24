@@ -151,7 +151,8 @@ int run(std::atomic<bool>* shutdown_requested) {
   }
 
   // Register core services for global access
-  Services::provide(&database, &search_index, &event_processor, &file_watcher, &texture_manager, &audio_manager, drag_drop_manager);
+  Services::provide(&database, &search_index, &event_processor, &file_watcher,
+    &texture_manager, &audio_manager, drag_drop_manager);
   LOG_INFO("Core services registered");
 
   // Start all services (includes database init, search index build, scanning, and file watcher)
@@ -160,8 +161,7 @@ int run(std::atomic<bool>* shutdown_requested) {
     return -1;
   }
 
-  // Load assets directory from config
-  database.try_get_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, ui_state.assets_directory);
+  ui_state.assets_directory = Config::assets_directory();
 
   // If the saved directory no longer exists, reset it (behave as if never set)
   if (!ui_state.assets_directory.empty()) {
@@ -170,8 +170,7 @@ int run(std::atomic<bool>* shutdown_requested) {
         !std::filesystem::is_directory(ui_state.assets_directory, ec)) {
       LOG_WARN("Saved assets directory no longer exists: {}. Resetting to unset state.", ui_state.assets_directory);
       ui_state.assets_directory.clear();
-      // Clear from database as well
-      database.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, "");
+      Config::set_assets_directory("");
     }
   }
 

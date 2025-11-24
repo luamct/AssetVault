@@ -307,7 +307,7 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
 
     clear_ui_state(ui_state);
 
-    if (!Services::database().upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, new_path)) {
+    if (!Config::set_assets_directory(new_path)) {
       LOG_WARN("Failed to persist assets directory configuration: {}", new_path);
     }
 

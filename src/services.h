@@ -3,6 +3,7 @@
 #include <string>
 #include "asset.h"  // For SafeAssets
 #include "file_watcher.h"  // For FileEventCallback
+#include "config.h"
 
 // Forward declarations
 class AssetDatabase;

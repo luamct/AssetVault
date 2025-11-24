@@ -4,165 +4,161 @@
 #include <filesystem>
 #include <string>
 #include <cstdlib>
+
 #include "asset.h"
 
-namespace Config {
+class AssetDatabase;
 
-    // =============================================================================
-    // DEBUG & DEVELOPMENT
-    // =============================================================================
+class Config {
+public:
+  // =============================================================================
+  // DEBUG & DEVELOPMENT
+  // =============================================================================
 
-    // Set to true to clear database and thumbnails on startup (fresh start for debugging)
-    constexpr bool DEBUG_CLEAN_START = true;
+  static constexpr bool DEBUG_CLEAN_START = true;
 
-    // Font settings
-    constexpr const char* FONT_PATH = "external/fonts/Inter-Regular.ttf";
-    constexpr float FONT_SIZE = 18.0f;
-    constexpr const char* TAG_FONT_PATH = "external/fonts/Inter_18pt-SemiBold.ttf";
-    constexpr float TAG_FONT_SIZE = 18.0f;
+  // Font settings
+  static constexpr const char* FONT_PATH = "external/fonts/Inter-Regular.ttf";
+  static constexpr float FONT_SIZE = 18.0f;
+  static constexpr const char* TAG_FONT_PATH = "external/fonts/Inter_18pt-SemiBold.ttf";
+  static constexpr float TAG_FONT_SIZE = 18.0f;
 
-    // =============================================================================
-    // WINDOW & UI LAYOUT
-    // =============================================================================
+  // =============================================================================
+  // WINDOW & UI LAYOUT
+  // =============================================================================
 
-    // Main window dimensions
-    constexpr int WINDOW_WIDTH = 1960;
-    constexpr int WINDOW_HEIGHT = 1080;
+  static constexpr int WINDOW_WIDTH = 1960;
+  static constexpr int WINDOW_HEIGHT = 1080;
 
-    // Search box dimensions
-    constexpr float SEARCH_BOX_WIDTH = 375.0f;
-    constexpr float SEARCH_BOX_HEIGHT = 60.0f;
-    constexpr float SEARCH_PANEL_HEIGHT = 120.0f; // Fixed height for the search region
-    constexpr float FOLDER_TREE_PANEL_HEIGHT = 220.0f; // Height for folder structure panel on the right column
+  static constexpr float SEARCH_BOX_WIDTH = 375.0f;
+  static constexpr float SEARCH_BOX_HEIGHT = 60.0f;
+  static constexpr float SEARCH_PANEL_HEIGHT = 120.0f;
+  static constexpr float FOLDER_TREE_PANEL_HEIGHT = 220.0f;
 
-    // Grid layout
-    constexpr float THUMBNAIL_SIZE = 240.0f;
-    constexpr float GRID_SPACING = 15.0f;
-    constexpr float TEXT_MARGIN = 10.0f;         // Space below thumbnail for text positioning
-    constexpr float TEXT_HEIGHT = 20.0f;         // Height reserved for text
-    constexpr float TEXT_MAX_LENGTH = 30.0f;         // Where to truncated the asset names
-    constexpr float ICON_SCALE = 0.5f;           // Icon occupies 50% of the thumbnail area
+  static constexpr float THUMBNAIL_SIZE = 240.0f;
+  static constexpr float GRID_SPACING = 15.0f;
+  static constexpr float TEXT_MARGIN = 10.0f;
+  static constexpr float TEXT_HEIGHT = 20.0f;
+  static constexpr float TEXT_MAX_LENGTH = 30.0f;
+  static constexpr float ICON_SCALE = 0.5f;
 
-    // 3D model thumbnail generation
-    constexpr int MODEL_THUMBNAIL_SIZE = 400;    // Size for generated 3D model thumbnails
-    constexpr int MAX_TEXTURE_RETRY_ATTEMPTS = 50; // Max retries for texture loading before giving up
+  static constexpr int MODEL_THUMBNAIL_SIZE = 400;
+  static constexpr int MAX_TEXTURE_RETRY_ATTEMPTS = 50;
 
-    // 3D preview controls
-    constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;  // Degrees per pixel (was 0.5, now 1/3 of that)
-    constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;            // Zoom multiplier per scroll wheel notch
-    constexpr bool PREVIEW_DRAW_DEBUG_AXES = true;            // Toggle axes rendering in 3D preview
-    constexpr bool PREVIEW_PLAY_ANIMATIONS = true;            // Toggle animation playback in preview
+  static constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;
+  static constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;
+  static constexpr bool PREVIEW_DRAW_DEBUG_AXES_DEFAULT = true;
+  static constexpr bool PREVIEW_PLAY_ANIMATIONS = true;
 
-    // 3D skeleton rendering filters
-    constexpr bool SKELETON_HIDE_CTRL_BONES = true;    // Skip bones with "Ctrl" suffix (animation controls)
-    constexpr bool SKELETON_HIDE_IK_BONES = true;      // Skip bones with "IK" in name (inverse kinematics targets)
-    constexpr bool SKELETON_HIDE_ROLL_BONES = true;    // Skip bones with "Roll" in name (helper bones)
-    constexpr bool SKELETON_HIDE_ROOT_CHILDREN = true; // Skip bones directly parented to "Root" (world anchor)
+  static constexpr bool SKELETON_HIDE_CTRL_BONES = true;
+  static constexpr bool SKELETON_HIDE_IK_BONES = true;
+  static constexpr bool SKELETON_HIDE_ROLL_BONES = true;
+  static constexpr bool SKELETON_HIDE_ROOT_CHILDREN = true;
 
-    // Preview panel layout
-    constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;     // Margin from window right edge
-    constexpr float PREVIEW_INTERNAL_PADDING = 30.0f; // Internal padding within preview panel
+  static constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;
+  static constexpr float PREVIEW_INTERNAL_PADDING = 30.0f;
 
-    // =============================================================================
-    // PERFORMANCE & PROCESSING
-    // =============================================================================
+  // =============================================================================
+  // PERFORMANCE & PROCESSING
+  // =============================================================================
 
-    // Event processing
-    constexpr size_t EVENT_PROCESSOR_BATCH_SIZE = 100;
+  static constexpr size_t EVENT_PROCESSOR_BATCH_SIZE = 100;
+  static constexpr size_t MAX_SEARCH_RESULTS = 1000;
+  static constexpr int SEARCH_DEBOUNCE_MS = 250;
 
-    // Search & UI limits
-    constexpr size_t MAX_SEARCH_RESULTS = 1000; // Limit results to prevent UI blocking
-    constexpr int SEARCH_DEBOUNCE_MS = 250;      // Delay before executing search (milliseconds)
+  inline static const std::unordered_set<AssetType> IGNORED_ASSET_TYPES = {
+    AssetType::Auxiliary,
+    AssetType::Unknown,
+    AssetType::Directory,
+    AssetType::Document
+  };
 
-    // Asset types to exclude from search results (O(1) lookup)
-    inline const std::unordered_set<AssetType> IGNORED_ASSET_TYPES = {
-        AssetType::Auxiliary,  // System/helper files (.mtl, .log, .cache, .tmp, .bak, etc.)
-        AssetType::Unknown,    // Unrecognized files (.DS_Store, .gitignore, README, etc.)
-        AssetType::Directory,  // Folders
-        AssetType::Document    // Documents (.txt, .md, .pdf, .doc, etc.)
-    };
+  static constexpr int SVG_THUMBNAIL_SIZE = 240;
+  static constexpr float MAX_THUMBNAIL_UPSCALE_FACTOR = 2.0f;
+  static constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 20.0f;
 
-    // Asset processing
-    constexpr int SVG_THUMBNAIL_SIZE = 240;
+  // =============================================================================
+  // FILE SYSTEM & MONITORING
+  // =============================================================================
 
-    // Image scaling limits
-    constexpr float MAX_THUMBNAIL_UPSCALE_FACTOR = 2.0f;  // Upscaling for grid thumbnails
-    constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 20.0f;  // High upscaling for preview panel (unlimited in practice)
+  static constexpr int FILE_WATCHER_DEBOUNCE_MS = 50;
+  static constexpr int MAX_ASSET_CREATION_RETRIES = 3;
 
-    // =============================================================================
-    // FILE SYSTEM & MONITORING
-    // =============================================================================
+  static inline constexpr const char* CONFIG_KEY_ASSETS_DIRECTORY = "assets_directory";
+  static inline constexpr const char* CONFIG_KEY_DRAW_DEBUG_AXES = "draw_debug_axes";
+  static constexpr bool CONFIG_DEFAULT_DRAW_DEBUG_AXES = PREVIEW_DRAW_DEBUG_AXES_DEFAULT;
 
-    // File watcher settings
-    constexpr int FILE_WATCHER_DEBOUNCE_MS = 50; // Time window to coalesce related events from the same files
+  static constexpr const char* DATABASE_PATH = "db/assets.db";
+  static constexpr const char* THUMBNAIL_DIRECTORY = "thumbnails";
 
-    // Asset processing settings
-    constexpr int MAX_ASSET_CREATION_RETRIES = 3; // Maximum number of retries for failed asset creation
+  // =============================================================================
+  // PATH UTILITIES
+  // =============================================================================
 
-    // Asset root directory configuration key
-    inline constexpr const char* CONFIG_KEY_ASSETS_DIRECTORY = "assets_directory";
-
-    // Database settings
-    constexpr const char* DATABASE_PATH = "db/assets.db";
-
-    // Thumbnail settings
-    constexpr const char* THUMBNAIL_DIRECTORY = "thumbnails";
-
-    // =============================================================================
-    // CROSS-PLATFORM PATHS
-    // =============================================================================
-
-
-    // Get the proper data directory for the current platform
-    inline std::filesystem::path get_data_directory() {
-        // Check if we're in testing mode
-        if (std::getenv("TESTING")) {
-            return "build/data";
-        }
-
-#ifdef _WIN32
-        // Windows: %LOCALAPPDATA%\AssetInventory
-        const char* localappdata = std::getenv("LOCALAPPDATA");
-        if (localappdata) {
-            return std::filesystem::path(localappdata) / "AssetInventory";
-        }
-        else {
-            return "data";
-        }
-#elif __APPLE__
-        // macOS: ~/Library/Application Support/AssetInventory
-        const char* home = std::getenv("HOME");
-        if (home) {
-            return std::filesystem::path(home) / "Library" / "Application Support" / "AssetInventory";
-        }
-        else {
-            return "data";
-        }
-#endif
+  static std::filesystem::path get_data_directory() {
+    if (std::getenv("TESTING")) {
+      return "build/data";
     }
 
-    // Get the thumbnail directory (in data directory)
-    inline std::filesystem::path get_thumbnail_directory() {
-        return get_data_directory() / THUMBNAIL_DIRECTORY;
+  #ifdef _WIN32
+    const char* localappdata = std::getenv("LOCALAPPDATA");
+    if (localappdata) {
+      return std::filesystem::path(localappdata) / "AssetInventory";
+    }
+    return "data";
+  #elif __APPLE__
+    const char* home = std::getenv("HOME");
+    if (home) {
+      return std::filesystem::path(home) / "Library" / "Application Support" / "AssetInventory";
+    }
+    return "data";
+  #else
+    return "data";
+  #endif
+  }
+
+  static std::filesystem::path get_thumbnail_directory() {
+    return get_data_directory() / THUMBNAIL_DIRECTORY;
+  }
+
+  static std::filesystem::path get_database_path() {
+    return get_data_directory() / "assets.db";
+  }
+
+  static void initialize_directories() {
+    std::filesystem::path data_dir = get_data_directory();
+    if (!std::filesystem::exists(data_dir)) {
+      std::filesystem::create_directories(data_dir);
     }
 
-    // Get the database path (in data directory)
-    inline std::filesystem::path get_database_path() {
-        return get_data_directory() / "assets.db";
+    std::filesystem::path db_dir = data_dir;
+    if (!std::filesystem::exists(db_dir)) {
+      std::filesystem::create_directories(db_dir);
     }
 
-    // Create application directories if necessary
-    inline void initialize_directories() {
-        // Create data directory (for database and thumbnails)
-        std::filesystem::path data_dir = get_data_directory();
-        if (!std::filesystem::exists(data_dir)) {
-            std::filesystem::create_directories(data_dir);
-        }
-
-        // Create thumbnail directory within data directory
-        std::filesystem::path thumbnail_dir = get_thumbnail_directory();
-        if (!std::filesystem::exists(thumbnail_dir)) {
-            std::filesystem::create_directories(thumbnail_dir);
-        }
+    std::filesystem::path thumbnail_dir = get_thumbnail_directory();
+    if (!std::filesystem::exists(thumbnail_dir)) {
+      std::filesystem::create_directories(thumbnail_dir);
     }
-}
+  }
+
+  // =============================================================================
+  // RUNTIME CONFIGURATION
+  // =============================================================================
+
+  static bool initialize(AssetDatabase* database);
+  static const std::string& assets_directory();
+  static bool draw_debug_axes();
+  static bool set_assets_directory(const std::string& path);
+  static bool set_draw_debug_axes(bool enabled);
+
+private:
+  static std::string load_string_setting(const std::string& key, const std::string& default_value);
+  static bool load_bool_setting(const std::string& key, bool default_value);
+  static bool persist_value(const std::string& key, const std::string& value);
+
+  static AssetDatabase* database_;
+  static bool initialized_;
+  static std::string assets_directory_value_;
+  static bool draw_debug_axes_value_;
+};
