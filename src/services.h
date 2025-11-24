@@ -22,12 +22,12 @@ class DragDropManager;
 // Thread Safety: All registered services are expected to be thread-safe.
 //                The Services class itself is thread-safe for reads after initialization.
 //
-// Lifecycle: Services are initialized in run.cpp and live for the application's lifetime.
+// Lifecycle: Services are initialized in main.cpp and live for the application's lifetime.
 //
 // Testing: Use provide() to inject mock implementations.
 //
 // Example usage:
-//   // In run.cpp (application startup):
+//   // In main.cpp (application startup):
 //   Services::provide(&database, &search_index, &event_processor, &file_watcher, &texture_manager);
 //
 //   // Anywhere in the codebase:

@@ -210,7 +210,6 @@ endif()
 
 # Core library - shared by main executable and all tests
 add_library(AssetInventoryCore STATIC
-    src/run.cpp
     src/asset.cpp
     src/database.cpp
     src/services.cpp
@@ -410,12 +409,19 @@ endif()
 add_test(NAME UITests COMMAND UITest)
 
 # Add Integration test executable
-add_executable(IntegrationTest tests/test_integration.cpp tests/test_helpers.cpp)
+add_executable(IntegrationTest
+    tests/test_integration.cpp
+    tests/test_helpers.cpp
+    src/main.cpp
+)
 target_include_directories(IntegrationTest PRIVATE ${TEST_INCLUDE_DIRS})
 target_link_libraries(IntegrationTest PRIVATE ${TEST_LIBRARIES})
 
 # Define MAX_FRAMES_TESTS for integration testing
-target_compile_definitions(IntegrationTest PRIVATE MAX_FRAMES_TESTS=60)
+target_compile_definitions(IntegrationTest PRIVATE
+    MAX_FRAMES_TESTS=60
+    ASSET_INVENTORY_ENTRYPOINT=AssetInventoryIntegrationMain
+)
 
 # Platform-specific libraries for IntegrationTest
 if(PLATFORM_WINDOWS)
