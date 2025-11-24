@@ -141,7 +141,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   glfwMakeContextCurrent(window);
 
   // Initialize EventProcessor (needs thumbnail_context created above)
-  EventProcessor event_processor(safe_assets, ui_state.update_needed, ui_state.assets_directory, thumbnail_context);
+  EventProcessor event_processor(safe_assets, ui_state.event_batch_finished, ui_state.assets_directory, thumbnail_context);
 
   // Initialize drag-and-drop manager (platform-specific)
   DragDropManager* drag_drop_manager = create_drag_drop_manager();
@@ -206,8 +206,14 @@ int run(std::atomic<bool>* shutdown_requested) {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
 
-    // Check if search needs to be updated due to asset changes
-    if (ui_state.update_needed.exchange(false)) {
+    // Reset folder tree if a processing batch finished
+    if (ui_state.event_batch_finished.exchange(false)) {
+      reset_folder_tree_state(ui_state);
+      ui_state.filters_changed = true;
+    }
+
+    // Apply pending filter changes (tree selections, batch refreshes, etc.)
+    if (ui_state.filters_changed.exchange(false)) {
       // Re-apply current search filter to include updated assets
       filter_assets(ui_state, safe_assets);
 

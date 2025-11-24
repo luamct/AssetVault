@@ -37,7 +37,8 @@ enum class ZoomLevel : int {
 
 // UI state structure
 struct UIState {
-  std::atomic<bool> update_needed{ true };
+  std::atomic<bool> filters_changed{ true };
+  std::atomic<bool> event_batch_finished{ false };
 
   char buffer[256] = "";
   std::string last_buffer = "";
@@ -120,6 +121,9 @@ struct UIState {
 
 // Clear all search and UI state when changing directories
 void clear_ui_state(UIState& ui_state);
+
+// Reset folder tree state and filters
+void reset_folder_tree_state(UIState& ui_state);
 
 // Renders a clickable path that allows filtering by directory
 void render_clickable_path(const Asset& asset, UIState& ui_state);

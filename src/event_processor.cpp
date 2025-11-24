@@ -21,9 +21,9 @@
 namespace fs = std::filesystem;
 
 EventProcessor::EventProcessor(SafeAssets& safe_assets,
-    std::atomic<bool>& search_update_needed,
+    std::atomic<bool>& event_batch_finished,
     const std::string& assets_directory, GLFWwindow* thumbnail_context)
-    : safe_assets_(safe_assets), search_update_needed_(search_update_needed),
+    : safe_assets_(safe_assets), event_batch_finished_(event_batch_finished),
     batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
     thumbnail_context_(thumbnail_context), assets_directory_(assets_directory) {
@@ -179,8 +179,8 @@ void EventProcessor::process_event_batch(const std::vector<FileEvent>& batch) {
         process_created_events(created_events);
     }
 
-    // Signal that search needs to be updated
-    search_update_needed_ = true;
+    // Signal that UI should refresh tree
+    event_batch_finished_ = true;
 
     // Calculate timing metrics
     auto end_time = std::chrono::high_resolution_clock::now();

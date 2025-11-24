@@ -222,7 +222,7 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
           ui_state.path_filters.push_back(path_to_segment);
           ui_state.path_filter_active = true;
           ui_state.pending_tree_selection = path_to_segment;
-          ui_state.update_needed = true;
+          ui_state.filters_changed = true;
         }
       }
     }

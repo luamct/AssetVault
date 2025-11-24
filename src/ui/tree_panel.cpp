@@ -280,7 +280,7 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
     ui_state.path_filter_active = new_path_filter_active;
     ui_state.folder_selection_covers_all = filter_result.all_selected;
     ui_state.folder_selection_empty = new_selection_empty;
-    ui_state.update_needed = true;
+    ui_state.filters_changed = true;
   }
 
   ui_state.tree_nodes_to_open.clear();
