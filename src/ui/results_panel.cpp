@@ -6,6 +6,7 @@
 #include "services.h"
 #include "drag_drop.h"
 #include "logger.h"
+#include "ui/components.h"
 
 #include <algorithm>
 #include <chrono>
@@ -49,67 +50,6 @@ void ensure_grid_zoom_level(UIState& ui_state) {
   if (level < GRID_ZOOM_MIN_LEVEL || level > GRID_ZOOM_MAX_LEVEL) {
     ui_state.grid_zoom_level = GRID_ZOOM_DEFAULT_LEVEL;
   }
-}
-
-bool draw_grid_scale_button(const char* id, unsigned int icon_texture, const char* fallback_label,
-  const ImVec2& cursor_pos, float button_size, bool enabled) {
-  ImGui::SetCursorPos(cursor_pos);
-  ImGui::PushID(id);
-
-  ImVec2 size(button_size, button_size);
-  if (!enabled) {
-    ImGui::BeginDisabled();
-  }
-
-  bool clicked = ImGui::InvisibleButton("Button", size);
-
-  if (!enabled) {
-    ImGui::EndDisabled();
-  }
-
-  bool hovered = enabled && ImGui::IsItemHovered();
-  bool active = enabled && ImGui::IsItemActive();
-
-  ImVec2 min = ImGui::GetItemRectMin();
-  ImVec2 max = ImGui::GetItemRectMax();
-
-  if (hovered || active) {
-    ImVec4 highlight = Theme::COLOR_SEMI_TRANSPARENT;
-    if (active) {
-      highlight.w = std::min(1.0f, highlight.w + 0.2f);
-    }
-    ImGui::GetWindowDrawList()->AddRectFilled(min, max,
-      Theme::ToImU32(highlight), 8.0f);
-  }
-
-  ImVec4 content_color = active ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
-  if (!enabled && !active) {
-    content_color.w *= 0.7f;
-  }
-
-  if (icon_texture != 0) {
-    float icon_padding = std::max(2.0f, button_size * 0.15f);
-    ImVec2 icon_min(min.x + icon_padding, min.y + icon_padding);
-    ImVec2 icon_max(max.x - icon_padding, max.y - icon_padding);
-    ImGui::GetWindowDrawList()->AddImage(
-      (ImTextureID) (intptr_t) icon_texture,
-      icon_min,
-      icon_max,
-      ImVec2(0.0f, 0.0f),
-      ImVec2(1.0f, 1.0f),
-      Theme::ToImU32(content_color));
-  }
-  else if (fallback_label && fallback_label[0] != '\0') {
-    ImVec2 text_size = ImGui::CalcTextSize(fallback_label);
-    ImVec2 text_pos(
-      min.x + (size.x - text_size.x) * 0.5f,
-      min.y + (size.y - text_size.y) * 0.5f
-    );
-    ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(content_color), fallback_label);
-  }
-
-  ImGui::PopID();
-  return enabled && clicked;
 }
 
 // TODO: move to utils.cpp
@@ -254,14 +194,31 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
     unsigned int zoom_out_icon = texture_manager.get_zoom_out_icon();
     unsigned int zoom_in_icon = texture_manager.get_zoom_in_icon();
+    IconButtonColors zoom_button_colors;
+    zoom_button_colors.normal = Theme::TOGGLE_OFF_TEXT;
+    zoom_button_colors.active = Theme::TOGGLE_ON_TEXT;
+    zoom_button_colors.disabled = Theme::TOGGLE_OFF_TEXT;
+    zoom_button_colors.disabled.w *= 0.7f;
 
-    if (draw_grid_scale_button("GridScaleMinus", zoom_out_icon, "-", minus_pos,
-        button_size, can_zoom_out)) {
+    IconButtonParams minus_button;
+    minus_button.id = "GridScaleMinus";
+    minus_button.cursor_pos = minus_pos;
+    minus_button.size = button_size;
+    minus_button.icon_texture = zoom_out_icon;
+    minus_button.fallback_label = "-";
+    minus_button.colors = zoom_button_colors;
+    minus_button.enabled = can_zoom_out;
+    if (draw_icon_button(minus_button)) {
       apply_zoom_delta_and_log(-1, "decreased");
     }
 
-    if (draw_grid_scale_button("GridScalePlus", zoom_in_icon, "+", plus_pos,
-        button_size, can_zoom_in)) {
+    IconButtonParams plus_button = minus_button;
+    plus_button.id = "GridScalePlus";
+    plus_button.cursor_pos = plus_pos;
+    plus_button.icon_texture = zoom_in_icon;
+    plus_button.fallback_label = "+";
+    plus_button.enabled = can_zoom_in;
+    if (draw_icon_button(plus_button)) {
       apply_zoom_delta_and_log(1, "increased");
     }
 

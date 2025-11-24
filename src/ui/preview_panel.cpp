@@ -833,8 +833,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
     }
   }
   else {
-    ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No asset selected");
-    ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "Click on an asset to preview");
+    ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "Click on an asset to preview it");
   }
 
   ImGui::EndChild();

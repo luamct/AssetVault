@@ -3,6 +3,8 @@
 ## Project Structure & Module Organization
 Keep gameplay and tooling code in `src/`, grouped by system (e.g., `texture_manager.h`, `database.cpp`). Place tests in `tests/` as `test_*.cpp` Catch2 specs. Vendor code lives in `external/`. Runtime assets (`assets/`, `images/`, `thumbnails/`) and generated data (`db/`, `logs/`) are ignored by git. Build artifacts belong under `build/`, such as `build/Debug` or `build/Release`, and Windows helper scripts reside in `scripts/`.
 
+Reusable Dear ImGui widgets (icon buttons, fancy text inputs, toggle chips, wrapped text rows, etc.) live in `src/ui/components.h/.cpp`; add new generic UI pieces there so panels can share them without duplication.
+
 ## Build, Test, and Development Commands
 Configure the project once from the repo root:
 ```

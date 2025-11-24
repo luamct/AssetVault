@@ -135,14 +135,6 @@ void render_common_asset_info(const Asset& asset, UIState& ui_state);
 bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f);
 
 
-// Fancy styled text input with shadow effect
-bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float width,
-    float padding_x = 20.0f, float padding_y = 16.0f, float corner_radius = 25.0f);
-
-// Draw type filter toggle button
-bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,
-    float button_width, float button_height);
-
 // Main UI panel rendering functions
 void render_search_panel(UIState& ui_state,
     const SafeAssets& safe_assets,

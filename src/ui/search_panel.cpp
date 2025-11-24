@@ -5,6 +5,7 @@
 #include "utils.h"
 #include "imgui.h"
 #include "texture_manager.h"
+#include "ui/components.h"
 
 #include <algorithm>
 #include <chrono>
@@ -13,144 +14,6 @@
 namespace {
 constexpr float SEARCH_BOX_WIDTH = 375.0f;
 constexpr float SEARCH_BOX_HEIGHT = 60.0f;
-bool draw_settings_icon_button(const char* id, unsigned int icon_texture,
-    const ImVec2& cursor_pos, float button_size) {
-  ImGui::SetCursorPos(cursor_pos);
-  ImGui::PushID(id);
-
-  ImVec2 size(button_size, button_size);
-  bool clicked = ImGui::InvisibleButton("Button", size);
-  bool hovered = ImGui::IsItemHovered();
-  bool active = ImGui::IsItemActive();
-
-  ImVec2 min = ImGui::GetItemRectMin();
-  ImVec2 max = ImGui::GetItemRectMax();
-
-  if (hovered || active) {
-    ImVec4 highlight = Theme::COLOR_SEMI_TRANSPARENT;
-    if (active) {
-      highlight.w = std::min(1.0f, highlight.w + 0.2f);
-    }
-    ImGui::GetWindowDrawList()->AddRectFilled(min, max,
-      Theme::ToImU32(highlight), 8.0f);
-  }
-
-  ImVec4 icon_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-  float icon_padding = std::max(2.0f, button_size * 0.15f);
-  if (icon_texture != 0) {
-    ImVec2 icon_min(min.x + icon_padding, min.y + icon_padding);
-    ImVec2 icon_max(max.x - icon_padding, max.y - icon_padding);
-    ImGui::GetWindowDrawList()->AddImage(
-      (ImTextureID) (intptr_t) icon_texture,
-      icon_min,
-      icon_max,
-      ImVec2(0.0f, 0.0f),
-      ImVec2(1.0f, 1.0f),
-      Theme::ToImU32(icon_color));
-  }
-
-  ImGui::PopID();
-  return clicked;
-}
-
-bool draw_wrapped_settings_entry(const char* id, const std::string& text,
-    const ImVec4& text_color) {
-  ImGui::PushID(id);
-  float wrap_limit = ImGui::GetCursorPos().x + ImGui::GetColumnWidth();
-  ImGui::PushTextWrapPos(wrap_limit);
-  ImGui::TextColored(text_color, "%s", text.c_str());
-  ImGui::PopTextWrapPos();
-
-  ImVec2 min = ImGui::GetItemRectMin();
-  ImVec2 max = ImGui::GetItemRectMax();
-  ImVec2 size = ImVec2(max.x - min.x, max.y - min.y);
-
-  ImGui::SetCursorScreenPos(min);
-  bool clicked = ImGui::InvisibleButton("WrappedEntry", size);
-  bool hovered = ImGui::IsItemHovered();
-
-  if (hovered) {
-    ImGui::GetWindowDrawList()->AddRectFilled(min, max,
-      Theme::ToImU32(Theme::COLOR_SEMI_TRANSPARENT), 6.0f);
-  }
-
-  // Move cursor back below the drawn text so following elements align correctly
-  ImGui::SetCursorScreenPos(ImVec2(min.x, max.y));
-  ImGui::PopID();
-  return clicked;
-}
-}
-
-bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float width,
-    float padding_x, float padding_y, float corner_radius) {
-  ImGui::PushItemWidth(width);
-
-  float font_height = ImGui::GetFontSize();
-  float actual_input_height = font_height + (padding_y * 2.0f);
-
-  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, corner_radius);
-  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padding_x, padding_y));
-  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.98f, 0.98f, 0.98f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
-
-  ImVec2 shadow_offset(2.0f, 2.0f);
-  ImVec2 input_pos = ImGui::GetCursorScreenPos();
-  ImVec2 shadow_min(input_pos.x + shadow_offset.x, input_pos.y + shadow_offset.y);
-  ImVec2 shadow_max(shadow_min.x + width, shadow_min.y + actual_input_height);
-
-  ImGui::GetWindowDrawList()->AddRectFilled(
-    shadow_min, shadow_max,
-    ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.12f)),
-    corner_radius);
-
-  bool result = ImGui::InputText(label, buffer, buffer_size, ImGuiInputTextFlags_EnterReturnsTrue);
-
-  ImGui::PopStyleColor(3);
-  ImGui::PopStyleVar(2);
-  ImGui::PopItemWidth();
-  return result;
-}
-
-bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,
-    float button_width, float button_height) {
-  ImVec2 button_min(x_pos, y_pos);
-  ImVec2 button_max(button_min.x + button_width, button_min.y + button_height);
-
-  ImVec2 mouse_pos = ImGui::GetMousePos();
-  bool is_hovered = (mouse_pos.x >= button_min.x && mouse_pos.x <= button_max.x &&
-    mouse_pos.y >= button_min.y && mouse_pos.y <= button_max.y);
-
-  ImVec4 bg_color = Theme::BACKGROUND_WHITE;
-  if (toggle_state) {
-    bg_color = Theme::TOGGLE_ON_BG;
-  }
-  else if (is_hovered) {
-    bg_color = Theme::TOGGLE_HOVER_BG;
-  }
-
-  ImVec4 border_color = toggle_state ? Theme::TOGGLE_ON_BORDER : Theme::TOGGLE_OFF_BORDER;
-  ImVec4 text_color = toggle_state ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
-
-  float button_rounding = button_height * 0.5f;
-  float border_thickness = 1.0f;
-
-  ImGui::GetWindowDrawList()->AddRectFilled(button_min, button_max, Theme::ToImU32(bg_color), button_rounding);
-  ImGui::GetWindowDrawList()->AddRect(button_min, button_max, Theme::ToImU32(border_color), button_rounding, 0, border_thickness);
-
-  ImVec2 text_size = ImGui::CalcTextSize(label);
-  ImVec2 text_pos(
-    button_min.x + (button_width - text_size.x) * 0.5f,
-    button_min.y + (button_height - text_size.y) * 0.5f);
-  ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(text_color), label);
-
-  bool clicked = false;
-  if (is_hovered && ImGui::IsMouseClicked(0)) {
-    toggle_state = !toggle_state;
-    clicked = true;
-  }
-
-  return clicked;
 }
 
 void render_search_panel(UIState& ui_state,
@@ -177,8 +40,12 @@ void render_search_panel(UIState& ui_state,
     ImVec2 original_cursor = ImGui::GetCursorPos();
     float button_x = std::max(0.0f, content_width - settings_button_size - settings_button_padding);
     ImVec2 button_pos(button_x, top_padding);
-    open_settings_modal = draw_settings_icon_button("SettingsButton", settings_icon,
-      button_pos, settings_button_size);
+    IconButtonParams settings_button;
+    settings_button.id = "SettingsButton";
+    settings_button.cursor_pos = button_pos;
+    settings_button.size = settings_button_size;
+    settings_button.icon_texture = settings_icon;
+    open_settings_modal = draw_icon_button(settings_button);
     ImGui::SetCursorPos(original_cursor);
   }
 

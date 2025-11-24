@@ -223,6 +223,7 @@ add_library(AssetInventoryCore STATIC
     src/fonts.cpp
     src/utils.cpp
     src/ui/ui.cpp
+    src/ui/components.cpp
     src/ui/search_panel.cpp
     src/ui/results_panel.cpp
     src/ui/preview_panel.cpp
