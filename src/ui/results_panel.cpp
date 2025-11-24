@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <unordered_set>
 
 constexpr float GRID_ZOOM_BASE_UNIT = 80.0f;
@@ -273,6 +274,42 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   grid_draw_list->ChannelsSplit(2);
   grid_draw_list->ChannelsSetCurrent(0);
 
+  ImGuiIO& selection_io = ImGui::GetIO();
+  bool selection_modifier_pressed = selection_io.KeySuper || selection_io.KeyCtrl;
+
+  bool drag_preview_active = ui_state.drag_select_active;
+  ImVec2 drag_preview_start = ui_state.drag_select_start;
+  ImVec2 drag_preview_end = ui_state.drag_select_end;
+  bool left_mouse_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+  bool grid_window_hovered_now = ImGui::IsWindowHovered();
+
+  if (drag_preview_active) {
+    if (left_mouse_down && grid_window_hovered_now) {
+      drag_preview_end = ImGui::GetMousePos();
+    }
+  } else if (ui_state.drag_select_started && left_mouse_down && grid_window_hovered_now) {
+    ImVec2 current_pos = ImGui::GetMousePos();
+    float drag_distance = std::abs(current_pos.x - drag_preview_start.x) +
+      std::abs(current_pos.y - drag_preview_start.y);
+    if (drag_distance > 5.0f) {
+      drag_preview_active = true;
+      drag_preview_end = current_pos;
+    }
+  }
+
+  ImVec2 drag_preview_min(0.0f, 0.0f);
+  ImVec2 drag_preview_max(0.0f, 0.0f);
+  if (drag_preview_active) {
+    drag_preview_min = ImVec2(
+      std::min(drag_preview_start.x, drag_preview_end.x),
+      std::min(drag_preview_start.y, drag_preview_end.y)
+    );
+    drag_preview_max = ImVec2(
+      std::max(drag_preview_start.x, drag_preview_end.x),
+      std::max(drag_preview_start.y, drag_preview_end.y)
+    );
+  }
+
   std::vector<ItemLayout> item_layouts;
   std::vector<RowInfo> row_infos;
 
@@ -439,15 +476,43 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       const Asset& asset = ui_state.results[i];
       const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(asset);
+      bool is_currently_selected = ui_state.selected_asset_ids.count(asset.id) > 0;
 
       float container_height = layout.row_height;
       ImVec2 container_size(layout.display_size.x, container_height);
       ImVec2 container_pos = ImGui::GetCursorScreenPos();
+      ImVec2 container_max(container_pos.x + container_size.x, container_pos.y + container_height);
 
-      grid_draw_list->AddRectFilled(
-        container_pos,
-        ImVec2(container_pos.x + container_size.x, container_pos.y + container_height),
-        Theme::ToImU32(Theme::BACKGROUND_LIGHT_BLUE_1));
+      bool is_drag_preview_target = false;
+      if (drag_preview_active) {
+        is_drag_preview_target = !(
+          container_max.x < drag_preview_min.x ||
+          container_pos.x > drag_preview_max.x ||
+          container_max.y < drag_preview_min.y ||
+          container_pos.y > drag_preview_max.y
+        );
+      }
+
+      bool show_selected = is_currently_selected;
+      if (drag_preview_active) {
+        show_selected = selection_modifier_pressed
+          ? (show_selected || is_drag_preview_target)
+          : is_drag_preview_target;
+      }
+
+      ImU32 container_bg_color = Theme::ToImU32(
+        show_selected ? Theme::ACCENT_BLUE_1_ALPHA_35 : Theme::BACKGROUND_LIGHT_BLUE_1);
+      grid_draw_list->AddRectFilled(container_pos, container_max, container_bg_color);
+
+      if (show_selected) {
+        grid_draw_list->AddRect(
+          container_pos,
+          container_max,
+          Theme::ToImU32(Theme::ACCENT_BLUE_1),
+          4.0f,
+          0,
+          2.0f);
+      }
 
       float image_x_offset = std::max(0.0f, (container_size.x - layout.display_size.x) * 0.5f);
       float image_y_offset = 0.0f;
@@ -536,7 +601,6 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       ImGui::PopStyleVar(2);  // Restore frame padding/border size
 
-      ImVec2 container_max(container_pos.x + container_size.x, container_pos.y + container_height);
       bool is_container_hovered = ImGui::IsMouseHoveringRect(container_pos, container_max);
 
       // Handle drag-and-drop to external applications (Finder, Explorer, etc.)
@@ -578,13 +642,13 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       ImGui::PopStyleColor(4);
 
-      bool is_selected = ui_state.selected_asset_ids.count(ui_state.results[i].id) > 0;
-
       int current_zoom_level = zoom_level_index(ui_state.grid_zoom_level);
       bool show_label_always = (asset.type != AssetType::_2D && asset.type != AssetType::_3D) &&
                                current_zoom_level >= zoom_level_index(ZoomLevel::Level2);
 
-      bool can_show_label = (is_container_hovered && !ui_state.assets_directory_modal_open) || show_label_always;
+      bool can_show_label = show_selected ||
+        (is_container_hovered && !ui_state.assets_directory_modal_open) ||
+        show_label_always;
 
       if (can_show_label) {
         std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
@@ -607,12 +671,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         ImVec2 text_pos(text_x, text_y);
 
         ImU32 background_color = Theme::ToImU32(
-          is_selected ? Theme::ACCENT_BLUE_1_ALPHA_95 : Theme::FRAME_LIGHT_BLUE_5
+          show_selected ? Theme::ACCENT_BLUE_1_ALPHA_95 : Theme::FRAME_LIGHT_BLUE_5
         );
         ImU32 border_color = Theme::ToImU32(
-          is_selected ? Theme::ACCENT_BLUE_1 : Theme::BORDER_LIGHT_BLUE_1
+          show_selected ? Theme::ACCENT_BLUE_1 : Theme::BORDER_LIGHT_BLUE_1
         );
-        ImU32 text_color = is_selected ? Theme::COLOR_WHITE_U32 : Theme::ToImU32(Theme::TEXT_DARK);
+        ImU32 text_color = show_selected ? Theme::COLOR_WHITE_U32 : Theme::ToImU32(Theme::TEXT_DARK);
 
         grid_draw_list->AddRectFilled(text_bg_min, text_bg_max, background_color, 3.0f);
         grid_draw_list->AddRect(text_bg_min, text_bg_max, border_color, 3.0f, 0, 1.0f);
@@ -652,8 +716,6 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Handle area selection (rubber band selection)
   bool is_window_hovered = ImGui::IsWindowHovered();
   bool is_item_hovered = ImGui::IsAnyItemHovered();
-  ImGuiIO& io = ImGui::GetIO();
-  bool modifier_pressed = io.KeySuper || io.KeyCtrl;
 
   // Start drag selection when clicking on background
   if (is_window_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !is_item_hovered) {
@@ -666,10 +728,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Update drag selection while dragging
   if (ui_state.drag_select_started && ImGui::IsMouseDown(ImGuiMouseButton_Left) && is_window_hovered) {
     ImVec2 current_pos = ImGui::GetMousePos();
-    float drag_distance = std::sqrt(
-      std::pow(current_pos.x - ui_state.drag_select_start.x, 2) +
-      std::pow(current_pos.y - ui_state.drag_select_start.y, 2)
-    );
+    float drag_distance = std::abs(current_pos.x - ui_state.drag_select_start.x) +
+      std::abs(current_pos.y - ui_state.drag_select_start.y);
 
     // Activate drag selection after minimum distance (5 pixels) to show rectangle
     if (drag_distance > 5.0f && !ui_state.drag_select_active) {
@@ -693,10 +753,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
     // Draw filled rectangle with transparency
     grid_draw_list->ChannelsSetCurrent(1);
-    grid_draw_list->AddRectFilled(rect_min, rect_max, Theme::SELECTION_FILL_U32, 0.0f);
+    ImU32 selection_fill = Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_35);
+    ImU32 selection_border = Theme::ToImU32(Theme::ACCENT_BLUE_1);
+    grid_draw_list->AddRectFilled(rect_min, rect_max, selection_fill, 3.0f);
 
     // Draw border
-    grid_draw_list->AddRect(rect_min, rect_max, Theme::SELECTION_BORDER_U32, 0.0f, 0, 1.5f);
+    grid_draw_list->AddRect(rect_min, rect_max, selection_border, 3.0f, 0, 2.0f);
     grid_draw_list->ChannelsSetCurrent(0);
   }
 
@@ -712,7 +774,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     );
 
     // Clear selection if not holding modifier
-    if (!modifier_pressed) {
+    if (!selection_modifier_pressed) {
       ui_state.selected_asset_ids.clear();
     }
 
@@ -753,4 +815,3 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // End outer container
   ImGui::EndChild();
 }
-
