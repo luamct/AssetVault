@@ -38,7 +38,7 @@ TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
   preview_framebuffer_(0), preview_initialized_(false),
   play_icon_(0), pause_icon_(0), speaker_icon_(0),
-  zoom_in_icon_(0), zoom_out_icon_(0) {
+  zoom_in_icon_(0), zoom_out_icon_(0), settings_icon_(0) {
 }
 
 TextureManager::~TextureManager() {
@@ -82,6 +82,7 @@ bool TextureManager::initialize() {
   // Load grid zoom icons
   zoom_in_icon_ = load_packaged_texture("images/zoom-in.png");
   zoom_out_icon_ = load_packaged_texture("images/zoom-out.png");
+  settings_icon_ = load_packaged_texture("images/settings.png");
 
   LOG_INFO("TextureManager initialized successfully");
   return true;
@@ -121,6 +122,7 @@ void TextureManager::cleanup_all_textures() {
   if (speaker_icon_ != 0) glDeleteTextures(1, &speaker_icon_);
   if (zoom_in_icon_ != 0) glDeleteTextures(1, &zoom_in_icon_);
   if (zoom_out_icon_ != 0) glDeleteTextures(1, &zoom_out_icon_);
+  if (settings_icon_ != 0) glDeleteTextures(1, &settings_icon_);
 
   std::vector<std::shared_ptr<Animation2D>> animations;
   {

@@ -24,24 +24,8 @@
 
 
 namespace {
-  bool g_request_assets_path_popup = false;
-
   bool render_assets_directory_modal(UIState& ui_state) {
     bool directory_changed = false;
-    if (g_request_assets_path_popup) {
-      ImGui::OpenPopup("Select Assets Directory");
-      g_request_assets_path_popup = false;
-      ui_state.assets_directory_modal_open = true;
-
-      // Initialize to current assets directory if set, otherwise home directory
-      ui_state.show_drive_roots = false;
-      if (!ui_state.assets_directory.empty()) {
-        ui_state.assets_path_selected = ui_state.assets_directory;
-      }
-      else {
-        ui_state.assets_path_selected = get_home_directory();
-      }
-    }
 
     bool popup_style_pushed = false;
     bool popup_open = ImGui::IsPopupOpen("Select Assets Directory");
@@ -224,6 +208,18 @@ namespace {
   }
 }
 
+void open_assets_directory_modal(UIState& ui_state) {
+  ui_state.assets_directory_modal_open = true;
+  ui_state.show_drive_roots = false;
+  if (!ui_state.assets_directory.empty()) {
+    ui_state.assets_path_selected = ui_state.assets_directory;
+  }
+  else {
+    ui_state.assets_path_selected = get_home_directory();
+  }
+  ImGui::OpenPopup("Select Assets Directory");
+}
+
 // tree panel helpers moved to src/ui/tree_panel.cpp
 
 void reset_folder_tree_state(UIState& ui_state) {
@@ -297,19 +293,6 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
       progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
 
     ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(Theme::TEXT_DARK), progress_text);
-  }
-
-  const bool SHOW_ASSETS_PATH_BUTTON = false;
-  if (SHOW_ASSETS_PATH_BUTTON) {
-    float button_height = ImGui::GetFrameHeight();
-    float bottom_margin = 12.0f;
-    float left_margin = 12.0f;
-    ImVec2 button_pos(left_margin, panel_height - button_height - bottom_margin);
-    button_pos.y = std::max(button_pos.y, ImGui::GetCursorPosY());
-    ImGui::SetCursorPos(button_pos);
-    if (ImGui::Button("Assets Path", ImVec2(150.0f, 0.0f))) {
-      g_request_assets_path_popup = true;
-    }
   }
 
   ImGui::EndChild();

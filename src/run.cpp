@@ -305,7 +305,7 @@ int run(std::atomic<bool>* shutdown_requested) {
 
     // Left column (search + grid)
     ImGui::BeginGroup();
-    render_search_panel(ui_state, safe_assets, left_width, top_height);
+    render_search_panel(ui_state, safe_assets, texture_manager, left_width, top_height);
     render_asset_grid(ui_state, texture_manager, safe_assets, left_width, bottom_height);
     ImGui::EndGroup();
 

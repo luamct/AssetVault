@@ -214,6 +214,7 @@ public:
   unsigned int get_speaker_icon() const { return speaker_icon_; }
   unsigned int get_zoom_in_icon() const { return zoom_in_icon_; }
   unsigned int get_zoom_out_icon() const { return zoom_out_icon_; }
+  unsigned int get_settings_icon() const { return settings_icon_; }
 
   // Debug utilities
   void print_texture_cache(const std::string& assets_root_directory) const;
@@ -243,6 +244,7 @@ private:
   unsigned int speaker_icon_;
   unsigned int zoom_in_icon_;
   unsigned int zoom_out_icon_;
+  unsigned int settings_icon_;
 
 
   // Helper methods
