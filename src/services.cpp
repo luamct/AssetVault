@@ -13,6 +13,10 @@
 #include <cassert>
 #include <vector>
 
+namespace {
+constexpr bool DEBUG_CLEAN_START = true;
+}
+
 // Static member initialization
 AssetDatabase* Services::database_ = nullptr;
 SearchIndex* Services::search_index_ = nullptr;
@@ -58,7 +62,7 @@ bool Services::start(FileEventCallback file_event_callback, SafeAssets* safe_ass
     }
 
     // Debug: Clean start - clear both database and thumbnails
-    if (Config::DEBUG_CLEAN_START) {
+    if (DEBUG_CLEAN_START) {
         LOG_WARN("DEBUG_CLEAN_START enabled - clearing database and thumbnails...");
         database_->clear_all_assets();
         clear_all_thumbnails();

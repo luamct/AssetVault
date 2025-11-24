@@ -34,6 +34,10 @@
 #include "3d.h" // For Model, load_model, render_model, cleanup_model
 #include "animation.h" // For advance_model_animation
 
+namespace {
+constexpr float THUMBNAIL_SIZE = 240.0f;
+}
+
 TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
   preview_framebuffer_(0), preview_initialized_(false),
@@ -383,8 +387,8 @@ const TextureCacheEntry& TextureManager::get_asset_texture(const Asset& asset) {
     auto icon_it = type_icons_.find(asset.type);
     unsigned int chosen_texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
     entry.default_texture_id = chosen_texture_id;  // Use default_texture_id for shared icon
-    entry.width = Config::THUMBNAIL_SIZE;
-    entry.height = Config::THUMBNAIL_SIZE;
+        entry.width = THUMBNAIL_SIZE;
+        entry.height = THUMBNAIL_SIZE;
     LOG_TRACE("[TextureManager] 3D model '{}': using default icon, texture_id: {} (thumbnail pending)",
       relative_path, chosen_texture_id);
     return entry;
@@ -400,8 +404,8 @@ const TextureCacheEntry& TextureManager::get_asset_texture(const Asset& asset) {
       if (texture_id != 0) {
         entry.texture_id = texture_id;
         entry.file_path = thumbnail_path.generic_u8string();
-        entry.width = width > 0 ? width : static_cast<int>(Config::THUMBNAIL_SIZE);
-        entry.height = height > 0 ? height : static_cast<int>(Config::THUMBNAIL_SIZE);
+        entry.width = width > 0 ? width : static_cast<int>(THUMBNAIL_SIZE);
+        entry.height = height > 0 ? height : static_cast<int>(THUMBNAIL_SIZE);
         entry.loaded = true;
         LOG_TRACE("[TextureManager] Font asset '{}': thumbnail loaded, texture_id: {}", relative_path, texture_id);
         return entry;
@@ -415,8 +419,8 @@ const TextureCacheEntry& TextureManager::get_asset_texture(const Asset& asset) {
 
     auto icon_it = type_icons_.find(asset.type);
     entry.default_texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;
-    entry.width = Config::THUMBNAIL_SIZE;
-    entry.height = Config::THUMBNAIL_SIZE;
+    entry.width = THUMBNAIL_SIZE;
+    entry.height = THUMBNAIL_SIZE;
     return entry;
   }
 
@@ -424,8 +428,8 @@ const TextureCacheEntry& TextureManager::get_asset_texture(const Asset& asset) {
   if (asset.type != AssetType::_2D) {
     auto icon_it = type_icons_.find(asset.type);
     entry.default_texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;  // Use default_texture_id for shared icon
-    entry.width = Config::THUMBNAIL_SIZE;
-    entry.height = Config::THUMBNAIL_SIZE;
+    entry.width = THUMBNAIL_SIZE;
+    entry.height = THUMBNAIL_SIZE;
     LOG_TRACE("[TextureManager] Non-2D asset '{}' ({}): using type icon, texture_id: {}",
       relative_path, get_asset_type_string(asset.type), entry.default_texture_id);
     return entry;
@@ -438,8 +442,8 @@ const TextureCacheEntry& TextureManager::get_asset_texture(const Asset& asset) {
     entry.default_texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;  // Use default_texture_id for shared icon
     LOG_TRACE("[TextureManager] 2D asset '{}': file doesn't exist, using default icon, texture_id: {}",
       relative_path, entry.default_texture_id);
-    entry.width = Config::THUMBNAIL_SIZE;
-    entry.height = Config::THUMBNAIL_SIZE;
+    entry.width = THUMBNAIL_SIZE;
+    entry.height = THUMBNAIL_SIZE;
     return entry;
   }
 
@@ -473,8 +477,8 @@ const TextureCacheEntry& TextureManager::get_asset_texture(const Asset& asset) {
     // Mark as failed to prevent future retry loops
     auto icon_it = type_icons_.find(asset.type);
     entry.default_texture_id = (icon_it != type_icons_.end()) ? icon_it->second : default_texture_;  // Use default_texture_id for shared icon
-    entry.width = Config::THUMBNAIL_SIZE;
-    entry.height = Config::THUMBNAIL_SIZE;
+    entry.width = THUMBNAIL_SIZE;
+    entry.height = THUMBNAIL_SIZE;
     LOG_INFO("[TextureManager] 2D asset '{}': failed to load, using default icon, texture_id: {}",
       relative_path, entry.default_texture_id);
     return entry;
@@ -692,14 +696,14 @@ void TextureManager::generate_svg_thumbnail(const std::filesystem::path& svg_pat
     throw ThumbnailGenerationException("Failed to load SVG with lunasvg: " + svg_path_str);
   }
 
-  // Compute output size preserving aspect ratio, fit within Config::SVG_THUMBNAIL_SIZE
+  // Compute output size preserving aspect ratio, fit within SVG_THUMBNAIL_SIZE
   double svg_w = document->width();
   double svg_h = document->height();
   if (svg_w <= 0.0 || svg_h <= 0.0) {
     // Fallback to square if dimensions missing
-    svg_w = svg_h = static_cast<double>(Config::SVG_THUMBNAIL_SIZE);
+    svg_w = svg_h = static_cast<double>(SVG_THUMBNAIL_SIZE);
   }
-  const double target = static_cast<double>(Config::SVG_THUMBNAIL_SIZE);
+  const double target = static_cast<double>(SVG_THUMBNAIL_SIZE);
   const double scale = std::min(target / svg_w, target / svg_h);
   const int out_w = std::max(1, static_cast<int>(std::round(svg_w * scale)));
   const int out_h = std::max(1, static_cast<int>(std::round(svg_h * scale)));

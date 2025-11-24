@@ -41,12 +41,20 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+constexpr int WINDOW_WIDTH = 1960;
+constexpr int WINDOW_HEIGHT = 1080;
+constexpr float SEARCH_PANEL_HEIGHT = 120.0f;
+constexpr int SEARCH_DEBOUNCE_MS = 250;
+
 // File event callback function (runs on background thread)
 // Queues events for unified processing
 void on_file_event(const FileEvent& event) {
   LOG_TRACE("[NEW_EVENT] type = {}, asset = {}", FileWatcher::file_event_type_to_string(event.type), event.path);
   Services::event_processor().queue_event(event);
 }
+
+}  // namespace
 
 // Initialize ImGui UI system
 static ImGuiIO* initialize_imgui(GLFWwindow* window) {
@@ -104,8 +112,8 @@ int run(std::atomic<bool>* shutdown_requested) {
 
   // Window configuration based on mode
   glfwWindowHint(GLFW_VISIBLE, headless_mode ? GLFW_FALSE : GLFW_TRUE);
-  int window_width = headless_mode ? 1 : Config::WINDOW_WIDTH;
-  int window_height = headless_mode ? 1 : Config::WINDOW_HEIGHT;
+  int window_width = headless_mode ? 1 : WINDOW_WIDTH;
+  int window_height = headless_mode ? 1 : WINDOW_HEIGHT;
 
   GLFWwindow* window = glfwCreateWindow(window_width, window_height, "Asset Inventory", nullptr, nullptr);
   if (!window) {
@@ -226,7 +234,7 @@ int run(std::atomic<bool>* shutdown_requested) {
       auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         now - ui_state.last_keypress_time).count();
 
-      if (elapsed >= Config::SEARCH_DEBOUNCE_MS) {
+      if (elapsed >= SEARCH_DEBOUNCE_MS) {
         // Execute the search
         filter_assets(ui_state, safe_assets);
         ui_state.last_buffer = ui_state.buffer;
@@ -290,7 +298,7 @@ int run(std::atomic<bool>* shutdown_requested) {
     float spacing_y = ImGui::GetStyle().ItemSpacing.y;
     float left_width = content_width * 0.75f - WINDOW_MARGIN;
     float right_width = content_width * 0.25f - WINDOW_MARGIN;
-    float top_height = Config::SEARCH_PANEL_HEIGHT;
+    float top_height = SEARCH_PANEL_HEIGHT;
     float bottom_height = content_height - top_height - spacing_y;
     if (bottom_height < 0.0f) {
       bottom_height = 0.0f;

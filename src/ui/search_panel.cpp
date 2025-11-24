@@ -11,6 +11,8 @@
 #include <cfloat>
 
 namespace {
+constexpr float SEARCH_BOX_WIDTH = 375.0f;
+constexpr float SEARCH_BOX_HEIGHT = 60.0f;
 bool draw_settings_icon_button(const char* id, unsigned int icon_texture,
     const ImVec2& cursor_pos, float button_size) {
   ImGui::SetCursorPos(cursor_pos);
@@ -47,6 +49,33 @@ bool draw_settings_icon_button(const char* id, unsigned int icon_texture,
       Theme::ToImU32(icon_color));
   }
 
+  ImGui::PopID();
+  return clicked;
+}
+
+bool draw_wrapped_settings_entry(const char* id, const std::string& text,
+    const ImVec4& text_color) {
+  ImGui::PushID(id);
+  float wrap_limit = ImGui::GetCursorPos().x + ImGui::GetColumnWidth();
+  ImGui::PushTextWrapPos(wrap_limit);
+  ImGui::TextColored(text_color, "%s", text.c_str());
+  ImGui::PopTextWrapPos();
+
+  ImVec2 min = ImGui::GetItemRectMin();
+  ImVec2 max = ImGui::GetItemRectMax();
+  ImVec2 size = ImVec2(max.x - min.x, max.y - min.y);
+
+  ImGui::SetCursorScreenPos(min);
+  bool clicked = ImGui::InvisibleButton("WrappedEntry", size);
+  bool hovered = ImGui::IsItemHovered();
+
+  if (hovered) {
+    ImGui::GetWindowDrawList()->AddRectFilled(min, max,
+      Theme::ToImU32(Theme::COLOR_SEMI_TRANSPARENT), 6.0f);
+  }
+
+  // Move cursor back below the drawn text so following elements align correctly
+  ImGui::SetCursorScreenPos(ImVec2(min.x, max.y));
   ImGui::PopID();
   return clicked;
 }
@@ -158,16 +187,16 @@ void render_search_panel(UIState& ui_state,
   snprintf(search_fps_buf, sizeof(search_fps_buf), "%.1f FPS", search_io.Framerate);
   ImGui::TextColored(Theme::TEXT_SECONDARY, "%s", search_fps_buf);
 
-  float local_search_x = (content_width - Config::SEARCH_BOX_WIDTH) * 0.5f;
+  float local_search_x = (content_width - SEARCH_BOX_WIDTH) * 0.5f;
   local_search_x = std::max(0.0f, local_search_x);
   float content_search_y = top_padding;
 
   ImGui::SetCursorPos(ImVec2(local_search_x, content_search_y));
 
   bool enter_pressed = fancy_text_input("##Search", ui_state.buffer, sizeof(ui_state.buffer),
-    Config::SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f);
+    SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f);
 
-  float search_bottom_y = content_search_y + Config::SEARCH_BOX_HEIGHT;
+  float search_bottom_y = content_search_y + SEARCH_BOX_HEIGHT;
 
   std::string current_input(ui_state.buffer);
 
@@ -286,30 +315,18 @@ void render_search_panel(UIState& ui_state,
       ImGui::TableSetColumnIndex(1);
       if (!ui_state.assets_directory.empty()) {
         const std::string display_path = ui_state.assets_directory;
-        ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_SEMI_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_Text, Theme::TEXT_SECONDARY);
-        ImGui::PushID("AssetsDirectoryButton");
-        if (ImGui::Button(display_path.c_str(), ImVec2(0.0f, 0.0f))) {
+        if (draw_wrapped_settings_entry("AssetsDirectoryButton", display_path,
+            Theme::TEXT_SECONDARY)) {
           request_assets_directory_modal = true;
           ImGui::CloseCurrentPopup();
         }
-        ImGui::PopID();
-        ImGui::PopStyleColor(4);
       }
       else {
-        ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_SEMI_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_Text, Theme::TEXT_DISABLED_DARK);
-        ImGui::PushID("AssetsDirectoryPlaceholder");
-        if (ImGui::Button("Select Assets Folder", ImVec2(0.0f, 0.0f))) {
+        if (draw_wrapped_settings_entry("AssetsDirectoryPlaceholder",
+            "Select Assets Folder", Theme::TEXT_DISABLED_DARK)) {
           request_assets_directory_modal = true;
           ImGui::CloseCurrentPopup();
         }
-        ImGui::PopID();
-        ImGui::PopStyleColor(4);
       }
 
       ImGui::TableNextRow();

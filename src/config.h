@@ -11,60 +11,8 @@ class AssetDatabase;
 
 class Config {
 public:
-  // =============================================================================
-  // DEBUG & DEVELOPMENT
-  // =============================================================================
-
-  static constexpr bool DEBUG_CLEAN_START = true;
-
-  // Font settings
-  static constexpr const char* FONT_PATH = "external/fonts/Inter-Regular.ttf";
-  static constexpr float FONT_SIZE = 18.0f;
-  static constexpr const char* TAG_FONT_PATH = "external/fonts/Inter_18pt-SemiBold.ttf";
-  static constexpr float TAG_FONT_SIZE = 18.0f;
-
-  // =============================================================================
-  // WINDOW & UI LAYOUT
-  // =============================================================================
-
-  static constexpr int WINDOW_WIDTH = 1960;
-  static constexpr int WINDOW_HEIGHT = 1080;
-
-  static constexpr float SEARCH_BOX_WIDTH = 375.0f;
-  static constexpr float SEARCH_BOX_HEIGHT = 60.0f;
-  static constexpr float SEARCH_PANEL_HEIGHT = 120.0f;
-  static constexpr float FOLDER_TREE_PANEL_HEIGHT = 220.0f;
-
-  static constexpr float THUMBNAIL_SIZE = 240.0f;
-  static constexpr float GRID_SPACING = 15.0f;
-  static constexpr float TEXT_MARGIN = 10.0f;
-  static constexpr float TEXT_HEIGHT = 20.0f;
-  static constexpr float TEXT_MAX_LENGTH = 30.0f;
-  static constexpr float ICON_SCALE = 0.5f;
-
-  static constexpr int MODEL_THUMBNAIL_SIZE = 400;
-  static constexpr int MAX_TEXTURE_RETRY_ATTEMPTS = 50;
-
-  static constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;
-  static constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;
   static constexpr bool PREVIEW_DRAW_DEBUG_AXES_DEFAULT = true;
   static constexpr bool PREVIEW_PLAY_ANIMATIONS = true;
-
-  static constexpr bool SKELETON_HIDE_CTRL_BONES = true;
-  static constexpr bool SKELETON_HIDE_IK_BONES = true;
-  static constexpr bool SKELETON_HIDE_ROLL_BONES = true;
-  static constexpr bool SKELETON_HIDE_ROOT_CHILDREN = true;
-
-  static constexpr float PREVIEW_RIGHT_MARGIN = 40.0f;
-  static constexpr float PREVIEW_INTERNAL_PADDING = 30.0f;
-
-  // =============================================================================
-  // PERFORMANCE & PROCESSING
-  // =============================================================================
-
-  static constexpr size_t EVENT_PROCESSOR_BATCH_SIZE = 100;
-  static constexpr size_t MAX_SEARCH_RESULTS = 1000;
-  static constexpr int SEARCH_DEBOUNCE_MS = 250;
 
   inline static const std::unordered_set<AssetType> IGNORED_ASSET_TYPES = {
     AssetType::Auxiliary,
@@ -73,16 +21,14 @@ public:
     AssetType::Document
   };
 
-  static constexpr int SVG_THUMBNAIL_SIZE = 240;
-  static constexpr float MAX_THUMBNAIL_UPSCALE_FACTOR = 2.0f;
-  static constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 20.0f;
+  static constexpr int MODEL_THUMBNAIL_SIZE = 400;
+  static constexpr float ICON_SCALE = 0.5f;
 
   // =============================================================================
   // FILE SYSTEM & MONITORING
   // =============================================================================
 
   static constexpr int FILE_WATCHER_DEBOUNCE_MS = 50;
-  static constexpr int MAX_ASSET_CREATION_RETRIES = 3;
 
   static inline constexpr const char* CONFIG_KEY_ASSETS_DIRECTORY = "assets_directory";
   static inline constexpr const char* CONFIG_KEY_DRAW_DEBUG_AXES = "draw_debug_axes";

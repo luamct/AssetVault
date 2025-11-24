@@ -230,28 +230,33 @@ namespace Theme {
   }
 
   // Font loading function
-  inline bool load_fonts(ImGuiIO& io) {
+inline constexpr const char* PRIMARY_FONT_PATH = "external/fonts/Inter-Regular.ttf";
+inline constexpr float PRIMARY_FONT_SIZE = 18.0f;
+inline constexpr const char* TAG_FONT_PATH = "external/fonts/Inter_18pt-SemiBold.ttf";
+inline constexpr float TAG_FONT_SIZE = 18.0f;
+
+inline bool load_fonts(ImGuiIO& io) {
     ImFontConfig font_config;
     font_config.FontDataOwnedByAtlas = false;  // Embedded data is owned by the binary
 
     // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
     const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
 
-    auto primary_asset = embedded_assets::get(Config::FONT_PATH);
+    auto primary_asset = embedded_assets::get(PRIMARY_FONT_PATH);
     if (!primary_asset.has_value()) {
-      LOG_ERROR("Embedded font asset not found: {}", Config::FONT_PATH);
+      LOG_ERROR("Embedded font asset not found: {}", PRIMARY_FONT_PATH);
       return false;
     }
 
     g_primary_font = io.Fonts->AddFontFromMemoryTTF(
       const_cast<unsigned char*>(primary_asset->data),
       static_cast<int>(primary_asset->size),
-      Config::FONT_SIZE,
+      PRIMARY_FONT_SIZE,
       &font_config,
       glyph_ranges);
 
     if (!g_primary_font) {
-      LOG_ERROR("Failed to load primary font from embedded asset: {}", Config::FONT_PATH);
+      LOG_ERROR("Failed to load primary font from embedded asset: {}", PRIMARY_FONT_PATH);
       return false;
     }
 
@@ -259,7 +264,7 @@ namespace Theme {
     g_primary_font_large = io.Fonts->AddFontFromMemoryTTF(
       const_cast<unsigned char*>(primary_asset->data),
       static_cast<int>(primary_asset->size),
-      Config::FONT_SIZE + 2.0f,
+      PRIMARY_FONT_SIZE + 2.0f,
       &large_config,
       glyph_ranges);
 
@@ -268,9 +273,9 @@ namespace Theme {
       LOG_WARN("Failed to load enlarged primary font. Falling back to default size.");
     }
 
-    auto tag_asset = embedded_assets::get(Config::TAG_FONT_PATH);
+    auto tag_asset = embedded_assets::get(TAG_FONT_PATH);
     if (!tag_asset.has_value()) {
-      LOG_ERROR("Embedded tag font asset not found: {}", Config::TAG_FONT_PATH);
+      LOG_ERROR("Embedded tag font asset not found: {}", TAG_FONT_PATH);
     }
     else {
       ImFontConfig tag_config = font_config;
@@ -281,12 +286,12 @@ namespace Theme {
       g_tag_font = io.Fonts->AddFontFromMemoryTTF(
         const_cast<unsigned char*>(tag_asset->data),
         static_cast<int>(tag_asset->size),
-        Config::TAG_FONT_SIZE,
+        TAG_FONT_SIZE,
         &tag_config,
         glyph_ranges);
 
       if (!g_tag_font) {
-        LOG_ERROR("Failed to load tag font from embedded asset: {}", Config::TAG_FONT_PATH);
+        LOG_ERROR("Failed to load tag font from embedded asset: {}", TAG_FONT_PATH);
       }
     }
 

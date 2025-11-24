@@ -243,9 +243,10 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   ImGui::PopStyleVar();
   ImGui::PopID();
   ImGui::SameLine(0.0f, 4.0f);
-  ImGui::TextUnformatted(" ");
-  ImGui::SameLine(0.0f, 4.0f);
+  float wrap_width = std::max(0.0f, panel_width - ImGui::GetCursorPos().x - 16.0f);
+  ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + wrap_width);
   ImGui::TextColored(Theme::TEXT_LABEL, "%s", ui_state.assets_directory.c_str());
+  ImGui::PopTextWrapPos();
   ImGui::Separator();
 
   ImGui::BeginChild("FolderTreeScrollRegion", ImVec2(0, 0), false, scroll_flags);

@@ -18,6 +18,9 @@ constexpr float GRID_ZOOM_STEP = 0.4f;
 constexpr ZoomLevel GRID_ZOOM_DEFAULT_LEVEL = ZoomLevel::Level3;
 constexpr int GRID_ZOOM_MIN_LEVEL = static_cast<int>(ZoomLevel::Level0);
 constexpr int GRID_ZOOM_MAX_LEVEL = static_cast<int>(ZoomLevel::Level5);
+constexpr float RESULTS_TEXT_HEIGHT = 20.0f;
+constexpr float RESULTS_GRID_SPACING = 15.0f;
+constexpr float RESULTS_TEXT_MAX_LENGTH = 30.0f;
 
 constexpr int zoom_level_index(ZoomLevel level) {
   return static_cast<int>(level);
@@ -291,7 +294,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   };
 
   constexpr float GRID_RIGHT_MARGIN = 24.0f;  // Extra space so the last column stays clear of the scrollbar
-  const float label_height = Config::TEXT_HEIGHT;
+  const float label_height = RESULTS_TEXT_HEIGHT;
   float available_width = panel_width - 20.0f - GRID_RIGHT_MARGIN; // Account for padding and scrollbar margin
   available_width = std::max(available_width, thumbnail_size);
 
@@ -403,7 +406,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
           display.y *= scale;
         }
 
-        float spacing = (row_item_count == 0) ? 0.0f : Config::GRID_SPACING;
+        float spacing = (row_item_count == 0) ? 0.0f : RESULTS_GRID_SPACING;
         if (row_item_count > 0 && row_width + spacing + display.x > available_width) {
           break;
         }
@@ -445,7 +448,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         item_layouts[j].row_height = row_height;
       }
 
-      y_cursor += row_height + Config::GRID_SPACING;
+      y_cursor += row_height + RESULTS_GRID_SPACING;
     }
   }
 
@@ -678,7 +681,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         show_label_always;
 
       if (can_show_label) {
-        std::string truncated_name = truncate_filename(ui_state.results[i].name, Config::TEXT_MAX_LENGTH);
+        std::string truncated_name = truncate_filename(ui_state.results[i].name, RESULTS_TEXT_MAX_LENGTH);
         ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
         grid_draw_list->ChannelsSetCurrent(1);
 

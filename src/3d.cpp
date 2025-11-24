@@ -53,6 +53,11 @@ unsigned int axis_green_texture_id = 0;
 unsigned int axis_blue_texture_id = 0;
 unsigned int skeleton_texture_id = 0;
 
+constexpr bool SKELETON_HIDE_CTRL_BONES = true;
+constexpr bool SKELETON_HIDE_IK_BONES = true;
+constexpr bool SKELETON_HIDE_ROLL_BONES = true;
+constexpr bool SKELETON_HIDE_ROOT_CHILDREN = true;
+
 std::string normalize_node_name(const std::string& name) {
   std::string clean = name;
 
@@ -1207,10 +1212,10 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
 
     // Skip control/helper bones based on config filters
     // These are technical bones not part of the visual skeleton
-    const bool hide_root_child = Config::SKELETON_HIDE_ROOT_CHILDREN && parent_bone.name == "Root";
-    if ((Config::SKELETON_HIDE_CTRL_BONES && bone.name.find("Ctrl") != std::string::npos) ||
-        (Config::SKELETON_HIDE_IK_BONES && bone.name.find("IK") != std::string::npos) ||
-        (Config::SKELETON_HIDE_ROLL_BONES && bone.name.find("Roll") != std::string::npos) ||
+    const bool hide_root_child = SKELETON_HIDE_ROOT_CHILDREN && parent_bone.name == "Root";
+    if ((SKELETON_HIDE_CTRL_BONES && bone.name.find("Ctrl") != std::string::npos) ||
+        (SKELETON_HIDE_IK_BONES && bone.name.find("IK") != std::string::npos) ||
+        (SKELETON_HIDE_ROLL_BONES && bone.name.find("Roll") != std::string::npos) ||
         hide_root_child) {
       LOG_TRACE("[SKELETON] Skipping bone '{}' due to filters (parent '{}')", bone.name, parent_bone.name);
       continue;

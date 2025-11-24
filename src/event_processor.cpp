@@ -10,7 +10,6 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#include "config.h"
 #include "logger.h"
 #include "search.h"
 #include "texture_manager.h"
@@ -20,11 +19,16 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+constexpr size_t EVENT_PROCESSOR_BATCH_SIZE = 100;
+constexpr int MAX_ASSET_CREATION_RETRIES = 3;
+}
+
 EventProcessor::EventProcessor(SafeAssets& safe_assets,
     std::atomic<bool>& event_batch_finished,
     const std::string& assets_directory, GLFWwindow* thumbnail_context)
     : safe_assets_(safe_assets), event_batch_finished_(event_batch_finished),
-    batch_size_(Config::EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
+    batch_size_(EVENT_PROCESSOR_BATCH_SIZE), running_(false), processing_(false), processed_count_(0),
     total_events_queued_(0), total_events_processed_(0),
     thumbnail_context_(thumbnail_context), assets_directory_(assets_directory) {
 }
@@ -42,7 +46,7 @@ bool EventProcessor::start(const std::string& assets_directory) {
     running_ = true;
     processing_thread_ = std::thread(&EventProcessor::process_events, this);
 
-    LOG_INFO("EventProcessor started with batch size: {}", Config::EVENT_PROCESSOR_BATCH_SIZE);
+    LOG_INFO("EventProcessor started with batch size: {}", EVENT_PROCESSOR_BATCH_SIZE);
     return true;
 }
 
@@ -227,17 +231,17 @@ void EventProcessor::process_created_events(const std::vector<FileEvent>& events
         }
         catch (const std::exception& e) {
             // Unified retry logic for all exceptions during asset processing
-            if (event.retry_count < Config::MAX_ASSET_CREATION_RETRIES) {
+            if (event.retry_count < MAX_ASSET_CREATION_RETRIES) {
                 FileEvent retry_event = event;
                 retry_event.retry_count++;
                 queue_event(retry_event);
                 LOG_WARN("Re-queuing asset for retry (attempt {}/{}): {} - {}",
                          retry_event.retry_count,
-                         Config::MAX_ASSET_CREATION_RETRIES,
+                         MAX_ASSET_CREATION_RETRIES,
                          event.path, e.what());
             } else {
                 LOG_ERROR("Failed to process asset after {} retries: {} - {}",
-                          Config::MAX_ASSET_CREATION_RETRIES,
+                          MAX_ASSET_CREATION_RETRIES,
                           event.path, e.what());
             }
         }

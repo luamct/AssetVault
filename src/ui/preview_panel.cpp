@@ -17,6 +17,13 @@
 #include <utility>
 #include <vector>
 
+namespace {
+constexpr float PREVIEW_INTERNAL_PADDING = 30.0f;
+constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;
+constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;
+constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 20.0f;
+}
+
 using AttributeRenderer = std::function<void()>;
 
 struct AttributeRow {
@@ -388,7 +395,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   ImGui::BeginChild("AssetPreview", ImVec2(panel_width, panel_height), true);
 
   // Use fixed panel dimensions for stable calculations
-  float avail_width = panel_width - Config::PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
+  float avail_width = panel_width - PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
   float avail_height = avail_width;                           // Square aspect ratio for preview area
 
   // Track previously selected asset for cleanup
@@ -489,10 +496,10 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         // Handle mouse wheel for zoom
         if (io.MouseWheel != 0.0f) {
           if (io.MouseWheel > 0.0f) {
-            camera.zoom *= Config::PREVIEW_3D_ZOOM_FACTOR; // Zoom in
+            camera.zoom *= PREVIEW_3D_ZOOM_FACTOR; // Zoom in
           }
           else {
-            camera.zoom /= Config::PREVIEW_3D_ZOOM_FACTOR; // Zoom out
+            camera.zoom /= PREVIEW_3D_ZOOM_FACTOR; // Zoom out
           }
           // Clamp zoom to reasonable bounds
           camera.zoom = std::max(0.1f, std::min(camera.zoom, 10.0f));
@@ -523,8 +530,8 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           // Only update if there's actual movement
           if (delta_x != 0.0f || delta_y != 0.0f) {
             // Update rotation based on mouse movement using config sensitivity
-            camera.rotation_y -= delta_x * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Horizontal rotation (left/right)
-            camera.rotation_x += delta_y * Config::PREVIEW_3D_ROTATION_SENSITIVITY; // Vertical rotation (up/down)
+            camera.rotation_y -= delta_x * PREVIEW_3D_ROTATION_SENSITIVITY; // Horizontal rotation (left/right)
+            camera.rotation_x += delta_y * PREVIEW_3D_ROTATION_SENSITIVITY; // Vertical rotation (up/down)
 
             // Clamp vertical rotation to avoid flipping
             camera.rotation_x = std::max(-89.0f, std::min(camera.rotation_x, 89.0f));
@@ -739,7 +746,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
             animation->width,
             animation->height,
             avail_width, avail_height,
-            Config::MAX_PREVIEW_UPSCALE_FACTOR
+            MAX_PREVIEW_UPSCALE_FACTOR
           );
         }
 
@@ -782,7 +789,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         if (selected_asset.type == AssetType::_2D || selected_asset.type == AssetType::Font) {
           // TextureCacheEntry already contains dimensions
           if (preview_entry.width > 0 && preview_entry.height > 0) {
-            preview_size = calculate_thumbnail_size(preview_entry.width, preview_entry.height, avail_width, avail_height, Config::MAX_PREVIEW_UPSCALE_FACTOR);
+            preview_size = calculate_thumbnail_size(preview_entry.width, preview_entry.height, avail_width, avail_height, MAX_PREVIEW_UPSCALE_FACTOR);
           }
         }
         else {
