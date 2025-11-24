@@ -85,7 +85,7 @@ void render_search_panel(UIState& ui_state,
   float panel_width, float panel_height) {
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), false);
 
-  const float top_padding = 5.0f;
+  const float top_padding = 10.0f;
   const float bottom_padding = 5.0f;
   const float toggle_gap = 10.0f;
   const float toggle_button_height = 35.0f;
@@ -103,6 +103,7 @@ void render_search_panel(UIState& ui_state,
   float content_search_y = top_padding;
 
   ImGui::SetCursorPos(ImVec2(local_search_x, content_search_y));
+
   bool enter_pressed = fancy_text_input("##Search", ui_state.buffer, sizeof(ui_state.buffer),
     Config::SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f);
 

@@ -20,10 +20,15 @@ namespace Theme {
   }
 
   inline ImFont* g_primary_font = nullptr;
+  inline ImFont* g_primary_font_large = nullptr;
   inline ImFont* g_tag_font = nullptr;
 
   inline ImFont* get_primary_font() {
     return g_primary_font;
+  }
+
+  inline ImFont* get_primary_font_large() {
+    return g_primary_font_large ? g_primary_font_large : g_primary_font;
   }
 
   inline ImFont* get_tag_font() {
@@ -58,7 +63,7 @@ namespace Theme {
   constexpr ImVec4 BORDER_GRAY = ImVec4(0.616f, 0.478f, 0.322f, 1.00f);          // Neutral separator/border
   // === TRANSPARENCY COLORS ===
   constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);      // Fully transparent / Invisible border
-  constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.30f); // Semi-transparent black
+  constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.15f); // Semi-transparent black
 
   // === ImU32 COLORS (for immediate drawing) ===
   constexpr ImU32 COLOR_WHITE_U32 = IM_COL32(255, 255, 255, 255);        // Pure white
@@ -250,6 +255,19 @@ namespace Theme {
       return false;
     }
 
+    ImFontConfig large_config = font_config;
+    g_primary_font_large = io.Fonts->AddFontFromMemoryTTF(
+      const_cast<unsigned char*>(primary_asset->data),
+      static_cast<int>(primary_asset->size),
+      Config::FONT_SIZE + 2.0f,
+      &large_config,
+      glyph_ranges);
+
+    if (!g_primary_font_large) {
+      g_primary_font_large = g_primary_font;
+      LOG_WARN("Failed to load enlarged primary font. Falling back to default size.");
+    }
+
     auto tag_asset = embedded_assets::get(Config::TAG_FONT_PATH);
     if (!tag_asset.has_value()) {
       LOG_ERROR("Embedded tag font asset not found: {}", Config::TAG_FONT_PATH);
@@ -277,8 +295,8 @@ namespace Theme {
       LOG_WARN("Tag font unavailable. Falling back to primary font for pills.");
     }
 
-    LOG_INFO("Fonts loaded successfully (primary={}, tag={})",
-      static_cast<void*>(g_primary_font), static_cast<void*>(g_tag_font));
+    LOG_INFO("Fonts loaded successfully (primary={}, primary_large={}, tag={})",
+      static_cast<void*>(g_primary_font), static_cast<void*>(g_primary_font_large), static_cast<void*>(g_tag_font));
     return g_primary_font != nullptr;
   }
 

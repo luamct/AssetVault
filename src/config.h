@@ -32,7 +32,7 @@ namespace Config {
     // Search box dimensions
     constexpr float SEARCH_BOX_WIDTH = 375.0f;
     constexpr float SEARCH_BOX_HEIGHT = 60.0f;
-    constexpr float SEARCH_PANEL_HEIGHT = 130.0f; // Fixed height for the search region
+    constexpr float SEARCH_PANEL_HEIGHT = 120.0f; // Fixed height for the search region
     constexpr float FOLDER_TREE_PANEL_HEIGHT = 220.0f; // Height for folder structure panel on the right column
 
     // Grid layout

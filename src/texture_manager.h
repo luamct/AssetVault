@@ -208,10 +208,12 @@ public:
   unsigned int get_preview_depth_texture() const { return preview_depth_texture_; }
   unsigned int get_preview_framebuffer() const { return preview_framebuffer_; }
 
-  // Audio control icons
+  // Audio control & grid UI icons
   unsigned int get_play_icon() const { return play_icon_; }
   unsigned int get_pause_icon() const { return pause_icon_; }
   unsigned int get_speaker_icon() const { return speaker_icon_; }
+  unsigned int get_zoom_in_icon() const { return zoom_in_icon_; }
+  unsigned int get_zoom_out_icon() const { return zoom_out_icon_; }
 
   // Debug utilities
   void print_texture_cache(const std::string& assets_root_directory) const;
@@ -235,10 +237,12 @@ private:
   mutable std::mutex animation_mutex_;
   
 
-  // Audio control icons
+  // Audio control & grid UI icons
   unsigned int play_icon_;
   unsigned int pause_icon_;
   unsigned int speaker_icon_;
+  unsigned int zoom_in_icon_;
+  unsigned int zoom_out_icon_;
 
 
   // Helper methods

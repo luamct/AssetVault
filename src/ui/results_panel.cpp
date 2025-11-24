@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <unordered_set>
 
 constexpr float GRID_ZOOM_BASE_UNIT = 80.0f;
@@ -47,8 +48,8 @@ void ensure_grid_zoom_level(UIState& ui_state) {
   }
 }
 
-bool draw_grid_scale_button(const char* id, const char* label, const ImVec2& cursor_pos,
-  float button_size, bool enabled) {
+bool draw_grid_scale_button(const char* id, unsigned int icon_texture, const char* fallback_label,
+  const ImVec2& cursor_pos, float button_size, bool enabled) {
   ImGui::SetCursorPos(cursor_pos);
   ImGui::PushID(id);
 
@@ -69,32 +70,40 @@ bool draw_grid_scale_button(const char* id, const char* label, const ImVec2& cur
   ImVec2 min = ImGui::GetItemRectMin();
   ImVec2 max = ImGui::GetItemRectMax();
 
-  ImVec4 bg_color = Theme::TOGGLE_OFF_BG;
-  if (active) {
-    bg_color = Theme::TOGGLE_ON_BG;
-  }
-  else if (hovered) {
-    bg_color = Theme::TOGGLE_HOVER_BG;
-  }
-  else if (!enabled) {
-    bg_color.w *= 0.7f;
+  if (hovered || active) {
+    ImVec4 highlight = Theme::COLOR_SEMI_TRANSPARENT;
+    if (active) {
+      highlight.w = std::min(1.0f, highlight.w + 0.2f);
+    }
+    ImGui::GetWindowDrawList()->AddRectFilled(min, max,
+      Theme::ToImU32(highlight), 8.0f);
   }
 
-  ImVec4 border_color = Theme::TOGGLE_OFF_BORDER;
-  ImGui::GetWindowDrawList()->AddRectFilled(min, max, Theme::ToImU32(bg_color), 8.0f);
-  ImGui::GetWindowDrawList()->AddRect(min, max, Theme::ToImU32(border_color), 8.0f, 0, 2.0f);
-
-  ImVec4 text_color = active ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
+  ImVec4 content_color = active ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
   if (!enabled && !active) {
-    text_color.w *= 0.7f;
+    content_color.w *= 0.7f;
   }
 
-  ImVec2 text_size = ImGui::CalcTextSize(label);
-  ImVec2 text_pos(
-    min.x + (size.x - text_size.x) * 0.5f,
-    min.y + (size.y - text_size.y) * 0.5f
-  );
-  ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(text_color), label);
+  if (icon_texture != 0) {
+    float icon_padding = std::max(2.0f, button_size * 0.15f);
+    ImVec2 icon_min(min.x + icon_padding, min.y + icon_padding);
+    ImVec2 icon_max(max.x - icon_padding, max.y - icon_padding);
+    ImGui::GetWindowDrawList()->AddImage(
+      (ImTextureID) (intptr_t) icon_texture,
+      icon_min,
+      icon_max,
+      ImVec2(0.0f, 0.0f),
+      ImVec2(1.0f, 1.0f),
+      Theme::ToImU32(content_color));
+  }
+  else if (fallback_label && fallback_label[0] != '\0') {
+    ImVec2 text_size = ImGui::CalcTextSize(fallback_label);
+    ImVec2 text_pos(
+      min.x + (size.x - text_size.x) * 0.5f,
+      min.y + (size.y - text_size.y) * 0.5f
+    );
+    ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(content_color), fallback_label);
+  }
 
   ImGui::PopID();
   return enabled && clicked;
@@ -215,11 +224,24 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Show total results count if we have results
   if (!ui_state.results.empty()) {
     ImVec2 label_pos = ImGui::GetCursorPos();
-    ImGui::Text("Showing %d of %zu results", ui_state.loaded_end_index, ui_state.results.size());
-    ImVec2 label_size = ImGui::GetItemRectSize();
-
     ImGuiStyle& style = ImGui::GetStyle();
     float button_size = ImGui::GetFrameHeight();
+
+    ImFont* larger_font = Theme::get_primary_font_large();
+    if (larger_font) {
+      ImGui::PushFont(larger_font);
+    }
+
+    float text_line_height = ImGui::GetTextLineHeight();
+    float text_y_offset = std::max(0.0f, button_size - text_line_height);
+    ImGui::SetCursorPos(ImVec2(label_pos.x, label_pos.y + text_y_offset));
+    ImGui::Text("Showing %d of %zu results", ui_state.loaded_end_index, ui_state.results.size());
+
+    if (larger_font) {
+      ImGui::PopFont();
+    }
+    ImVec2 label_size = ImGui::GetItemRectSize();
+
     float total_button_width = button_size * 2.0f + style.ItemSpacing.x;
     float button_x = ImGui::GetWindowContentRegionMax().x - total_button_width;
     float button_y = label_pos.y;
@@ -227,11 +249,16 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     ImVec2 minus_pos(button_x, button_y);
     ImVec2 plus_pos(button_x + button_size + style.ItemSpacing.x, button_y);
 
-    if (draw_grid_scale_button("GridScaleMinus", "-", minus_pos, button_size, can_zoom_out)) {
+    unsigned int zoom_out_icon = texture_manager.get_zoom_out_icon();
+    unsigned int zoom_in_icon = texture_manager.get_zoom_in_icon();
+
+    if (draw_grid_scale_button("GridScaleMinus", zoom_out_icon, "-", minus_pos,
+        button_size, can_zoom_out)) {
       apply_zoom_delta_and_log(-1, "decreased");
     }
 
-    if (draw_grid_scale_button("GridScalePlus", "+", plus_pos, button_size, can_zoom_in)) {
+    if (draw_grid_scale_button("GridScalePlus", zoom_in_icon, "+", plus_pos,
+        button_size, can_zoom_in)) {
       apply_zoom_delta_and_log(1, "increased");
     }
 
