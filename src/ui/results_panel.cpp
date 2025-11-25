@@ -147,6 +147,12 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     }
   };
 
+  size_t total_indexed_assets = 0;
+  {
+    auto [lock, assets] = safe_assets.read();
+    total_indexed_assets = assets.size();
+  }
+
   // Keyboard shortcuts: Cmd/Ctrl + '=' or '-' to adjust zoom
   ImGuiIO& grid_io = ImGui::GetIO();
   bool modifier_down = (grid_io.KeySuper || grid_io.KeyCtrl);
@@ -164,72 +170,92 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     }
   }
 
-  // Show total results count if we have results
-  if (!ui_state.results.empty()) {
-    ImVec2 label_pos = ImGui::GetCursorPos();
-    ImGuiStyle& style = ImGui::GetStyle();
-    float button_size = ImGui::GetFrameHeight();
+  // Always show results header (status text + zoom buttons)
+  ImVec2 label_pos = ImGui::GetCursorPos();
+  ImGuiStyle& style = ImGui::GetStyle();
+  float button_size = ImGui::GetFrameHeight() * 1.5f;
 
-    ImFont* larger_font = Theme::get_primary_font_large();
-    if (larger_font) {
-      ImGui::PushFont(larger_font);
+  ImFont* larger_font = Theme::get_primary_font_large();
+  if (larger_font) {
+    ImGui::PushFont(larger_font);
+  }
+
+  float text_line_height = ImGui::GetTextLineHeight();
+  float text_y_offset = std::max(0.0f, button_size - text_line_height);
+  ImGui::SetCursorPos(ImVec2(label_pos.x, label_pos.y + text_y_offset));
+
+  bool open_assets_modal_from_header = false;
+  const bool has_assets_directory = !ui_state.assets_directory.empty();
+  if (!has_assets_directory) {
+    const char* prompt = "Select an asset folder to index";
+    ImVec2 text_pos = ImGui::GetCursorScreenPos();
+    ImGui::TextColored(Theme::ACCENT_BLUE_1, "%s", prompt);
+    ImVec2 text_size = ImGui::GetItemRectSize();
+    ImVec2 text_min(text_pos.x, text_pos.y);
+    ImVec2 text_max(text_pos.x + text_size.x, text_pos.y + text_size.y);
+
+    ImGui::SetCursorScreenPos(text_min);
+    if (ImGui::InvisibleButton("SelectAssetsHeaderButton", text_size)) {
+      open_assets_modal_from_header = true;
     }
-
-    float text_line_height = ImGui::GetTextLineHeight();
-    float text_y_offset = std::max(0.0f, button_size - text_line_height);
-    ImGui::SetCursorPos(ImVec2(label_pos.x, label_pos.y + text_y_offset));
-    ImGui::Text("Showing %d of %zu results", ui_state.loaded_end_index, ui_state.results.size());
-
-    if (larger_font) {
-      ImGui::PopFont();
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+      ImGui::GetWindowDrawList()->AddRectFilled(text_min, text_max,
+        Theme::ToImU32(Theme::COLOR_SEMI_TRANSPARENT), 3.0f);
     }
-    ImVec2 label_size = ImGui::GetItemRectSize();
+    ImGui::SetCursorScreenPos(ImVec2(text_min.x, text_max.y));
+  }
+  else {
+    size_t matched_count = ui_state.results.size();
+    ImGui::Text("Showing %zu out of %zu assets", matched_count, total_indexed_assets);
+  }
 
-    float total_button_width = button_size * 2.0f + style.ItemSpacing.x;
-    float button_x = ImGui::GetWindowContentRegionMax().x - total_button_width;
-    float button_y = label_pos.y;
+  if (larger_font) {
+    ImGui::PopFont();
+  }
+  ImVec2 label_size = ImGui::GetItemRectSize();
 
-    ImVec2 minus_pos(button_x, button_y);
-    ImVec2 plus_pos(button_x + button_size + style.ItemSpacing.x, button_y);
+  float total_button_width = button_size * 2.0f + style.ItemSpacing.x;
+  float button_x = ImGui::GetWindowContentRegionMax().x - total_button_width;
+  float button_y = label_pos.y;
 
-    unsigned int zoom_out_icon = texture_manager.get_zoom_out_icon();
-    unsigned int zoom_in_icon = texture_manager.get_zoom_in_icon();
-    IconButtonColors zoom_button_colors;
-    zoom_button_colors.normal = Theme::TOGGLE_OFF_TEXT;
-    zoom_button_colors.active = Theme::TOGGLE_ON_TEXT;
-    zoom_button_colors.disabled = Theme::TOGGLE_OFF_TEXT;
-    zoom_button_colors.disabled.w *= 0.7f;
+  ImVec2 minus_pos(button_x, button_y);
+  ImVec2 plus_pos(button_x + button_size + style.ItemSpacing.x, button_y);
 
-    IconButtonParams minus_button;
-    minus_button.id = "GridScaleMinus";
-    minus_button.cursor_pos = minus_pos;
-    minus_button.size = button_size;
-    minus_button.icon_texture = zoom_out_icon;
-    minus_button.fallback_label = "-";
-    minus_button.colors = zoom_button_colors;
-    minus_button.enabled = can_zoom_out;
-    if (draw_icon_button(minus_button)) {
-      apply_zoom_delta_and_log(-1, "decreased");
-    }
+  unsigned int zoom_out_icon = texture_manager.get_zoom_out_icon();
+  unsigned int zoom_in_icon = texture_manager.get_zoom_in_icon();
+  IconButtonParams minus_button;
+  minus_button.id = "GridScaleMinus";
+  minus_button.cursor_pos = minus_pos;
+  minus_button.size = button_size;
+  minus_button.icon_texture = zoom_out_icon;
+  minus_button.fallback_label = "-";
+  minus_button.enabled = can_zoom_out;
+  if (draw_icon_button(minus_button)) {
+    apply_zoom_delta_and_log(-1, "decreased");
+  }
 
-    IconButtonParams plus_button = minus_button;
-    plus_button.id = "GridScalePlus";
-    plus_button.cursor_pos = plus_pos;
-    plus_button.icon_texture = zoom_in_icon;
-    plus_button.fallback_label = "+";
-    plus_button.enabled = can_zoom_in;
-    if (draw_icon_button(plus_button)) {
-      apply_zoom_delta_and_log(1, "increased");
-    }
+  IconButtonParams plus_button = minus_button;
+  plus_button.id = "GridScalePlus";
+  plus_button.cursor_pos = plus_pos;
+  plus_button.icon_texture = zoom_in_icon;
+  plus_button.fallback_label = "+";
+  plus_button.enabled = can_zoom_in;
+  if (draw_icon_button(plus_button)) {
+    apply_zoom_delta_and_log(1, "increased");
+  }
 
-    // Reset cursor to line height below the taller of text/buttons before separator
-    float header_height = std::max(label_size.y, button_size);
-    ImVec2 cursor = ImGui::GetCursorPos();
-    cursor.x = label_pos.x;
-    cursor.y = label_pos.y + header_height + style.ItemSpacing.y;
-    ImGui::SetCursorPos(cursor);
+  // Reset cursor to line height below the taller of text/buttons before separator
+  float header_height = std::max(label_size.y, button_size);
+  ImVec2 cursor = ImGui::GetCursorPos();
+  cursor.x = label_pos.x;
+  cursor.y = label_pos.y + header_height + style.ItemSpacing.y;
+  ImGui::SetCursorPos(cursor);
 
-    ImGui::Separator();
+  ImGui::Separator();
+
+  if (open_assets_modal_from_header) {
+    open_assets_directory_modal(ui_state);
   }
 
   // Create an inner scrolling region so the header above stays visible
@@ -684,22 +710,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       }
     }
   }
-
-  // Show message if no assets found
-  if (ui_state.results.empty()) {
-    bool assets_empty;
-    {
-      auto [lock, assets] = safe_assets.read();
-      assets_empty = assets.empty();
-    }
-    if (assets_empty) {
-      ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets found. Add files to the 'assets' directory.");
-    }
-    else {
-      ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "No assets match your search.");
-    }
-  }
-
+  
   // Handle area selection (rubber band selection)
   bool is_window_hovered = ImGui::IsWindowHovered();
   bool is_item_hovered = ImGui::IsAnyItemHovered();

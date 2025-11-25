@@ -210,6 +210,7 @@ namespace {
 
 void open_assets_directory_modal(UIState& ui_state) {
   ui_state.assets_directory_modal_open = true;
+  ui_state.assets_directory_modal_requested = true;
   ui_state.show_drive_roots = false;
   if (!ui_state.assets_directory.empty()) {
     ui_state.assets_path_selected = ui_state.assets_directory;
@@ -217,7 +218,6 @@ void open_assets_directory_modal(UIState& ui_state) {
   else {
     ui_state.assets_path_selected = get_home_directory();
   }
-  ImGui::OpenPopup("Select Assets Directory");
 }
 
 // tree panel helpers moved to src/ui/tree_panel.cpp
@@ -247,6 +247,7 @@ void clear_ui_state(UIState& ui_state) {
   ui_state.filters_changed = true;
   ui_state.event_batch_finished = false;
   ui_state.assets_directory_modal_open = false;
+  ui_state.assets_directory_modal_requested = false;
   ui_state.current_animation.reset();
   ui_state.current_animation_path.clear();
   ui_state.preview_animation_state.reset();
@@ -296,6 +297,11 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
   }
 
   ImGui::EndChild();
+
+  if (ui_state.assets_directory_modal_requested) {
+    ImGui::OpenPopup("Select Assets Directory");
+    ui_state.assets_directory_modal_requested = false;
+  }
 
   // Handle assets directory change
   if (render_assets_directory_modal(ui_state)) {
