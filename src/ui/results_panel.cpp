@@ -187,23 +187,25 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   bool open_assets_modal_from_header = false;
   const bool has_assets_directory = !ui_state.assets_directory.empty();
   if (!has_assets_directory) {
-    const char* prompt = "Select an asset folder to index";
-    ImVec2 text_pos = ImGui::GetCursorScreenPos();
+    const char* prompt = "Select an assets folder to index";
     ImGui::TextColored(Theme::ACCENT_BLUE_1, "%s", prompt);
-    ImVec2 text_size = ImGui::GetItemRectSize();
-    ImVec2 text_min(text_pos.x, text_pos.y);
-    ImVec2 text_max(text_pos.x + text_size.x, text_pos.y + text_size.y);
 
-    ImGui::SetCursorScreenPos(text_min);
-    if (ImGui::InvisibleButton("SelectAssetsHeaderButton", text_size)) {
+    ImVec2 prompt_size = ImGui::GetItemRectSize();
+    float folder_button_size = button_size * 0.8f;
+    float text_top = label_pos.y + text_y_offset;
+    float folder_button_y = text_top + (text_line_height - folder_button_size) * 0.5f;
+    folder_button_y = std::max(folder_button_y, label_pos.y);
+
+    IconButtonParams folder_button;
+    folder_button.id = "SelectAssetsFolderIcon";
+    folder_button.cursor_pos = ImVec2(label_pos.x + prompt_size.x + style.ItemSpacing.x, folder_button_y);
+    folder_button.size = folder_button_size;
+    folder_button.icon_texture = texture_manager.get_folder_icon();
+    folder_button.fallback_label = "F";
+
+    if (draw_icon_button(folder_button)) {
       open_assets_modal_from_header = true;
     }
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-      ImGui::GetWindowDrawList()->AddRectFilled(text_min, text_max,
-        Theme::ToImU32(Theme::COLOR_SEMI_TRANSPARENT), 3.0f);
-    }
-    ImGui::SetCursorScreenPos(ImVec2(text_min.x, text_max.y));
   }
   else {
     size_t matched_count = ui_state.results.size();
