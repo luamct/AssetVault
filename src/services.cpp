@@ -14,16 +14,16 @@
 #include <vector>
 
 namespace {
-constexpr bool DEBUG_CLEAN_START = true;
+constexpr bool DEBUG_CLEAN_START = false;
 }
 
 // Static member initialization
-AssetDatabase* Services::database_ = nullptr;
-SearchIndex* Services::search_index_ = nullptr;
-EventProcessor* Services::event_processor_ = nullptr;
 FileWatcher* Services::file_watcher_ = nullptr;
-TextureManager* Services::texture_manager_ = nullptr;
+SearchIndex* Services::search_index_ = nullptr;
 AudioManager* Services::audio_manager_ = nullptr;
+AssetDatabase* Services::database_ = nullptr;
+EventProcessor* Services::event_processor_ = nullptr;
+TextureManager* Services::texture_manager_ = nullptr;
 DragDropManager* Services::drag_drop_manager_ = nullptr;
 void Services::provide(AssetDatabase* database, SearchIndex* search_index, EventProcessor* event_processor, FileWatcher* file_watcher, TextureManager* texture_manager, AudioManager* audio_manager, DragDropManager* drag_drop_manager) {
     database_ = database;

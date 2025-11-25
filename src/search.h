@@ -13,6 +13,9 @@
 #include "asset.h"
 #include "ui/ui.h"
 
+// Helper for splitting text into normalized tokens used during indexing and search.
+std::vector<std::string> tokenize_index_terms(const std::string& text);
+
 // Token types for search query parsing
 enum class SearchTokenType {
   TEXT,          // Regular text content
@@ -156,7 +159,6 @@ private:
 
     // Tokenization
     std::unordered_set<std::string> tokenize_asset(const Asset& asset) const;
-    bool is_valid_token(const std::string& token) const;
     
     // Index operations
     void rebuild_sorted_index();

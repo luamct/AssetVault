@@ -49,6 +49,28 @@ TEST_CASE("parse_search_query basic functionality", "[search]") {
     }
 }
 
+TEST_CASE("tokenize_index_terms normalizes separators", "[search][tokens]") {
+    SECTION("Hyphenated names produce separate tokens") {
+        auto tokens = tokenize_index_terms("door-rotate-square-a.glb");
+        std::vector<std::string> expected = {"door", "rotate", "square", "glb"};
+        REQUIRE(tokens == expected);
+    }
+
+    SECTION("Full asset path with spaces") {
+        auto tokens = tokenize_index_terms("Building Kit/Models/GLB format/door-rotate-square-a.glb");
+        std::vector<std::string> expected = {
+            "building", "kit", "models", "glb", "format", "door", "rotate", "square", "glb"
+        };
+        REQUIRE(tokens == expected);
+    }
+
+    SECTION("Short and numeric tokens are dropped") {
+        auto tokens = tokenize_index_terms("ab-cd99-01-1xz");
+        std::vector<std::string> expected = {"cd99", "1xz"};
+        REQUIRE(tokens == expected);
+    }
+}
+
 TEST_CASE("parse_search_query multiple types", "[search]") {
     SECTION("Multiple types comma separated") {
         auto query = parse_search_query("type=2d,audio");

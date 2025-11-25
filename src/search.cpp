@@ -14,6 +14,47 @@
 #include <cctype>
 #include <chrono>
 
+namespace {
+
+bool is_valid_index_token(const std::string& token) {
+  if (token.length() <= 2) {
+    return false;
+  }
+
+  for (char c : token) {
+    if (std::isalpha(static_cast<unsigned char>(c))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+} // namespace
+
+std::vector<std::string> tokenize_index_terms(const std::string& text) {
+  std::vector<std::string> tokens;
+  std::string lower_text = to_lowercase(text);
+  std::string current_token;
+
+  for (char c : lower_text) {
+    if (std::isalnum(static_cast<unsigned char>(c))) {
+      current_token += c;
+    }
+    else if (!current_token.empty()) {
+      if (is_valid_index_token(current_token)) {
+        tokens.push_back(current_token);
+      }
+      current_token.clear();
+    }
+  }
+
+  if (!current_token.empty() && is_valid_index_token(current_token)) {
+    tokens.push_back(current_token);
+  }
+
+  return tokens;
+}
+
 // SearchTokenizer Implementation
 SearchTokenizer::SearchTokenizer(const std::string& input)
   : input_(input), current_pos_(0) {
@@ -428,26 +469,7 @@ void filter_assets(UIState& ui_state, const SafeAssets& safe_assets) {
 
   if (!query.text_query.empty()) {
     // Use search index for text search (O(log n) performance)
-    std::vector<std::string> search_terms;
-    std::string lower_query = to_lowercase(query.text_query);
-
-    // Split on whitespace, slashes, and underscores to match tokenization behavior
-    std::string current_term;
-    for (char c : lower_query) {
-      if (std::isspace(static_cast<unsigned char>(c)) || c == '/' || c == '_') {
-        if (!current_term.empty() && current_term.length() > 2) {
-          search_terms.push_back(current_term);
-        }
-        current_term.clear();
-      }
-      else {
-        current_term += c;
-      }
-    }
-    // Add final term
-    if (!current_term.empty() && current_term.length() > 2) {
-      search_terms.push_back(current_term);
-    }
+    std::vector<std::string> search_terms = tokenize_index_terms(query.text_query);
 
     if (!search_terms.empty()) {
       candidate_ids = Services::search_index().search_terms(search_terms);
@@ -544,46 +566,11 @@ SearchIndex::SearchIndex() {
 
 std::unordered_set<std::string> SearchIndex::tokenize_asset(const Asset& asset) const {
   std::unordered_set<std::string> token_set;
-  std::string current_token;
-  std::string lower_text = to_lowercase(asset.relative_path);
-
-  for (char c : lower_text) {
-    if (std::isalnum(static_cast<unsigned char>(c))) {
-      current_token += c;
-    }
-    else if (!current_token.empty()) {
-      // Split on non-alphanumeric characters
-      if (is_valid_token(current_token)) {
-        token_set.insert(current_token);
-      }
-      current_token.clear();
-    }
+  std::vector<std::string> tokens = tokenize_index_terms(asset.relative_path);
+  for (const std::string& token : tokens) {
+    token_set.insert(token);
   }
-
-  // Add final token if any
-  if (!current_token.empty() && is_valid_token(current_token)) {
-    token_set.insert(current_token);
-  }
-
   return token_set;
-}
-
-bool SearchIndex::is_valid_token(const std::string& token) const {
-  // Ignore tokens with length <= 2 as specified in requirements
-  if (token.length() <= 2) {
-    return false;
-  }
-
-  // Must contain at least one alphabetic character
-  bool has_alpha = false;
-  for (char c : token) {
-    if (std::isalpha(static_cast<unsigned char>(c))) {
-      has_alpha = true;
-      break;
-    }
-  }
-
-  return has_alpha;
 }
 
 std::vector<uint32_t> SearchIndex::search_prefix(const std::string& prefix) const {
