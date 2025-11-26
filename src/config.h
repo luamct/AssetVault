@@ -32,7 +32,9 @@ public:
 
   static inline constexpr const char* CONFIG_KEY_ASSETS_DIRECTORY = "assets_directory";
   static inline constexpr const char* CONFIG_KEY_DRAW_DEBUG_AXES = "draw_debug_axes";
+  static inline constexpr const char* CONFIG_KEY_GRID_ZOOM_LEVEL = "grid_zoom_level";
   static constexpr bool CONFIG_DEFAULT_DRAW_DEBUG_AXES = PREVIEW_DRAW_DEBUG_AXES_DEFAULT;
+  static constexpr int CONFIG_DEFAULT_GRID_ZOOM_LEVEL = 3;
 
   static constexpr const char* DATABASE_PATH = "db/assets.db";
   static constexpr const char* THUMBNAIL_DIRECTORY = "thumbnails";
@@ -95,16 +97,20 @@ public:
   static bool initialize(AssetDatabase* database);
   static const std::string& assets_directory();
   static bool draw_debug_axes();
+  static int grid_zoom_level();
   static bool set_assets_directory(const std::string& path);
   static bool set_draw_debug_axes(bool enabled);
+  static bool set_grid_zoom_level(int level);
 
 private:
   static std::string load_string_setting(const std::string& key, const std::string& default_value);
   static bool load_bool_setting(const std::string& key, bool default_value);
+  static int load_int_setting(const std::string& key, int default_value);
   static bool persist_value(const std::string& key, const std::string& value);
 
   static AssetDatabase* database_;
   static bool initialized_;
   static std::string assets_directory_value_;
   static bool draw_debug_axes_value_;
+  static int grid_zoom_level_value_;
 };

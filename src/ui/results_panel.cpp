@@ -42,6 +42,7 @@ bool apply_grid_zoom_delta(UIState& ui_state, int delta) {
     return false;
   }
   ui_state.grid_zoom_level = static_cast<ZoomLevel>(next);
+  Config::set_grid_zoom_level(next);
   return true;
 }
 
@@ -49,6 +50,7 @@ void ensure_grid_zoom_level(UIState& ui_state) {
   int level = zoom_level_index(ui_state.grid_zoom_level);
   if (level < GRID_ZOOM_MIN_LEVEL || level > GRID_ZOOM_MAX_LEVEL) {
     ui_state.grid_zoom_level = GRID_ZOOM_DEFAULT_LEVEL;
+    Config::set_grid_zoom_level(zoom_level_index(GRID_ZOOM_DEFAULT_LEVEL));
   }
 }
 

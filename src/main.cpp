@@ -175,6 +175,9 @@ int run(std::atomic<bool>* shutdown_requested) {
     }
   }
 
+  // Restore the user's last grid zoom level preference
+  ui_state.grid_zoom_level = static_cast<ZoomLevel>(Config::grid_zoom_level());
+
   // Main loop
   if (headless_mode) {
     // Headless mode: just wait for shutdown signal

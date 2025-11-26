@@ -26,6 +26,7 @@ AssetDatabase* Config::database_ = nullptr;
 bool Config::initialized_ = false;
 std::string Config::assets_directory_value_;
 bool Config::draw_debug_axes_value_ = Config::CONFIG_DEFAULT_DRAW_DEBUG_AXES;
+int Config::grid_zoom_level_value_ = Config::CONFIG_DEFAULT_GRID_ZOOM_LEVEL;
 
 bool Config::initialize(AssetDatabase* database) {
   database_ = database;
@@ -37,6 +38,8 @@ bool Config::initialize(AssetDatabase* database) {
   assets_directory_value_ = load_string_setting(CONFIG_KEY_ASSETS_DIRECTORY, "");
   draw_debug_axes_value_ = load_bool_setting(CONFIG_KEY_DRAW_DEBUG_AXES,
     CONFIG_DEFAULT_DRAW_DEBUG_AXES);
+  grid_zoom_level_value_ = load_int_setting(CONFIG_KEY_GRID_ZOOM_LEVEL,
+    CONFIG_DEFAULT_GRID_ZOOM_LEVEL);
   initialized_ = true;
   return true;
 }
@@ -47,6 +50,10 @@ const std::string& Config::assets_directory() {
 
 bool Config::draw_debug_axes() {
   return draw_debug_axes_value_;
+}
+
+int Config::grid_zoom_level() {
+  return grid_zoom_level_value_;
 }
 
 bool Config::set_assets_directory(const std::string& path) {
@@ -62,6 +69,14 @@ bool Config::set_draw_debug_axes(bool enabled) {
     return false;
   }
   draw_debug_axes_value_ = enabled;
+  return true;
+}
+
+bool Config::set_grid_zoom_level(int level) {
+  if (!persist_value(CONFIG_KEY_GRID_ZOOM_LEVEL, std::to_string(level))) {
+    return false;
+  }
+  grid_zoom_level_value_ = level;
   return true;
 }
 
@@ -84,6 +99,17 @@ std::string Config::load_string_setting(const std::string& key, const std::strin
 bool Config::load_bool_setting(const std::string& key, bool default_value) {
   std::string stored = load_string_setting(key, bool_to_string(default_value));
   return string_to_bool(stored, default_value);
+}
+
+int Config::load_int_setting(const std::string& key, int default_value) {
+  std::string stored = load_string_setting(key, std::to_string(default_value));
+  try {
+    return std::stoi(stored);
+  }
+  catch (const std::exception& ex) {
+    LOG_WARN("Invalid integer config value '{}' for key {}: {}", stored, key, ex.what());
+  }
+  return default_value;
 }
 
 bool Config::persist_value(const std::string& key, const std::string& value) {
