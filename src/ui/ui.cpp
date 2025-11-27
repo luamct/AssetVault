@@ -225,7 +225,7 @@ void open_assets_directory_modal(UIState& ui_state) {
 void reset_folder_tree_state(UIState& ui_state) {
   ui_state.pending_tree_selection.reset();
   ui_state.tree_nodes_to_open.clear();
-  ui_state.disable_child_propagation.clear();
+  ui_state.collapse_tree_requested = false;
   ui_state.folder_checkbox_states.clear();
   ui_state.folder_children_cache.clear();
   ui_state.path_filters.clear();

@@ -89,6 +89,7 @@ struct UIState {
 
   // Audio playback settings
   bool auto_play_audio = true;
+  CameraProjection preview_projection = CameraProjection::Orthographic;
 
   // Drag-and-drop state (track if drag is in progress to prevent multiple initiations)
   bool drag_initiated = false;
@@ -115,7 +116,7 @@ struct UIState {
   std::vector<std::string> path_filters;
   std::optional<std::string> pending_tree_selection;
   std::unordered_set<std::string> tree_nodes_to_open;
-  std::unordered_set<std::string> disable_child_propagation;
+  bool collapse_tree_requested = false;
 };
 
 // UI helper functions
@@ -164,7 +165,7 @@ namespace folder_tree_utils {
   };
 
   const std::vector<std::string>& ensure_children_loaded(UIState& ui_state,
-    const std::filesystem::path& dir_path, bool propagate_parent_state = true);
+    const std::filesystem::path& dir_path, bool inherit_parent_state = true);
   FilterComputationResult collect_active_filters(UIState& ui_state,
     const std::filesystem::path& root_path);
 }

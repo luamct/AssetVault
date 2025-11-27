@@ -87,10 +87,11 @@ namespace {
     return false;
   }
 
+  // Marks the supplied folder and every cached descendant as checked/unchecked
+  // without touching ancestors; does not load children lazily.
   void set_folder_subtree_checked(UIState& ui_state, const fs::path& dir_path, bool checked) {
     std::string path_id = path_key(dir_path);
     ui_state.folder_checkbox_states[path_id] = checked;
-    ui_state.disable_child_propagation.erase(path_id);
 
     auto cache_it = ui_state.folder_children_cache.find(path_id);
     if (cache_it == ui_state.folder_children_cache.end()) {
@@ -102,13 +103,89 @@ namespace {
     }
   }
 
+  // Walks up the tree from dir_path toward root_path ensuring every ancestor
+  // remains checked so filters stay minimized correctly.
+  void ensure_parents_checked(UIState& ui_state, const fs::path& dir_path,
+      const fs::path& root_path) {
+    if (dir_path == root_path) {
+      return;
+    }
+
+    fs::path current = dir_path;
+    while (true) {
+      current = current.parent_path();
+      if (current.empty()) {
+        break;
+      }
+
+      std::string parent_id = path_key(current);
+      ui_state.folder_checkbox_states[parent_id] = true;
+
+      if (current == root_path) {
+        break;
+      }
+    }
+  }
+
+  // Checks the requested folder, optionally cascades to already-loaded
+  // children, and keeps all ancestors checked. This is the main entry point
+  // for user actions that should affect parents and visible descendants.
+  void set_folder_checked_with_relatives(UIState& ui_state, const fs::path& dir_path,
+      const fs::path& root_path, bool include_loaded_children) {
+    if (include_loaded_children) {
+      set_folder_subtree_checked(ui_state, dir_path, true);
+    } else {
+      std::string path_id = path_key(dir_path);
+      ui_state.folder_checkbox_states[path_id] = true;
+    }
+
+    ensure_parents_checked(ui_state, dir_path, root_path);
+  }
+
+  // Convenience helper used by exclusive selection flows to reset all
+  // checkboxes without discarding cached nodes.
   void clear_all_folder_checks(UIState& ui_state) {
     for (auto& entry : ui_state.folder_checkbox_states) {
       entry.second = false;
     }
-    ui_state.disable_child_propagation.clear();
   }
 
+  // Clears every checkbox, collapses the tree, and walks down the requested
+  // relative path checking ancestors (and optionally the final subtree).
+  void select_path_exclusive(UIState& ui_state, const fs::path& root_path,
+      fs::path target_relative, bool include_target_subtree) {
+    clear_all_folder_checks(ui_state);
+    ui_state.tree_nodes_to_open.clear();
+    ui_state.collapse_tree_requested = true;
+
+    if (target_relative == ".") {
+      target_relative.clear();
+    }
+
+    if (target_relative.empty()) {
+      set_folder_checked_with_relatives(ui_state, root_path, root_path,
+        include_target_subtree);
+      return;
+    }
+
+    fs::path current = root_path;
+    set_folder_checked_with_relatives(ui_state, root_path, root_path, false);
+
+    for (auto it = target_relative.begin(); it != target_relative.end(); ++it) {
+      folder_tree_utils::ensure_children_loaded(ui_state, current, false);
+      current /= *it;
+      bool is_last = std::next(it) == target_relative.end();
+      bool include_children = include_target_subtree && is_last;
+      set_folder_checked_with_relatives(ui_state, current, root_path,
+        include_children);
+      if (!is_last) {
+        ui_state.tree_nodes_to_open.insert(path_key(current));
+      }
+    }
+  }
+
+  // Applies preview-panel selections that should mirror the right-click
+  // exclusive behavior once the tree has populated its children.
   void apply_pending_tree_selection(UIState& ui_state, const fs::path& root_path) {
     if (!ui_state.pending_tree_selection.has_value()) {
       return;
@@ -117,36 +194,14 @@ namespace {
     std::string pending = *ui_state.pending_tree_selection;
     ui_state.pending_tree_selection.reset();
 
-    clear_all_folder_checks(ui_state);
-    ui_state.tree_nodes_to_open.clear();
-
-    if (pending.empty()) {
-      set_folder_subtree_checked(ui_state, root_path, true);
-      return;
-    }
-
     fs::path target_relative = fs::path(pending);
-    fs::path current = root_path;
-    const std::string root_key = path_key(root_path);
-    ui_state.folder_checkbox_states[root_key] = true;
-    ui_state.disable_child_propagation.insert(root_key);
-
-    for (auto it = target_relative.begin(); it != target_relative.end(); ++it) {
-      folder_tree_utils::ensure_children_loaded(ui_state, current, false);
-      current /= *it;
-      const std::string current_key = path_key(current);
-      ui_state.folder_checkbox_states[current_key] = true;
-      ui_state.disable_child_propagation.insert(current_key);
-
-      auto next_it = it;
-      ++next_it;
-      if (next_it != target_relative.end()) {
-        ui_state.tree_nodes_to_open.insert(current_key);
-      }
-    }
+    select_path_exclusive(ui_state, root_path, target_relative, true);
   }
 
-  void render_folder_tree_node(UIState& ui_state, const fs::path& dir_path) {
+  // Renders a single folder entry, handles left/right-click interactions, and
+  // recurses into lazily loaded children.
+  void render_folder_tree_node(UIState& ui_state, const fs::path& dir_path,
+      const fs::path& root_path) {
     std::string path_id = path_key(dir_path);
     bool stored_checked = get_checkbox_state(ui_state, path_id);
 
@@ -164,9 +219,20 @@ namespace {
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::ACCENT_BLUE_1_ALPHA_80);
     ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::ACCENT_BLUE_1));
     bool checkbox_value = stored_checked;
-    if (ImGui::Checkbox("", &checkbox_value)) {
-      ui_state.disable_child_propagation.clear();
-      set_folder_subtree_checked(ui_state, dir_path, checkbox_value);
+    bool checkbox_clicked = ImGui::Checkbox("", &checkbox_value);
+    bool right_click_exclusive = ImGui::IsItemClicked(ImGuiMouseButton_Right);
+    if (right_click_exclusive) {
+      fs::path relative = dir_path == root_path ? fs::path() :
+        dir_path.lexically_relative(root_path);
+      select_path_exclusive(ui_state, root_path, relative, true);
+      checkbox_value = true;
+      stored_checked = true;
+    } else if (checkbox_clicked) {
+      if (checkbox_value) {
+        set_folder_checked_with_relatives(ui_state, dir_path, root_path, true);
+      } else {
+        set_folder_subtree_checked(ui_state, dir_path, false);
+      }
       stored_checked = checkbox_value;
     }
     ImGui::PopStyleColor(4);
@@ -181,10 +247,15 @@ namespace {
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+    bool path_should_open = false;
     auto open_it = ui_state.tree_nodes_to_open.find(path_id);
     if (open_it != ui_state.tree_nodes_to_open.end()) {
       ImGui::SetNextItemOpen(true, ImGuiCond_Always);
       ui_state.tree_nodes_to_open.erase(open_it);
+      path_should_open = true;
+    }
+    if (ui_state.collapse_tree_requested && !path_should_open) {
+      ImGui::SetNextItemOpen(false, ImGuiCond_Always);
     }
     bool open = ImGui::TreeNodeEx(tree_label.c_str(), node_flags);
     ImGui::PopStyleVar();
@@ -194,7 +265,7 @@ namespace {
     if (open) {
       const auto& children = folder_tree_utils::ensure_children_loaded(ui_state, dir_path);
       for (const std::string& child_id : children) {
-        render_folder_tree_node(ui_state, fs::path(child_id));
+        render_folder_tree_node(ui_state, fs::path(child_id), root_path);
       }
     }
 
@@ -235,9 +306,17 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::ACCENT_BLUE_1_ALPHA_80);
   ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::ACCENT_BLUE_1));
   bool root_checkbox_value = root_checked;
-  if (ImGui::Checkbox("", &root_checkbox_value)) {
-    ui_state.disable_child_propagation.clear();
-    set_folder_subtree_checked(ui_state, root_path, root_checkbox_value);
+  bool root_clicked = ImGui::Checkbox("", &root_checkbox_value);
+  bool root_right_click = ImGui::IsItemClicked(ImGuiMouseButton_Right);
+  if (root_right_click) {
+    select_path_exclusive(ui_state, root_path, fs::path(), true);
+    root_checkbox_value = true;
+  } else if (root_clicked) {
+    if (root_checkbox_value) {
+      set_folder_checked_with_relatives(ui_state, root_path, root_path, true);
+    } else {
+      set_folder_subtree_checked(ui_state, root_path, false);
+    }
   }
   ImGui::PopStyleColor(4);
   ImGui::PopStyleVar();
@@ -261,9 +340,10 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   apply_pending_tree_selection(ui_state, root_path);
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
   for (const auto& child : root_subdirectories) {
-    render_folder_tree_node(ui_state, fs::path(child));
+    render_folder_tree_node(ui_state, fs::path(child), root_path);
   }
   ImGui::PopStyleVar();
+  ui_state.collapse_tree_requested = false;
 
   folder_tree_utils::FilterComputationResult filter_result =
     folder_tree_utils::collect_active_filters(ui_state, root_path);
@@ -293,7 +373,7 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
 
 namespace folder_tree_utils {
   const std::vector<std::string>& ensure_children_loaded(UIState& ui_state,
-    const std::filesystem::path& dir_path, bool propagate_parent_state) {
+    const std::filesystem::path& dir_path, bool inherit_parent_state) {
     std::string parent_id = path_key(dir_path);
     auto cache_it = ui_state.folder_children_cache.find(parent_id);
     if (cache_it != ui_state.folder_children_cache.end()) {
@@ -317,9 +397,7 @@ namespace folder_tree_utils {
 
     auto [inserted_it, inserted] = ui_state.folder_children_cache.emplace(parent_id, std::move(children));
     if (inserted) {
-      bool allow_propagation = propagate_parent_state &&
-        ui_state.disable_child_propagation.find(parent_id) == ui_state.disable_child_propagation.end();
-      bool child_state = allow_propagation ? get_checkbox_state(ui_state, parent_id) : false;
+      bool child_state = inherit_parent_state ? get_checkbox_state(ui_state, parent_id) : false;
       for (const std::string& child_id : inserted_it->second) {
         ui_state.folder_checkbox_states.emplace(child_id, child_state);
       }
