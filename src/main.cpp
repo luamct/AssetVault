@@ -175,8 +175,11 @@ int run(std::atomic<bool>* shutdown_requested) {
     }
   }
 
-  // Restore the user's last grid zoom level preference
+  // Restore persisted UI preferences
   ui_state.grid_zoom_level = static_cast<ZoomLevel>(Config::grid_zoom_level());
+  ui_state.preview_projection = Config::preview_projection();
+  camera.projection = (ui_state.preview_projection == Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE) ?
+    CameraProjection::Perspective : CameraProjection::Orthographic;
 
   // Main loop
   if (headless_mode) {

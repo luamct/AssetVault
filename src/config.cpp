@@ -27,6 +27,7 @@ bool Config::initialized_ = false;
 std::string Config::assets_directory_value_;
 bool Config::draw_debug_axes_value_ = Config::CONFIG_DEFAULT_DRAW_DEBUG_AXES;
 int Config::grid_zoom_level_value_ = Config::CONFIG_DEFAULT_GRID_ZOOM_LEVEL;
+std::string Config::preview_projection_value_ = Config::CONFIG_VALUE_PROJECTION_ORTHOGRAPHIC;
 
 bool Config::initialize(AssetDatabase* database) {
   database_ = database;
@@ -40,6 +41,8 @@ bool Config::initialize(AssetDatabase* database) {
     CONFIG_DEFAULT_DRAW_DEBUG_AXES);
   grid_zoom_level_value_ = load_int_setting(CONFIG_KEY_GRID_ZOOM_LEVEL,
     CONFIG_DEFAULT_GRID_ZOOM_LEVEL);
+  preview_projection_value_ = load_string_setting(CONFIG_KEY_PREVIEW_PROJECTION,
+    CONFIG_VALUE_PROJECTION_ORTHOGRAPHIC);
   initialized_ = true;
   return true;
 }
@@ -54,6 +57,10 @@ bool Config::draw_debug_axes() {
 
 int Config::grid_zoom_level() {
   return grid_zoom_level_value_;
+}
+
+std::string Config::preview_projection() {
+  return preview_projection_value_;
 }
 
 bool Config::set_assets_directory(const std::string& path) {
@@ -77,6 +84,16 @@ bool Config::set_grid_zoom_level(int level) {
     return false;
   }
   grid_zoom_level_value_ = level;
+  return true;
+}
+
+bool Config::set_preview_projection(const std::string& projection_value) {
+  std::string normalized = projection_value == CONFIG_VALUE_PROJECTION_PERSPECTIVE ?
+    CONFIG_VALUE_PROJECTION_PERSPECTIVE : CONFIG_VALUE_PROJECTION_ORTHOGRAPHIC;
+  if (!persist_value(CONFIG_KEY_PREVIEW_PROJECTION, normalized)) {
+    return false;
+  }
+  preview_projection_value_ = normalized;
   return true;
 }
 

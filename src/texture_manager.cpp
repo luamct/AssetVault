@@ -614,6 +614,10 @@ void TextureManager::generate_3d_model_thumbnail(const std::string& model_path, 
 
   // Render the model or skeleton using existing preview routines.
   Camera3D default_camera; // Uses default rotation and zoom
+  default_camera.projection =
+    (Config::preview_projection() == Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE)
+    ? CameraProjection::Perspective
+    : CameraProjection::Orthographic;
   if (has_renderable_geometry) {
     render_model(model, *this, default_camera, false);
   }

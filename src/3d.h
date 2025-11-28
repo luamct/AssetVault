@@ -148,11 +148,18 @@ struct Model {
   bool has_no_geometry = false; // True for animation-only files (no renderable meshes)
 };
 
+// Camera projection selection for previews
+enum class CameraProjection {
+  Orthographic = 0,
+  Perspective = 1
+};
+
 // Camera state for 3D preview interaction
 struct Camera3D {
   float rotation_x = 30.0f;   // Initial rotation around X axis (up/down)
   float rotation_y = 45.0f;   // Initial rotation around Y axis (left/right)
   float zoom = 1.0f;           // Zoom factor (1.0 = default)
+  CameraProjection projection = CameraProjection::Orthographic;
 
   // Mouse interaction state
   bool is_dragging = false;

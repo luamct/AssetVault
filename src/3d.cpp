@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <optional>
 #include <glm/glm.hpp>
@@ -53,6 +54,11 @@ unsigned int axis_green_texture_id = 0;
 unsigned int axis_blue_texture_id = 0;
 unsigned int skeleton_texture_id = 0;
 
+std::unordered_set<std::string> logged_camera_stats;
+
+
+
+
 constexpr bool SKELETON_HIDE_CTRL_BONES = true;
 constexpr bool SKELETON_HIDE_IK_BONES = true;
 constexpr bool SKELETON_HIDE_ROLL_BONES = true;
@@ -82,6 +88,66 @@ glm::vec3 compute_preview_light_direction(const glm::vec3& camera_position) {
     direction = glm::vec3(0.0f, -1.0f, -1.0f);
   }
   return glm::normalize(direction);
+}
+
+struct PreviewCameraMatrices {
+  glm::mat4 view;
+  glm::mat4 projection;
+  glm::vec3 camera_position;
+};
+
+PreviewCameraMatrices build_preview_camera_matrices(const Model& model, const Camera3D& camera) {
+  aiVector3D size = model.max_bounds - model.min_bounds;
+  float max_size = std::max({ size.x, size.y, size.z });
+  const float safe_size = std::max(max_size, 0.001f);
+  const float zoom_divisor = std::max(camera.zoom, 0.1f);
+  float base_distance = safe_size * 2.2f;
+  float camera_distance = base_distance / zoom_divisor;
+
+  float rot_x_rad = glm::radians(camera.rotation_x);
+  float rot_y_rad = glm::radians(camera.rotation_y);
+
+  glm::vec3 camera_pos(
+    camera_distance * cos(rot_x_rad) * sin(rot_y_rad),
+    camera_distance * sin(rot_x_rad),
+    camera_distance * cos(rot_x_rad) * cos(rot_y_rad)
+  );
+
+  glm::mat4 view = glm::lookAt(
+    camera_pos,
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    glm::vec3(0.0f, 1.0f, 0.0f)
+  );
+
+  const float depth_padding = safe_size * 4.0f;
+  float near_plane = std::max(0.001f, camera_distance - depth_padding);
+  float far_plane = camera_distance + depth_padding;
+  if (far_plane <= near_plane + 0.001f) {
+    far_plane = near_plane + 0.001f;
+  }
+
+  glm::mat4 projection;
+  float ortho_half_extent = 0.0f;
+  if (camera.projection == CameraProjection::Orthographic) {
+    ortho_half_extent = safe_size * 0.75f / zoom_divisor;
+    projection = glm::ortho(-ortho_half_extent, ortho_half_extent,
+      -ortho_half_extent, ortho_half_extent, near_plane, far_plane);
+  } else {
+    projection = glm::perspective(glm::radians(45.0f), 1.0f, near_plane, far_plane);
+  }
+
+  std::string camera_log_key = model.path + (camera.projection == CameraProjection::Orthographic ? "#ortho" : "#persp");
+  if (!model.path.empty() && logged_camera_stats.insert(camera_log_key).second) {
+    LOG_INFO("[3D][Camera] {} projection={} max_size={:.6f} zoom={:.4f} distance={:.6f} ortho_half={:.6f}",
+      model.path,
+      camera.projection == CameraProjection::Orthographic ? "orthographic" : "perspective",
+      max_size,
+      camera.zoom,
+      camera_distance,
+      ortho_half_extent);
+  }
+
+  return { view, projection, camera_pos };
 }
 
 // Utility: unpack a matrix into T/R/S components while falling back to identity on failure.
@@ -911,48 +977,24 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
 
   // Center and position the model to ensure it's always visible
   aiVector3D center = (model.min_bounds + model.max_bounds) * 0.5f;
-  aiVector3D size = model.max_bounds - model.min_bounds;
-  float max_size = std::max({ size.x, size.y, size.z });
 
   // Just center the model at the origin
   model_matrix = glm::translate(model_matrix, glm::vec3(-center.x, -center.y, -center.z));
 
   // Calculate camera distance based on model size and zoom
-  // We want the model to fit nicely in the view, so move camera back based on size
-  float base_distance = max_size * 2.2f; // 2.0x the model size for good framing
-  float camera_distance = base_distance / camera.zoom; // Apply zoom factor
-
-  // Convert rotation angles to radians
-  float rot_x_rad = glm::radians(camera.rotation_x);
-  float rot_y_rad = glm::radians(camera.rotation_y);
-
-  // Calculate camera position using spherical coordinates
-  float camera_x = camera_distance * cos(rot_x_rad) * sin(rot_y_rad);
-  float camera_y = camera_distance * sin(rot_x_rad);
-  float camera_z = camera_distance * cos(rot_x_rad) * cos(rot_y_rad);
-
-  glm::mat4 view_matrix = glm::lookAt(
-    glm::vec3(camera_x, camera_y, camera_z), // Camera position - controlled by mouse
-    glm::vec3(0.0f, 0.0f, 0.0f),             // Look at origin where model is centered
-    glm::vec3(0.0f, 1.0f, 0.0f)              // Standard +Y-up view
-  );
+  PreviewCameraMatrices camera_matrices = build_preview_camera_matrices(model, camera);
 
   // Set uniforms
   glUniformMatrix4fv(glGetUniformLocation(shader_, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "view"), 1, GL_FALSE, glm::value_ptr(camera_matrices.view));
 
-  // Dynamic far clipping plane based on camera distance
-  float far_plane = camera_distance * 2.0f; // 2x camera distance to ensure model is visible
-  glm::mat4 projection_matrix = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane);
   glUniformMatrix4fv(
     glGetUniformLocation(shader_, "projection"), 1, GL_FALSE,
-    glm::value_ptr(projection_matrix)
+    glm::value_ptr(camera_matrices.projection)
   );
 
-  glm::vec3 camera_pos(camera_x, camera_y, camera_z);
-
   // Treat lighting as a headlamp attached to the camera
-  const glm::vec3 light_direction = compute_preview_light_direction(camera_pos);
+  const glm::vec3 light_direction = compute_preview_light_direction(camera_matrices.camera_position);
   glUniform3fv(glGetUniformLocation(shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
@@ -1064,8 +1106,12 @@ void render_model(const Model& model, TextureManager& texture_manager, const Cam
   // Render debug axes at origin (scaled relative to model size)
   // Pass the same view and projection matrices to ensure consistency
   if (allow_debug_axes && Config::draw_debug_axes()) {
-    float axis_scale = max_size * 0.7f;
-    render_debug_axes(texture_manager, axis_scale, view_matrix, projection_matrix, light_direction);
+    aiVector3D extent = model.max_bounds - model.min_bounds;
+    float max_extent = std::max({ extent.x, extent.y, extent.z });
+    float safe_extent = std::max(max_extent, 0.001f);
+    float axis_scale = safe_extent * 0.7f;
+    render_debug_axes(texture_manager, axis_scale, camera_matrices.view,
+      camera_matrices.projection, light_direction);
   }
 }
 
@@ -1160,37 +1206,15 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   aiVector3D center = (model.min_bounds + model.max_bounds) * 0.5f;
   model_matrix = glm::translate(model_matrix, glm::vec3(-center.x, -center.y, -center.z));
 
-  // Calculate camera matrices (same as render_model)
-  aiVector3D size = model.max_bounds - model.min_bounds;
-  float max_size = std::max({ size.x, size.y, size.z });
-  float base_distance = max_size * 2.2f;
-  float camera_distance = base_distance / camera.zoom;
-
-  float rot_x_rad = glm::radians(camera.rotation_x);
-  float rot_y_rad = glm::radians(camera.rotation_y);
-
-  float camera_x = camera_distance * cos(rot_x_rad) * sin(rot_y_rad);
-  float camera_y = camera_distance * sin(rot_x_rad);
-  float camera_z = camera_distance * cos(rot_x_rad) * cos(rot_y_rad);
-
-  glm::mat4 view_matrix = glm::lookAt(
-    glm::vec3(camera_x, camera_y, camera_z),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    glm::vec3(0.0f, 1.0f, 0.0f)
-  );
-
-  float far_plane = camera_distance * 2.0f;
-  glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, far_plane);
+  PreviewCameraMatrices camera_matrices = build_preview_camera_matrices(model, camera);
 
   // Set uniforms for skeleton shader
   glUniformMatrix4fv(glGetUniformLocation(shader_, "model"), 1, GL_FALSE, glm::value_ptr(model_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(shader_, "view"), 1, GL_FALSE, glm::value_ptr(view_matrix));
-  glUniformMatrix4fv(glGetUniformLocation(shader_, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-
-  glm::vec3 camera_pos(camera_x, camera_y, camera_z);
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "view"), 1, GL_FALSE, glm::value_ptr(camera_matrices.view));
+  glUniformMatrix4fv(glGetUniformLocation(shader_, "projection"), 1, GL_FALSE, glm::value_ptr(camera_matrices.projection));
 
   // Directional lighting (same as models)
-  const glm::vec3 light_direction = compute_preview_light_direction(camera_pos);
+  const glm::vec3 light_direction = compute_preview_light_direction(camera_matrices.camera_position);
   glUniform3fv(glGetUniformLocation(shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 

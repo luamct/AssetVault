@@ -89,7 +89,7 @@ struct UIState {
 
   // Audio playback settings
   bool auto_play_audio = true;
-  CameraProjection preview_projection = CameraProjection::Orthographic;
+  std::string preview_projection = Config::CONFIG_VALUE_PROJECTION_ORTHOGRAPHIC;
 
   // Drag-and-drop state (track if drag is in progress to prevent multiple initiations)
   bool drag_initiated = false;

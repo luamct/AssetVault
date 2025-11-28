@@ -467,12 +467,14 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       // 3D Preview Viewport for models
       ImVec2 viewport_size(avail_width, avail_height);
 
+      camera.projection = (ui_state.preview_projection == Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE)
+        ? CameraProjection::Perspective
+        : CameraProjection::Orthographic;
+
       // Render the 3D preview to framebuffer texture
       int fb_width = static_cast<int>(avail_width);
       int fb_height = static_cast<int>(avail_height);
       render_3d_preview(fb_width, fb_height, current_model, texture_manager, camera, ImGui::GetIO().DeltaTime);
-
-      camera.projection = ui_state.preview_projection;
 
       // Center the viewport in the panel (same logic as 2D previews)
       ImVec2 container_pos = ImGui::GetCursorScreenPos();

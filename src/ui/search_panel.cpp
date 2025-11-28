@@ -203,10 +203,40 @@ void render_search_panel(UIState& ui_state,
       ImGui::TextColored(Theme::TEXT_SECONDARY, "Draw debug axes");
 
       ImGui::TableSetColumnIndex(1);
+      ImGuiStyle& settings_style = ImGui::GetStyle();
+      ImVec2 compact_padding(settings_style.FramePadding.x * 0.7f,
+        settings_style.FramePadding.y * 0.7f);
+      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, compact_padding);
       bool draw_axes = Config::draw_debug_axes();
       if (ImGui::Checkbox("##DrawDebugAxes", &draw_axes)) {
         Config::set_draw_debug_axes(draw_axes);
       }
+      ImGui::PopStyleVar();
+
+      ImGui::TableNextRow();
+      ImGui::TableSetColumnIndex(0);
+      ImVec2 projection_label_pos = ImGui::GetCursorPos();
+      ImGui::SetCursorPos(ImVec2(projection_label_pos.x,
+        projection_label_pos.y + SETTINGS_LABEL_Y_OFFSET));
+      ImGui::TextColored(Theme::TEXT_SECONDARY, "3D projection");
+
+      ImGui::TableSetColumnIndex(1);
+      std::string projection_pref = ui_state.preview_projection;
+      bool ortho_selected = projection_pref != Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
+      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, compact_padding);
+      if (ImGui::RadioButton("Orthographic##PreviewProjection", ortho_selected)) {
+        projection_pref = Config::CONFIG_VALUE_PROJECTION_ORTHOGRAPHIC;
+        ui_state.preview_projection = projection_pref;
+        Config::set_preview_projection(projection_pref);
+      }
+      ImGui::SameLine();
+      bool perspective_selected = projection_pref == Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
+      if (ImGui::RadioButton("Perspective##PreviewProjection", perspective_selected)) {
+        projection_pref = Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
+        ui_state.preview_projection = projection_pref;
+        Config::set_preview_projection(projection_pref);
+      }
+      ImGui::PopStyleVar();
 
       ImGui::EndTable();
     }
