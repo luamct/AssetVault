@@ -64,6 +64,7 @@ namespace Theme {
   // === TRANSPARENCY COLORS ===
   constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);      // Fully transparent / Invisible border
   constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.15f); // Semi-transparent black
+  constexpr ImVec4 IMAGE_HOVER_OVERLAY = ImVec4(0.00f, 0.00f, 0.00f, 0.30f);    // Dark tint for hover states
 
   // === ImU32 COLORS (for immediate drawing) ===
   constexpr ImU32 COLOR_WHITE_U32 = IM_COL32(255, 255, 255, 255);        // Pure white

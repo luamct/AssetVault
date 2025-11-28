@@ -22,6 +22,7 @@ constexpr int GRID_ZOOM_MAX_LEVEL = static_cast<int>(ZoomLevel::Level5);
 constexpr float RESULTS_TEXT_HEIGHT = 20.0f;
 constexpr float RESULTS_GRID_SPACING = 15.0f;
 constexpr float RESULTS_TEXT_MAX_LENGTH = 30.0f;
+constexpr float RESULTS_THUMBNAIL_CORNER_RADIUS = 9.0f;
 
 constexpr int zoom_level_index(ZoomLevel level) {
   return static_cast<int>(level);
@@ -104,12 +105,6 @@ void render_asset_context_menu(const Asset& asset, const std::string& menu_id) {
       LOG_INFO("Copy Path clicked for: {}", asset.path);
       ImGui::SetClipboardText(asset.path.c_str());
     }
-    
-    if (ImGui::MenuItem("Show Properties")) {
-      LOG_INFO("Show Properties clicked for: {}", asset.path);
-      // TODO: Implement properties dialog
-    }
-    
     ImGui::EndPopup();
   }
   
@@ -519,14 +514,18 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
       ImU32 container_bg_color = Theme::ToImU32(
         show_selected ? Theme::ACCENT_BLUE_1_ALPHA_35 : Theme::BACKGROUND_LIGHT_BLUE_1);
-      grid_draw_list->AddRectFilled(container_pos, container_max, container_bg_color);
+      grid_draw_list->AddRectFilled(
+        container_pos,
+        container_max,
+        container_bg_color,
+        RESULTS_THUMBNAIL_CORNER_RADIUS);
 
       if (show_selected) {
         grid_draw_list->AddRect(
           container_pos,
           container_max,
           Theme::ToImU32(Theme::ACCENT_BLUE_1),
-          4.0f,
+          RESULTS_THUMBNAIL_CORNER_RADIUS,
           0,
           2.0f);
       }
@@ -537,13 +536,6 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         image_y_offset = std::max(0.0f, (container_height - layout.display_size.y) * 0.5f);
       }
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
-
-      ImGui::PushStyleColor(ImGuiCol_Border, Theme::COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::COLOR_SEMI_TRANSPARENT);
-      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-      ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 
       ImGui::SetCursorScreenPos(image_pos);
       unsigned int display_texture_id = texture_entry.get_texture_id();
@@ -565,10 +557,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         }
       }
 
-      if (ImGui::ImageButton(
-        ("##Thumbnail" + std::to_string(i)).c_str(),
-        (ImTextureID) (intptr_t) display_texture_id,
-        layout.display_size)) {
+      std::string thumbnail_id = "Thumbnail##" + std::to_string(i);
+      if (ImGui::InvisibleButton(thumbnail_id.c_str(), layout.display_size)) {
 
         ImGuiIO& io = ImGui::GetIO();
         // Check for Cmd (macOS) or Ctrl (Windows/Linux) modifier
@@ -616,9 +606,28 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         }
       }
 
-      ImGui::PopStyleVar(2);  // Restore frame padding/border size
-
       bool is_container_hovered = ImGui::IsMouseHoveringRect(container_pos, container_max);
+
+      // Draw the actual texture with rounded corners
+      if (display_texture_id != 0) {
+        ImVec2 image_max(image_pos.x + layout.display_size.x, image_pos.y + layout.display_size.y);
+        grid_draw_list->AddImageRounded(
+          (ImTextureID) (intptr_t) display_texture_id,
+          image_pos,
+          image_max,
+          ImVec2(0.0f, 0.0f),
+          ImVec2(1.0f, 1.0f),
+          Theme::COLOR_WHITE_U32,
+          RESULTS_THUMBNAIL_CORNER_RADIUS);
+
+        if (is_container_hovered && !ImGui::IsItemActive()) {
+          grid_draw_list->AddRectFilled(
+            image_pos,
+            image_max,
+            Theme::ToImU32(Theme::IMAGE_HOVER_OVERLAY),
+            RESULTS_THUMBNAIL_CORNER_RADIUS);
+        }
+      }
 
       // Handle drag-and-drop to external applications (Finder, Explorer, etc.)
       if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 5.0f)) {
@@ -656,8 +665,6 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       }
 
       render_asset_context_menu(ui_state.results[i], "AssetContextMenu##" + std::to_string(i));
-
-      ImGui::PopStyleColor(4);
 
       int current_zoom_level = zoom_level_index(ui_state.grid_zoom_level);
       bool show_label_always = (asset.type != AssetType::_2D && asset.type != AssetType::_3D) &&

@@ -137,17 +137,6 @@ PreviewCameraMatrices build_preview_camera_matrices(const Model& model, const Ca
     projection = glm::perspective(glm::radians(45.0f), 1.0f, near_plane, far_plane);
   }
 
-  std::string camera_log_key = model.path + (camera.projection == CameraProjection::Orthographic ? "#ortho" : "#persp");
-  if (!model.path.empty() && logged_camera_stats.insert(camera_log_key).second) {
-    LOG_INFO("[3D][Camera] {} projection={} max_size={:.6f} zoom={:.4f} distance={:.6f} ortho_half={:.6f}",
-      model.path,
-      camera.projection == CameraProjection::Orthographic ? "orthographic" : "perspective",
-      max_size,
-      camera.zoom,
-      camera_distance,
-      ortho_half_extent);
-  }
-
   return { view, projection, camera_pos };
 }
 

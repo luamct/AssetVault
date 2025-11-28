@@ -22,6 +22,7 @@ constexpr float PREVIEW_INTERNAL_PADDING = 30.0f;
 constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;
 constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;
 constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 20.0f;
+constexpr float PREVIEW_VIEWPORT_ROUNDING = 12.0f;
 }
 
 using AttributeRenderer = std::function<void()>;
@@ -481,15 +482,22 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       float image_x_offset = (avail_width - viewport_size.x) * 0.5f;
       float image_y_offset = (avail_height - viewport_size.y) * 0.5f;
       ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
-      ImGui::SetCursorScreenPos(image_pos);
 
-      // Display the 3D viewport
-      ImGui::Image(
-        (ImTextureID) (intptr_t) texture_manager.get_preview_texture(), 
-        viewport_size,
-        ImVec2(0.0f, 1.0f),   // bottom-left
-        ImVec2(1.0f, 0.0f)    // top-right
-      );
+      ImGui::SetCursorScreenPos(image_pos);
+      ImGui::PushID("ModelPreviewViewport");
+      ImGui::InvisibleButton("Viewport", viewport_size);
+      ImGui::PopID();
+
+      // Display the 3D viewport with rounded clipping
+      ImVec2 image_max(image_pos.x + viewport_size.x, image_pos.y + viewport_size.y);
+      ImGui::GetWindowDrawList()->AddImageRounded(
+        (ImTextureID) (intptr_t) texture_manager.get_preview_texture(),
+        image_pos,
+        image_max,
+        ImVec2(0.0f, 1.0f),
+        ImVec2(1.0f, 0.0f),
+        Theme::COLOR_WHITE_U32,
+        PREVIEW_VIEWPORT_ROUNDING);
 
       // Handle mouse interactions for 3D camera control
       bool is_image_hovered = ImGui::IsItemHovered();
@@ -759,16 +767,23 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         float image_y_offset = (avail_height - preview_size.y) * 0.5f;
         ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
         ImGui::SetCursorScreenPos(image_pos);
-
-        ImVec2 border_min = image_pos;
-        ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
-        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
+        ImGui::InvisibleButton("PreviewAnimation", preview_size);
 
         unsigned int frame_texture = ui_state.preview_animation_state.current_texture(now);
         if (frame_texture == 0 && !animation->frame_textures.empty()) {
           frame_texture = animation->frame_textures.front();
         }
-        ImGui::Image((ImTextureID) (intptr_t) frame_texture, preview_size);
+        if (frame_texture != 0) {
+          ImVec2 image_max(image_pos.x + preview_size.x, image_pos.y + preview_size.y);
+          ImGui::GetWindowDrawList()->AddImageRounded(
+            (ImTextureID) (intptr_t) frame_texture,
+            image_pos,
+            image_max,
+            ImVec2(0.0f, 0.0f),
+            ImVec2(1.0f, 1.0f),
+            Theme::COLOR_WHITE_U32,
+            PREVIEW_VIEWPORT_ROUNDING);
+        }
 
         ImGui::SetCursorScreenPos(container_pos);
         ImGui::Dummy(ImVec2(0, avail_height + 10));
@@ -808,14 +823,17 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         float image_y_offset = (avail_height - preview_size.y) * 0.5f;
         ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
         ImGui::SetCursorScreenPos(image_pos);
+        ImGui::InvisibleButton("PreviewImage", preview_size);
 
-        // Draw border around the image
-        ImVec2 border_min = image_pos;
-        ImVec2 border_max(border_min.x + preview_size.x, border_min.y + preview_size.y);
-        ImGui::GetWindowDrawList()->AddRect(border_min, border_max, Theme::COLOR_BORDER_GRAY_U32, 8.0f, 0, 1.0f);
-
-        // Display static image
-        ImGui::Image((ImTextureID) (intptr_t) preview_entry.get_texture_id(), preview_size);
+        ImVec2 image_max(image_pos.x + preview_size.x, image_pos.y + preview_size.y);
+        ImGui::GetWindowDrawList()->AddImageRounded(
+          (ImTextureID) (intptr_t) preview_entry.get_texture_id(),
+          image_pos,
+          image_max,
+          ImVec2(0.0f, 0.0f),
+          ImVec2(1.0f, 1.0f),
+          Theme::COLOR_WHITE_U32,
+          PREVIEW_VIEWPORT_ROUNDING);
 
         // Restore cursor for info below
         ImGui::SetCursorScreenPos(container_pos);
