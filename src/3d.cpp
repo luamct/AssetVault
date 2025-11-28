@@ -119,11 +119,12 @@ PreviewCameraMatrices build_preview_camera_matrices(const Model& model, const Ca
     glm::vec3(0.0f, 1.0f, 0.0f)
   );
 
-  const float depth_padding = safe_size * 4.0f;
-  float near_plane = std::max(0.001f, camera_distance - depth_padding);
-  float far_plane = camera_distance + depth_padding;
-  if (far_plane <= near_plane + 0.001f) {
-    far_plane = near_plane + 0.001f;
+  const float frustum_padding = safe_size * 1.25f;
+  const float min_near = std::max(0.001f, safe_size * 0.05f);
+  float near_plane = std::max(min_near, camera_distance - frustum_padding);
+  float far_plane = camera_distance + frustum_padding;
+  if (far_plane <= near_plane + min_near) {
+    far_plane = near_plane + min_near;
   }
 
   glm::mat4 projection;
