@@ -104,7 +104,6 @@ struct UIState {
   bool type_filter_2d = false;
   bool type_filter_3d = false;
   bool type_filter_audio = false;
-  bool type_filter_shader = false;
   bool type_filter_font = false;
 
   // Path filter toggle state

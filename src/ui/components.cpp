@@ -104,9 +104,9 @@ bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float
 
   ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, corner_radius);
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padding_x, padding_y));
-  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.98f, 0.98f, 0.98f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::SEARCH_BOX_BG);
+  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::SEARCH_BOX_BG_HOVERED);
+  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::SEARCH_BOX_BG_ACTIVE);
 
   ImVec2 shadow_offset(2.0f, 2.0f);
   ImVec2 input_pos = ImGui::GetCursorScreenPos();
@@ -127,7 +127,7 @@ bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float
 }
 
 bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,
-    float button_width, float button_height) {
+    float button_width, float button_height, const ImVec4& active_color) {
   ImVec2 button_min(x_pos, y_pos);
   ImVec2 button_max(button_min.x + button_width, button_min.y + button_height);
 
@@ -137,13 +137,13 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
 
   ImVec4 bg_color = Theme::BACKGROUND_WHITE;
   if (toggle_state) {
-    bg_color = Theme::TOGGLE_ON_BG;
+    bg_color = active_color;
   }
   else if (is_hovered) {
     bg_color = Theme::TOGGLE_HOVER_BG;
   }
 
-  ImVec4 border_color = toggle_state ? Theme::TOGGLE_ON_BORDER : Theme::TOGGLE_OFF_BORDER;
+  ImVec4 border_color = toggle_state ? active_color : Theme::TOGGLE_OFF_BORDER;
   ImVec4 text_color = toggle_state ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
 
   float button_rounding = button_height * 0.5f;

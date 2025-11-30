@@ -258,6 +258,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   }
 
   // Create an inner scrolling region so the header above stays visible
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::BACKGROUND_LIGHT_BLUE_1);
   ImGui::BeginChild("AssetGridScroll", ImVec2(0, 0), false);
 
   const auto animation_now = std::chrono::steady_clock::now();
@@ -815,6 +816,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // End inner scrolling region (grid)
   grid_draw_list->ChannelsMerge();
   ImGui::EndChild();
+  ImGui::PopStyleColor();
 
   // Reset drag state when mouse button is released
   if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {

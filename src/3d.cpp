@@ -1549,8 +1549,8 @@ void render_3d_preview(int width, int height, Model& model, TextureManager& text
   glBindFramebuffer(GL_FRAMEBUFFER, texture_manager.get_preview_framebuffer());
   glViewport(0, 0, width, height);
   glClearColor(
-    Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
-    Theme::BACKGROUND_LIGHT_BLUE_1.w
+    Theme::VIEWPORT_CANVAS.x, Theme::VIEWPORT_CANVAS.y, Theme::VIEWPORT_CANVAS.z,
+    Theme::VIEWPORT_CANVAS.w
   );
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 

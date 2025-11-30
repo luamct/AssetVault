@@ -214,10 +214,10 @@ namespace {
 
     ImGui::PushID(checkbox_id.c_str());
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::FRAME_LIGHT_BLUE_5);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::FRAME_LIGHT_BLUE_6);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::ACCENT_BLUE_1_ALPHA_80);
-    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::ACCENT_BLUE_1));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
     bool checkbox_value = stored_checked;
     bool checkbox_clicked = ImGui::Checkbox("", &checkbox_value);
     bool right_click_exclusive = ImGui::IsItemClicked(ImGuiMouseButton_Right);
@@ -301,10 +301,10 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   bool root_checked = get_checkbox_state(ui_state, root_path.u8string());
   ImGui::PushID("RootFolderCheckbox");
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::FRAME_LIGHT_BLUE_5);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::FRAME_LIGHT_BLUE_6);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::ACCENT_BLUE_1_ALPHA_80);
-  ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::ACCENT_BLUE_1));
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
+  ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
   bool root_checkbox_value = root_checked;
   bool root_clicked = ImGui::Checkbox("", &root_checkbox_value);
   bool root_right_click = ImGui::IsItemClicked(ImGuiMouseButton_Right);

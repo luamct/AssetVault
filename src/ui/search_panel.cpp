@@ -96,11 +96,10 @@ void render_search_panel(UIState& ui_state,
   float button_width_2d = 70.0f;
   float button_width_3d = 70.0f;
   float button_width_audio = 84.0f;
-  float button_width_shader = 96.0f;
   float button_width_font = 72.0f;
 
   float total_toggle_width = button_width_2d + button_width_3d + button_width_audio +
-    button_width_shader + button_width_font + (toggle_spacing * 4);
+    button_width_font + (toggle_spacing * 3);
 
   float toggles_start_x = (content_width - total_toggle_width) * 0.5f;
   toggles_start_x = std::max(0.0f, toggles_start_x);
@@ -110,27 +109,22 @@ void render_search_panel(UIState& ui_state,
 
   any_toggle_changed |= draw_type_toggle_button("2D", ui_state.type_filter_2d,
     content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_2d, toggle_button_height);
+    button_width_2d, toggle_button_height, Theme::TAG_TYPE_2D);
   current_x += button_width_2d + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("3D", ui_state.type_filter_3d,
     content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_3d, toggle_button_height);
+    button_width_3d, toggle_button_height, Theme::TAG_TYPE_3D);
   current_x += button_width_3d + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("Audio", ui_state.type_filter_audio,
     content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_audio, toggle_button_height);
+    button_width_audio, toggle_button_height, Theme::TAG_TYPE_AUDIO);
   current_x += button_width_audio + toggle_spacing;
-
-  any_toggle_changed |= draw_type_toggle_button("Shader", ui_state.type_filter_shader,
-    content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_shader, toggle_button_height);
-  current_x += button_width_shader + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("Font", ui_state.type_filter_font,
     content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_font, toggle_button_height);
+    button_width_font, toggle_button_height, Theme::TAG_TYPE_FONT);
   current_x += button_width_font + toggle_spacing;
 
   if (any_toggle_changed) {
@@ -208,9 +202,13 @@ void render_search_panel(UIState& ui_state,
         settings_style.FramePadding.y * 0.7f);
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, compact_padding);
       bool draw_axes = Config::draw_debug_axes();
+      ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
       if (ImGui::Checkbox("##DrawDebugAxes", &draw_axes)) {
         Config::set_draw_debug_axes(draw_axes);
       }
+      ImGui::PopStyleColor(3);
       ImGui::PopStyleVar();
 
       ImGui::TableNextRow();

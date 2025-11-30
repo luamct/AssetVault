@@ -33,4 +33,5 @@ bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float
     float padding_x = 20.0f, float padding_y = 16.0f, float corner_radius = 25.0f);
 
 bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,
-    float button_width, float button_height);
+    float button_width, float button_height,
+    const ImVec4& active_color = Theme::TOGGLE_ON_BG);

@@ -433,7 +433,6 @@ void filter_assets(UIState& ui_state, const SafeAssets& safe_assets) {
   if (ui_state.type_filter_2d) ui_type_filters.push_back(AssetType::_2D);
   if (ui_state.type_filter_3d) ui_type_filters.push_back(AssetType::_3D);
   if (ui_state.type_filter_audio) ui_type_filters.push_back(AssetType::Audio);
-  if (ui_state.type_filter_shader) ui_type_filters.push_back(AssetType::Shader);
   if (ui_state.type_filter_font) ui_type_filters.push_back(AssetType::Font);
 
   // Parse the search query once before the loop, passing UI filters

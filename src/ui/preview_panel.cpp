@@ -168,14 +168,14 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
       if (current_line_width + separator_width + segment_width > available_width) {
         // Add separator at end of current line, then wrap to new line
         ImGui::SameLine(0, 2.0f);
-        ImGui::TextColored(Theme::TEXT_SECONDARY, " /");
+        ImGui::TextColored(Theme::TEXT_PATH, " /");
         current_line_width = segment_width;
       }
       else {
         // Continue on same line with separator
         current_line_width += separator_width + segment_width;
         ImGui::SameLine(0, 2.0f); // Small spacing between segments
-        ImGui::TextColored(Theme::TEXT_SECONDARY, " / ");
+        ImGui::TextColored(Theme::TEXT_PATH, " / ");
         ImGui::SameLine(0, 2.0f);
       }
     }
@@ -198,7 +198,7 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
         path_to_segment) != ui_state.path_filters.end();
 
       // Choose color based on active state
-      ImVec4 link_color = is_active ? Theme::ACCENT_BLUE_2 : Theme::ACCENT_BLUE_1;
+      ImVec4 link_color = is_active ? Theme::ACCENT_BLUE_2 : Theme::TEXT_PATH;
 
       // Render as clickable text link
       ImGui::PushStyleColor(ImGuiCol_Text, link_color);
@@ -211,11 +211,16 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
       bool is_hovered = ImGui::IsItemHovered();
 
       // Draw underline on hover
+      if (!is_active && is_hovered) {
+        ImGui::GetWindowDrawList()->AddText(text_min,
+          Theme::ToImU32(Theme::ACCENT_BLUE_1), segments[i].c_str());
+      }
+
       if (is_hovered) {
         ImGui::GetWindowDrawList()->AddLine(
           ImVec2(text_min.x, text_max.y - 1.0f),
           ImVec2(text_max.x, text_max.y - 1.0f),
-          ImGui::GetColorU32(link_color),
+          ImGui::GetColorU32(is_active ? Theme::ACCENT_BLUE_2 : Theme::ACCENT_BLUE_1),
           1.0f
         );
 
@@ -236,7 +241,7 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
     }
     else {
       // Render non-clickable segment (filename) as regular text
-      ImGui::TextColored(Theme::TEXT_DARK, "%s", segments[i].c_str());
+      ImGui::TextColored(Theme::TEXT_PATH, "%s", segments[i].c_str());
     }
   }
 }
@@ -255,6 +260,20 @@ void render_attribute_rows(const std::vector<AttributeRow>& rows) {
 
   for (const auto& row : rows) {
     std::string label = uppercase_copy(row.label);
+    bool is_path_row = (label == "PATH");
+
+    if (is_path_row) {
+      ImGui::SetCursorPosX(label_column_x);
+      if (row.renderer) {
+        row.renderer();
+      }
+      else {
+        ImGui::TextColored(Theme::TEXT_PATH, "%s", row.value.c_str());
+      }
+      ImGui::Dummy(ImVec2(0.0f, 0.0f));
+      continue;
+    }
+
     ImGui::SetCursorPosX(label_column_x);
     ImFont* tag_font = Theme::get_tag_font();
     if (tag_font) ImGui::PushFont(tag_font);
@@ -728,7 +747,11 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
         // Auto-play checkbox below the player
         ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
         ImGui::Checkbox("Auto-play", &ui_state.auto_play_audio);
+        ImGui::PopStyleColor(3);
       }
 
       render_attribute_rows(detail_rows);
