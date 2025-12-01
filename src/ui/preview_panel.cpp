@@ -414,6 +414,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::BACKGROUND_LIGHT_GRAY);
   ImGui::BeginChild("AssetPreview", ImVec2(panel_width, panel_height), true);
 
+
   // Use fixed panel dimensions for stable calculations
   float avail_width = panel_width - PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
   float avail_height = avail_width;                           // Square aspect ratio for preview area
@@ -517,6 +518,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImVec2(1.0f, 0.0f),
         Theme::COLOR_WHITE_U32,
         PREVIEW_VIEWPORT_ROUNDING);
+
 
       // Handle mouse interactions for 3D camera control
       bool is_image_hovered = ImGui::IsItemHovered();
@@ -630,6 +632,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::SetCursorScreenPos(image_pos);
 
         ImGui::Image((ImTextureID) (intptr_t) audio_entry.get_texture_id(), icon_size);
+
 
         // Restore cursor for controls below
         ImGui::SetCursorScreenPos(container_pos);
@@ -806,6 +809,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
             ImVec2(1.0f, 1.0f),
             Theme::COLOR_WHITE_U32,
             PREVIEW_VIEWPORT_ROUNDING);
+
         }
 
         ImGui::SetCursorScreenPos(container_pos);
@@ -857,6 +861,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           ImVec2(1.0f, 1.0f),
           Theme::COLOR_WHITE_U32,
           PREVIEW_VIEWPORT_ROUNDING);
+
 
         // Restore cursor for info below
         ImGui::SetCursorScreenPos(container_pos);

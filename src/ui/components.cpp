@@ -2,6 +2,24 @@
 
 #include <algorithm>
 
+NineSliceDefinition::NineSliceDefinition()
+  : source_pos(0.0f, 0.0f),
+    source_size(0.0f, 0.0f),
+    border(0.0f),
+    pixel_scale(1.0f),
+    fill_center(true) {}
+
+NineSliceDefinition::NineSliceDefinition(const ImVec2& source,
+    const ImVec2& size,
+    float border_pixels,
+    float scale,
+    bool fill)
+  : source_pos(source),
+    source_size(size),
+    border(border_pixels),
+    pixel_scale(std::max(1.0f, scale)),
+    fill_center(fill) {}
+
 bool draw_icon_button(const IconButtonParams& params) {
   if (params.id == nullptr || params.size <= 0.0f) {
     return false;
@@ -99,70 +117,196 @@ bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float
     float padding_x, float padding_y, float corner_radius) {
   ImGui::PushItemWidth(width);
 
-  float font_height = ImGui::GetFontSize();
-  float actual_input_height = font_height + (padding_y * 2.0f);
-
   ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, corner_radius);
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padding_x, padding_y));
-  ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::SEARCH_BOX_BG);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::SEARCH_BOX_BG_HOVERED);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::SEARCH_BOX_BG_ACTIVE);
-
-  ImVec2 shadow_offset(2.0f, 2.0f);
-  ImVec2 input_pos = ImGui::GetCursorScreenPos();
-  ImVec2 shadow_min(input_pos.x + shadow_offset.x, input_pos.y + shadow_offset.y);
-  ImVec2 shadow_max(shadow_min.x + width, shadow_min.y + actual_input_height);
-
-  ImGui::GetWindowDrawList()->AddRectFilled(
-    shadow_min, shadow_max,
-    ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.12f)),
-    corner_radius);
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
 
   bool result = ImGui::InputText(label, buffer, buffer_size, ImGuiInputTextFlags_EnterReturnsTrue);
 
   ImGui::PopStyleColor(3);
-  ImGui::PopStyleVar(2);
+  ImGui::PopStyleVar(3);
   ImGui::PopItemWidth();
   return result;
 }
 
 bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,
-    float button_width, float button_height, const ImVec4& active_color) {
+    float button_width, float button_height, const ImVec4& active_color,
+    const NineSliceAtlas& frame_atlas,
+    const NineSliceDefinition& frame_default,
+    const NineSliceDefinition& frame_selected) {
   ImVec2 button_min(x_pos, y_pos);
+  ImVec2 button_size(button_width, button_height);
   ImVec2 button_max(button_min.x + button_width, button_min.y + button_height);
 
-  ImVec2 mouse_pos = ImGui::GetMousePos();
-  bool is_hovered = (mouse_pos.x >= button_min.x && mouse_pos.x <= button_max.x &&
-    mouse_pos.y >= button_min.y && mouse_pos.y <= button_max.y);
-
-  ImVec4 bg_color = Theme::BACKGROUND_WHITE;
-  if (toggle_state) {
-    bg_color = active_color;
-  }
-  else if (is_hovered) {
-    bg_color = Theme::TOGGLE_HOVER_BG;
-  }
-
-  ImVec4 border_color = toggle_state ? active_color : Theme::TOGGLE_OFF_BORDER;
-  ImVec4 text_color = toggle_state ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
-
-  float button_rounding = button_height * 0.5f;
-  float border_thickness = 1.0f;
-
-  ImGui::GetWindowDrawList()->AddRectFilled(button_min, button_max, Theme::ToImU32(bg_color), button_rounding);
-  ImGui::GetWindowDrawList()->AddRect(button_min, button_max, Theme::ToImU32(border_color), button_rounding, 0, border_thickness);
-
-  ImVec2 text_size = ImGui::CalcTextSize(label);
-  ImVec2 text_pos(
-    button_min.x + (button_width - text_size.x) * 0.5f,
-    button_min.y + (button_height - text_size.y) * 0.5f);
-  ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(text_color), label);
+  ImGui::SetCursorScreenPos(button_min);
+  ImGui::PushID(label);
+  bool pressed = ImGui::InvisibleButton("ToggleButton", button_size);
+  bool is_hovered = ImGui::IsItemHovered();
+  ImGui::PopID();
 
   bool clicked = false;
-  if (is_hovered && ImGui::IsMouseClicked(0)) {
+  if (pressed) {
     toggle_state = !toggle_state;
     clicked = true;
   }
 
+  ImVec4 bg_color = toggle_state ? active_color : Theme::COLOR_TRANSPARENT;
+
+  ImVec4 text_color = toggle_state ? Theme::TOGGLE_ON_TEXT : Theme::TOGGLE_OFF_TEXT;
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (draw_list) {
+    if (bg_color.w > 0.0f) {
+      draw_list->AddRectFilled(button_min, button_max, Theme::ToImU32(bg_color));
+    }
+
+    if (frame_atlas.texture_id != 0) {
+      const NineSliceDefinition& frame_def = (is_hovered || toggle_state)
+        ? frame_selected
+        : frame_default;
+      draw_nine_slice_image(frame_atlas, frame_def, button_min, button_size);
+    }
+    else {
+      ImVec4 border_color = toggle_state ? active_color : Theme::TOGGLE_OFF_BORDER;
+      float button_rounding = button_height * 0.5f;
+      float border_thickness = 1.0f;
+      draw_list->AddRect(button_min, button_max, Theme::ToImU32(border_color), button_rounding, 0, border_thickness);
+    }
+
+    ImVec2 text_size = ImGui::CalcTextSize(label);
+    ImVec2 text_pos(
+      button_min.x + (button_width - text_size.x) * 0.5f,
+      button_min.y + (button_height - text_size.y) * 0.5f);
+    draw_list->AddText(text_pos, Theme::ToImU32(text_color), label);
+  }
+
   return clicked;
+}
+
+void draw_nine_slice_image(const NineSliceAtlas& atlas,
+    const NineSliceDefinition& definition,
+    const ImVec2& dest_pos,
+    const ImVec2& dest_size,
+    ImU32 tint) {
+  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+    return;
+  }
+
+  if (definition.source_size.x <= 0.0f || definition.source_size.y <= 0.0f) {
+    return;
+  }
+
+  float scale = std::max(1.0f, definition.pixel_scale);
+  float uniform_border = std::max(0.0f, definition.border * scale);
+  float left_border = uniform_border;
+  float top_border = uniform_border;
+  float right_border = uniform_border;
+  float bottom_border = uniform_border;
+
+  // Ensure borders don't exceed source dimensions
+  float max_horizontal = left_border + right_border;
+  float src_width = definition.source_size.x * scale;
+  if (max_horizontal > src_width && max_horizontal > 0.0f) {
+    float clamp_scale = src_width / max_horizontal;
+    left_border *= clamp_scale;
+    right_border *= clamp_scale;
+  }
+
+  float max_vertical = top_border + bottom_border;
+  float src_height = definition.source_size.y * scale;
+  if (max_vertical > src_height && max_vertical > 0.0f) {
+    float clamp_scale = src_height / max_vertical;
+    top_border *= clamp_scale;
+    bottom_border *= clamp_scale;
+  }
+
+  float dest_left = std::min(left_border, dest_size.x * 0.5f);
+  float dest_right = std::min(right_border, dest_size.x - dest_left);
+  float dest_top = std::min(top_border, dest_size.y * 0.5f);
+  float dest_bottom = std::min(bottom_border, dest_size.y - dest_top);
+
+  float src_border_x = std::min(definition.border, definition.source_size.x * 0.5f);
+  float src_border_y = std::min(definition.border, definition.source_size.y * 0.5f);
+
+  float src_x[4] = {
+    definition.source_pos.x,
+    definition.source_pos.x + src_border_x,
+    definition.source_pos.x + definition.source_size.x - src_border_x,
+    definition.source_pos.x + definition.source_size.x
+  };
+  float src_y[4] = {
+    definition.source_pos.y,
+    definition.source_pos.y + src_border_y,
+    definition.source_pos.y + definition.source_size.y - src_border_y,
+    definition.source_pos.y + definition.source_size.y
+  };
+
+  float dst_x[4] = {
+    dest_pos.x,
+    dest_pos.x + dest_left,
+    dest_pos.x + dest_size.x - dest_right,
+    dest_pos.x + dest_size.x
+  };
+  float dst_y[4] = {
+    dest_pos.y,
+    dest_pos.y + dest_top,
+    dest_pos.y + dest_size.y - dest_bottom,
+    dest_pos.y + dest_size.y
+  };
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (!draw_list) {
+    return;
+  }
+
+  const float inv_atlas_width = 1.0f / atlas.atlas_size.x;
+  const float inv_atlas_height = 1.0f / atlas.atlas_size.y;
+
+  for (int row = 0; row < 3; ++row) {
+    for (int col = 0; col < 3; ++col) {
+      if (!definition.fill_center && row == 1 && col == 1) {
+        continue;
+      }
+      float x0 = dst_x[col];
+      float x1 = dst_x[col + 1];
+      float y0 = dst_y[row];
+      float y1 = dst_y[row + 1];
+
+      if (x1 <= x0 || y1 <= y0) {
+        continue;
+      }
+
+      float u0 = src_x[col] * inv_atlas_width;
+      float u1 = src_x[col + 1] * inv_atlas_width;
+      float v0 = src_y[row] * inv_atlas_height;
+      float v1 = src_y[row + 1] * inv_atlas_height;
+
+      draw_list->AddImage(atlas.texture_id,
+        ImVec2(x0, y0), ImVec2(x1, y1),
+        ImVec2(u0, v0), ImVec2(u1, v1),
+        tint);
+    }
+  }
+}
+
+NineSliceDefinition make_16px_frame(int index, float pixel_scale) {
+  const float frame_width = 16.0f;
+  const float frame_height = 16.0f;
+  ImVec2 source(
+    frame_width * static_cast<float>(index),
+    8.0f);
+  return NineSliceDefinition(source, ImVec2(frame_width, frame_height), 5.0f, pixel_scale);
+}
+
+NineSliceDefinition make_8px_frame(int index, int variant, float pixel_scale) {
+  const float frame_width = 8.0f;
+  const float frame_height = 8.0f;
+  const float base_y = 32.0f;
+  ImVec2 source(
+    frame_width * static_cast<float>(variant),
+    base_y + frame_height * static_cast<float>(index));
+  return NineSliceDefinition(source, ImVec2(frame_width, frame_height), 3.0f, pixel_scale);
 }

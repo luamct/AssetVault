@@ -20,6 +20,17 @@ void render_search_panel(UIState& ui_state,
   const SafeAssets& safe_assets,
   TextureManager& texture_manager,
   float panel_width, float panel_height) {
+  TextureManager::UIAtlasInfo search_pixel_atlas_info = texture_manager.get_ui_elements_atlas();
+  NineSliceAtlas search_frame_atlas;
+  const NineSliceDefinition search_frame_definition = make_16px_frame(0, 3.0f);
+  const NineSliceDefinition toggle_frame_definition = make_8px_frame(2, 3, 3.0f);
+  const NineSliceDefinition toggle_frame_definition_selected = make_8px_frame(2, 2, 3.0f);
+  const NineSliceDefinition& search_frame_definition_selected = search_frame_definition;
+  search_frame_atlas.texture_id = (ImTextureID) (intptr_t) search_pixel_atlas_info.texture_id;
+  search_frame_atlas.atlas_size = ImVec2(
+    static_cast<float>(search_pixel_atlas_info.width),
+    static_cast<float>(search_pixel_atlas_info.height));
+
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), false);
 
   const float top_padding = 10.0f;
@@ -60,8 +71,39 @@ void render_search_panel(UIState& ui_state,
 
   ImGui::SetCursorPos(ImVec2(local_search_x, content_search_y));
 
+  ImVec2 frame_pos = ImGui::GetCursorScreenPos();
+  const float frame_padding_y = 16.0f;
+  float frame_height = ImGui::GetFontSize() + frame_padding_y * 2.0f;
+  ImVec2 frame_size(SEARCH_BOX_WIDTH, frame_height);
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  bool can_layer_frame = (search_frame_atlas.texture_id != 0) && (draw_list != nullptr);
+  if (can_layer_frame) {
+    draw_list->ChannelsSplit(2);
+    draw_list->ChannelsSetCurrent(1);
+  }
+
   bool enter_pressed = fancy_text_input("##Search", ui_state.buffer, sizeof(ui_state.buffer),
-    SEARCH_BOX_WIDTH, 20.0f, 16.0f, 25.0f);
+    SEARCH_BOX_WIDTH, 20.0f, frame_padding_y, 0.0f);
+
+  if (can_layer_frame) {
+    ImVec2 input_min = ImGui::GetItemRectMin();
+    ImVec2 input_max = ImGui::GetItemRectMax();
+    ImVec2 input_size(input_max.x - input_min.x, input_max.y - input_min.y);
+    bool input_hovered = ImGui::IsItemHovered();
+    bool input_active = ImGui::IsItemActive();
+
+    const NineSliceDefinition& frame_def = (input_hovered || input_active)
+      ? search_frame_definition_selected
+      : search_frame_definition;
+
+    draw_list->ChannelsSetCurrent(0);
+    draw_nine_slice_image(search_frame_atlas, frame_def, input_min, input_size);
+    draw_list->ChannelsMerge();
+  }
+  else if (search_frame_atlas.texture_id != 0) {
+    draw_nine_slice_image(search_frame_atlas, search_frame_definition, frame_pos, frame_size);
+  }
 
   float search_bottom_y = content_search_y + SEARCH_BOX_HEIGHT;
 
@@ -109,22 +151,26 @@ void render_search_panel(UIState& ui_state,
 
   any_toggle_changed |= draw_type_toggle_button("2D", ui_state.type_filter_2d,
     content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_2d, toggle_button_height, Theme::TAG_TYPE_2D);
+    button_width_2d, toggle_button_height, Theme::TAG_TYPE_2D,
+    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected);
   current_x += button_width_2d + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("3D", ui_state.type_filter_3d,
     content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_3d, toggle_button_height, Theme::TAG_TYPE_3D);
+    button_width_3d, toggle_button_height, Theme::TAG_TYPE_3D,
+    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected);
   current_x += button_width_3d + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("Audio", ui_state.type_filter_audio,
     content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_audio, toggle_button_height, Theme::TAG_TYPE_AUDIO);
+    button_width_audio, toggle_button_height, Theme::TAG_TYPE_AUDIO,
+    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected);
   current_x += button_width_audio + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("Font", ui_state.type_filter_font,
     content_origin.x + current_x, content_origin.y + toggles_y,
-    button_width_font, toggle_button_height, Theme::TAG_TYPE_FONT);
+    button_width_font, toggle_button_height, Theme::TAG_TYPE_FONT,
+    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected);
   current_x += button_width_font + toggle_spacing;
 
   if (any_toggle_changed) {

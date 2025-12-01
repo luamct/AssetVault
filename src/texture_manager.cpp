@@ -42,7 +42,8 @@ TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
   preview_framebuffer_(0), preview_initialized_(false),
   play_icon_(0), pause_icon_(0), speaker_icon_(0),
-  zoom_in_icon_(0), zoom_out_icon_(0), settings_icon_(0), folder_icon_(0) {
+  zoom_in_icon_(0), zoom_out_icon_(0), settings_icon_(0), folder_icon_(0),
+  ui_elements_texture_(0), ui_elements_width_(0), ui_elements_height_(0) {
 }
 
 TextureManager::~TextureManager() {
@@ -89,6 +90,10 @@ bool TextureManager::initialize() {
   settings_icon_ = load_packaged_texture("images/settings.png");
   folder_icon_ = load_packaged_texture("images/folder.png");
 
+  if (!load_ui_elements_atlas()) {
+    LOG_WARN("Failed to load pixel UI atlas: images/8x8_ui_elements.png");
+  }
+
   LOG_INFO("TextureManager initialized successfully");
   return true;
 }
@@ -129,6 +134,12 @@ void TextureManager::cleanup_all_textures() {
   if (zoom_out_icon_ != 0) glDeleteTextures(1, &zoom_out_icon_);
   if (settings_icon_ != 0) glDeleteTextures(1, &settings_icon_);
   if (folder_icon_ != 0) glDeleteTextures(1, &folder_icon_);
+  if (ui_elements_texture_ != 0) {
+    glDeleteTextures(1, &ui_elements_texture_);
+    ui_elements_texture_ = 0;
+    ui_elements_width_ = 0;
+    ui_elements_height_ = 0;
+  }
 
   std::vector<std::shared_ptr<Animation2D>> animations;
   {
@@ -316,6 +327,37 @@ unsigned int TextureManager::load_packaged_texture(const char* asset_path) {
 
   TextureParameters params = TextureParameters::ui_texture();
   return create_opengl_texture(texture_data, params);
+}
+
+bool TextureManager::load_ui_elements_atlas() {
+  const auto embedded = embedded_assets::get("images/8x8_ui_elements.png");
+  if (!embedded.has_value()) {
+    LOG_ERROR("[TextureManager] Embedded UI atlas not found: images/8x8_ui_elements.png");
+    return false;
+  }
+
+  TextureData texture_data = load_texture_data_from_memory(
+    embedded->data,
+    static_cast<int>(embedded->size),
+    "images/8x8_ui_elements.png");
+
+  if (!texture_data.is_valid()) {
+    LOG_ERROR("[TextureManager] Failed to decode UI atlas texture");
+    return false;
+  }
+
+  ui_elements_width_ = texture_data.width;
+  ui_elements_height_ = texture_data.height;
+
+  TextureParameters params = TextureParameters::ui_texture();
+  ui_elements_texture_ = create_opengl_texture(texture_data, params);
+  if (ui_elements_texture_ == 0) {
+    ui_elements_width_ = 0;
+    ui_elements_height_ = 0;
+    return false;
+  }
+
+  return true;
 }
 
 
@@ -1185,4 +1227,12 @@ void TextureManager::print_texture_cache(const std::string& assets_root_director
   }
 
   LOG_INFO("================================");
+}
+
+TextureManager::UIAtlasInfo TextureManager::get_ui_elements_atlas() const {
+  UIAtlasInfo info;
+  info.texture_id = ui_elements_texture_;
+  info.width = ui_elements_width_;
+  info.height = ui_elements_height_;
+  return info;
 }

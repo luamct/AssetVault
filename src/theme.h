@@ -36,14 +36,14 @@ namespace Theme {
   }
 
   // === CORE TEXT COLORS (actively used) ===
-  constexpr ImVec4 TEXT_DARK = ImVec4(0.92f, 0.94f, 0.97f, 1.00f);          // Primary text (soft white)
+  constexpr ImVec4 TEXT_DARK = ImVec4(0.98f, 0.98f, 0.99f, 1.00f);          // Primary text (bright white)
   constexpr ImVec4 TEXT_SECONDARY = ImVec4(0.63f, 0.68f, 0.75f, 1.00f);     // Disabled/secondary text
   constexpr ImVec4 TEXT_DISABLED_DARK = ImVec4(0.42f, 0.46f, 0.52f, 1.00f); // Muted UI chrome
   constexpr ImVec4 TEXT_LABEL = ImVec4(0.58f, 0.75f, 0.92f, 1.00f);         // Small labels and pills
   constexpr ImVec4 TEXT_WARNING = ImVec4(0.98f, 0.65f, 0.32f, 1.00f);       // Inline warnings
 
   // === CORE SURFACE COLORS ===
-  constexpr ImVec4 BACKGROUND_LIGHT_BLUE_1 = ImVec4(0.145f, 0.169f, 0.204f, 1.00f);     // Mid slate work area (#252B34)
+  constexpr ImVec4 BACKGROUND_LIGHT_BLUE_1 = ImVec4(0.153f, 0.157f, 0.133f, 1.00f);     // Main background (#272822)
   constexpr ImVec4 BACKGROUND_LIGHT_GRAY = ImVec4(0.212f, 0.239f, 0.290f, 1.00f);      // Lighter panels (#363D4A)
   constexpr ImVec4 BACKGROUND_WHITE = ImVec4(0.263f, 0.305f, 0.373f, 1.00f);           // Raised cards (#43506a)
   constexpr ImVec4 FRAME_LIGHT_BLUE_3 = ImVec4(0.212f, 0.239f, 0.290f, 0.95f);         // Subtle frame fill
@@ -52,9 +52,11 @@ namespace Theme {
   constexpr ImVec4 FRAME_LIGHT_BLUE_6 = ImVec4(0.408f, 0.455f, 0.533f, 1.00f);         // Header active highlight
 
   // === SPECIAL SURFACE COLORS ===
-  constexpr ImVec4 SEARCH_BOX_BG = ImVec4(0.115f, 0.133f, 0.161f, 1.00f);              // Deep slate search field (#1D2229)
-  constexpr ImVec4 SEARCH_BOX_BG_HOVERED = ImVec4(0.135f, 0.155f, 0.188f, 1.00f);      // Hover lift for search
-  constexpr ImVec4 SEARCH_BOX_BG_ACTIVE = ImVec4(0.155f, 0.178f, 0.216f, 1.00f);       // Active search focus fill
+  constexpr ImVec4 SEARCH_BOX_BG = ImVec4(0.922f, 0.922f, 0.922f, 1.00f);              // #EBEBEB search field
+  constexpr ImVec4 SEARCH_BOX_BG_HOVERED = ImVec4(0.980f, 0.980f, 0.980f, 1.00f);      // #FAFAFA hover
+  constexpr ImVec4 SEARCH_BOX_BG_ACTIVE = ImVec4(1.000f, 1.000f, 1.000f, 1.00f);       // #FFFFFF active
+  constexpr ImVec4 SEARCH_BOX_TEXT = ImVec4(0.078f, 0.098f, 0.125f, 1.00f);            // Dark text for light search box
+  constexpr ImVec4 SEARCH_BOX_CURSOR = ImVec4(0.078f, 0.098f, 0.125f, 1.00f);          // Matching caret color
   constexpr ImVec4 VIEWPORT_CANVAS = ImVec4(0.286f, 0.325f, 0.392f, 1.00f);            // Shared grid/viewport canvas (#495368)
 
   // === BORDERS & OVERLAYS ===

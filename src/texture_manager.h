@@ -154,6 +154,18 @@ public:
   bool initialize();
   void cleanup();
 
+  struct UIAtlasInfo {
+    unsigned int texture_id = 0;
+    int width = 0;
+    int height = 0;
+
+    bool is_valid() const {
+      return texture_id != 0 && width > 0 && height > 0;
+    }
+  };
+
+  UIAtlasInfo get_ui_elements_atlas() const;
+
   // Asset texture management
   unsigned int load_texture(const char* filename);
   unsigned int load_texture(const char* filename, int* out_width, int* out_height);
@@ -247,6 +259,11 @@ private:
   unsigned int zoom_out_icon_;
   unsigned int settings_icon_;
   unsigned int folder_icon_;
+  unsigned int ui_elements_texture_;
+  int ui_elements_width_;
+  int ui_elements_height_;
+
+  bool load_ui_elements_atlas();
 
 
   // Helper methods
