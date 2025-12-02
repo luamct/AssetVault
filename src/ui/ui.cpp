@@ -259,7 +259,7 @@ void clear_ui_state(UIState& ui_state) {
 void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
   TextureManager& texture_manager, float panel_width, float panel_height) {
   SpriteAtlas progress_frame_atlas = texture_manager.get_ui_elements_atlas();
-  const NineSliceDefinition progress_frame_definition = make_16px_frame(1, 3.0f);
+  const SlicedSprite progress_frame_definition = make_16px_frame(1, 3.0f);
   ImVec2 panel_pos = ImGui::GetCursorScreenPos();
   ImVec2 panel_size(panel_width, panel_height);
 
@@ -283,7 +283,7 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
       draw_nine_slice_image(progress_frame_atlas, progress_frame_definition,
         bar_pos, bar_size, Theme::COLOR_WHITE_U32);
 
-      float frame_border = progress_frame_definition.border * progress_frame_definition.pixel_scale;
+      float frame_border = progress_frame_definition.border.x * progress_frame_definition.pixel_scale;
       float fill_inset = std::max(2.0f, frame_border * 0.5f);
       ImVec2 fill_pos(
         bar_pos.x + fill_inset,
@@ -304,7 +304,7 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
     char progress_text[64];
     snprintf(progress_text, sizeof(progress_text), "Processing %zu out of %zu", processed, total);
     ImVec2 text_size = ImGui::CalcTextSize(progress_text);
-    float frame_border = progress_frame_definition.border * progress_frame_definition.pixel_scale;
+    float frame_border = progress_frame_definition.border.x * progress_frame_definition.pixel_scale;
     float fill_inset = std::max(2.0f, frame_border * 0.5f);
     ImVec2 inner_pos(
       bar_pos.x + fill_inset,

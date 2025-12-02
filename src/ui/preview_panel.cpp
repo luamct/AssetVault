@@ -416,7 +416,7 @@ static ImVec2 calculate_thumbnail_size(
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   Model& current_model, Camera3D& camera, float panel_width, float panel_height) {
   SpriteAtlas preview_frame_atlas = texture_manager.get_ui_elements_atlas();
-  const NineSliceDefinition preview_frame_definition = make_16px_frame(1, 3.0f);
+  const SlicedSprite preview_frame_definition = make_16px_frame(1, 3.0f);
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
   ImVec2 frame_size(panel_width, std::max(0.0f, panel_height));

@@ -6,55 +6,32 @@
 #include <string>
 
 // Describes how to cut an atlas sprite into 3x3 regions for pixel-perfect scaling.
-struct NineSliceDefinition {
+struct SlicedSprite {
   ImVec2 source_pos;
   ImVec2 source_size;
-  // Uniform border thickness in pixels
-  float border;
+  // Border thickness in pixels for X (left/right) and Y (top/bottom)
+  ImVec2 border;
   // Optional uniform scaling factor for the entire sprite (1px -> scale px)
   float pixel_scale;
   bool fill_center;
 
-  NineSliceDefinition();
-
-  NineSliceDefinition(const ImVec2& source,
+  SlicedSprite(const ImVec2& source,
       const ImVec2& size,
-      float border_pixels,
+      const ImVec2& border_pixels,
       float scale = 1.0f,
       bool fill = true);
 };
 
 struct SpriteAtlas;
 
-// 3-slice variant for elements that stretch along a single axis (e.g., scrollbars).
-struct ThreeSliceDefinition {
-  ImVec2 source_pos;
-  ImVec2 source_size;
-  float edge;
-  float pixel_scale;
-
-  ThreeSliceDefinition();
-
-  ThreeSliceDefinition(const ImVec2& source,
-      const ImVec2& size,
-      float edge_pixels,
-      float scale = 1.0f);
-};
-
 void draw_nine_slice_image(const SpriteAtlas& atlas,
-    const NineSliceDefinition& definition,
+    const SlicedSprite& definition,
     const ImVec2& dest_pos,
     const ImVec2& dest_size,
-    ImU32 tint = Theme::COLOR_WHITE_U32);
-void draw_three_slice_image(const SpriteAtlas& atlas,
-    const ThreeSliceDefinition& definition,
-    const ImVec2& dest_pos,
-    const ImVec2& dest_size,
-    bool vertical,
     ImU32 tint = Theme::COLOR_WHITE_U32);
 
-ThreeSliceDefinition make_scrollbar_track_definition(int variant, float pixel_scale = 1.0f);
-ThreeSliceDefinition make_scrollbar_thumb_definition(float pixel_scale = 1.0f);
+SlicedSprite make_scrollbar_track_definition(int variant, float pixel_scale = 1.0f);
+SlicedSprite make_scrollbar_thumb_definition(float pixel_scale = 1.0f);
 
 struct ScrollbarStyle {
   float pixel_scale = 2.0f;
@@ -81,8 +58,8 @@ ScrollbarState begin_scrollbar_child(const char* id,
 void end_scrollbar_child(ScrollbarState& state);
 void draw_scrollbar_overlay(const ScrollbarState& state,
     const SpriteAtlas& atlas,
-    const ThreeSliceDefinition& track_def,
-    const ThreeSliceDefinition& thumb_def);
+    const SlicedSprite& track_def,
+    const SlicedSprite& thumb_def);
 
 struct IconButtonColors {
   ImVec4 normal = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -114,8 +91,8 @@ bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float
 bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,
     float button_width, float button_height, const ImVec4& active_color,
     const SpriteAtlas& frame_atlas,
-    const NineSliceDefinition& frame_default,
-    const NineSliceDefinition& frame_selected);
+    const SlicedSprite& frame_default,
+    const SlicedSprite& frame_selected);
 
-NineSliceDefinition make_16px_frame(int index, float pixel_scale = 1.0f);
-NineSliceDefinition make_8px_frame(int index, int variant, float pixel_scale = 1.0f);
+SlicedSprite make_16px_frame(int index, float pixel_scale = 1.0f);
+SlicedSprite make_8px_frame(int index, int variant, float pixel_scale = 1.0f);

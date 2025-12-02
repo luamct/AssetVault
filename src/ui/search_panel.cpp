@@ -21,10 +21,10 @@ void render_search_panel(UIState& ui_state,
   TextureManager& texture_manager,
   float panel_width, float panel_height) {
   SpriteAtlas search_frame_atlas = texture_manager.get_ui_elements_atlas();
-  const NineSliceDefinition search_frame_definition = make_16px_frame(0, 3.0f);
-  const NineSliceDefinition toggle_frame_definition = make_8px_frame(2, 2, 3.0f);
-  const NineSliceDefinition toggle_frame_definition_selected = make_8px_frame(2, 4, 3.0f);
-  const NineSliceDefinition& search_frame_definition_selected = search_frame_definition;
+  const SlicedSprite search_frame_definition = make_16px_frame(0, 3.0f);
+  const SlicedSprite toggle_frame_definition = make_8px_frame(2, 2, 3.0f);
+  const SlicedSprite toggle_frame_definition_selected = make_8px_frame(2, 4, 3.0f);
+  const SlicedSprite& search_frame_definition_selected = search_frame_definition;
 
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), false);
 
@@ -88,7 +88,7 @@ void render_search_panel(UIState& ui_state,
     bool input_hovered = ImGui::IsItemHovered();
     bool input_active = ImGui::IsItemActive();
 
-    const NineSliceDefinition& frame_def = (input_hovered || input_active)
+    const SlicedSprite& frame_def = (input_hovered || input_active)
       ? search_frame_definition_selected
       : search_frame_definition;
 

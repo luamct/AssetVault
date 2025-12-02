@@ -3,16 +3,9 @@
 
 #include <algorithm>
 
-NineSliceDefinition::NineSliceDefinition()
-  : source_pos(0.0f, 0.0f),
-    source_size(0.0f, 0.0f),
-    border(0.0f),
-    pixel_scale(1.0f),
-    fill_center(true) {}
-
-NineSliceDefinition::NineSliceDefinition(const ImVec2& source,
+SlicedSprite::SlicedSprite(const ImVec2& source,
     const ImVec2& size,
-    float border_pixels,
+    const ImVec2& border_pixels,
     float scale,
     bool fill)
   : source_pos(source),
@@ -20,21 +13,6 @@ NineSliceDefinition::NineSliceDefinition(const ImVec2& source,
     border(border_pixels),
     pixel_scale(std::max(1.0f, scale)),
     fill_center(fill) {}
-
-ThreeSliceDefinition::ThreeSliceDefinition()
-  : source_pos(0.0f, 0.0f),
-    source_size(0.0f, 0.0f),
-    edge(0.0f),
-    pixel_scale(1.0f) {}
-
-ThreeSliceDefinition::ThreeSliceDefinition(const ImVec2& source,
-    const ImVec2& size,
-    float edge_pixels,
-    float scale)
-  : source_pos(source),
-    source_size(size),
-    edge(edge_pixels),
-    pixel_scale(std::max(1.0f, scale)) {}
 
 bool draw_icon_button(const IconButtonParams& params) {
   if (params.id == nullptr || params.size <= 0.0f) {
@@ -151,8 +129,8 @@ bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float
 bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos, float y_pos,
     float button_width, float button_height, const ImVec4& active_color,
     const SpriteAtlas& frame_atlas,
-    const NineSliceDefinition& frame_default,
-    const NineSliceDefinition& frame_selected) {
+    const SlicedSprite& frame_default,
+    const SlicedSprite& frame_selected) {
   ImVec2 button_min(x_pos, y_pos);
   ImVec2 button_size(button_width, button_height);
   ImVec2 button_max(button_min.x + button_width, button_min.y + button_height);
@@ -180,7 +158,7 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
     }
 
     if (frame_atlas.texture_id != 0) {
-      const NineSliceDefinition& frame_def = (is_hovered || toggle_state)
+      const SlicedSprite& frame_def = (is_hovered || toggle_state)
         ? frame_selected
         : frame_default;
       draw_nine_slice_image(frame_atlas, frame_def, button_min, button_size);
@@ -203,7 +181,7 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
 }
 
 void draw_nine_slice_image(const SpriteAtlas& atlas,
-    const NineSliceDefinition& definition,
+    const SlicedSprite& definition,
     const ImVec2& dest_pos,
     const ImVec2& dest_size,
     ImU32 tint) {
@@ -216,11 +194,10 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
   }
 
   float scale = std::max(1.0f, definition.pixel_scale);
-  float uniform_border = std::max(0.0f, definition.border * scale);
-  float left_border = uniform_border;
-  float top_border = uniform_border;
-  float right_border = uniform_border;
-  float bottom_border = uniform_border;
+  float left_border = std::max(0.0f, definition.border.x * scale);
+  float top_border = std::max(0.0f, definition.border.y * scale);
+  float right_border = left_border;
+  float bottom_border = top_border;
 
   // Ensure borders don't exceed source dimensions
   float max_horizontal = left_border + right_border;
@@ -244,8 +221,8 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
   float dest_top = std::min(top_border, dest_size.y * 0.5f);
   float dest_bottom = std::min(bottom_border, dest_size.y - dest_top);
 
-  float src_border_x = std::min(definition.border, definition.source_size.x * 0.5f);
-  float src_border_y = std::min(definition.border, definition.source_size.y * 0.5f);
+  float src_border_x = std::min(definition.border.x, definition.source_size.x * 0.5f);
+  float src_border_y = std::min(definition.border.y, definition.source_size.y * 0.5f);
 
   float src_x[4] = {
     definition.source_pos.x,
@@ -308,131 +285,39 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
   }
 }
 
-void draw_three_slice_image(const SpriteAtlas& atlas,
-    const ThreeSliceDefinition& definition,
-    const ImVec2& dest_pos,
-    const ImVec2& dest_size,
-    bool vertical,
-    ImU32 tint) {
-  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
-    return;
-  }
-
-  if (definition.source_size.x <= 0.0f || definition.source_size.y <= 0.0f) {
-    return;
-  }
-
-  float scale = std::max(1.0f, definition.pixel_scale);
-  float src_primary = vertical ? definition.source_size.y : definition.source_size.x;
-  float src_cross = vertical ? definition.source_size.x : definition.source_size.y;
-  float src_edge = std::min(definition.edge, src_primary * 0.5f);
-  if (src_primary <= 0.0f || src_cross <= 0.0f) {
-    return;
-  }
-
-  float dst_primary = vertical ? dest_size.y : dest_size.x;
-  float dst_cross = vertical ? dest_size.x : dest_size.y;
-  if (dst_primary <= 0.0f || dst_cross <= 0.0f) {
-    return;
-  }
-
-  float dst_edge = std::min(src_edge * scale, dst_primary * 0.5f);
-
-  float src_primary_coords[4] = {
-    vertical ? definition.source_pos.y : definition.source_pos.x,
-    (vertical ? definition.source_pos.y : definition.source_pos.x) + src_edge,
-    (vertical ? definition.source_pos.y : definition.source_pos.x) + src_primary - src_edge,
-    (vertical ? definition.source_pos.y : definition.source_pos.x) + src_primary
-  };
-
-  float dst_primary_coords[4] = {
-    vertical ? dest_pos.y : dest_pos.x,
-    (vertical ? dest_pos.y : dest_pos.x) + dst_edge,
-    (vertical ? dest_pos.y : dest_pos.x) + dst_primary - dst_edge,
-    (vertical ? dest_pos.y : dest_pos.x) + dst_primary
-  };
-
-  float src_cross_start = vertical ? definition.source_pos.x : definition.source_pos.y;
-  float dst_cross_start = vertical ? dest_pos.x : dest_pos.y;
-
-  ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  if (!draw_list) {
-    return;
-  }
-
-  const float inv_atlas_width = 1.0f / atlas.atlas_size.x;
-  const float inv_atlas_height = 1.0f / atlas.atlas_size.y;
-
-  float src_cross_min_u = vertical
-    ? src_cross_start * inv_atlas_width
-    : src_primary_coords[0] * inv_atlas_width;
-  float src_cross_max_u = vertical
-    ? (src_cross_start + src_cross) * inv_atlas_width
-    : src_primary_coords[3] * inv_atlas_width;
-
-  float src_cross_min_v = vertical
-    ? src_primary_coords[0] * inv_atlas_height
-    : src_cross_start * inv_atlas_height;
-  float src_cross_max_v = vertical
-    ? src_primary_coords[3] * inv_atlas_height
-    : (src_cross_start + src_cross) * inv_atlas_height;
-
-  for (int segment = 0; segment < 3; ++segment) {
-    float primary0 = dst_primary_coords[segment];
-    float primary1 = dst_primary_coords[segment + 1];
-    if (primary1 <= primary0) {
-      continue;
-    }
-
-    float u0 = vertical ? src_cross_min_u : src_primary_coords[segment] * inv_atlas_width;
-    float u1 = vertical ? src_cross_max_u : src_primary_coords[segment + 1] * inv_atlas_width;
-    float v0 = vertical ? src_primary_coords[segment] * inv_atlas_height : src_cross_min_v;
-    float v1 = vertical ? src_primary_coords[segment + 1] * inv_atlas_height : src_cross_max_v;
-
-    ImVec2 p0 = vertical
-      ? ImVec2(dst_cross_start, primary0)
-      : ImVec2(primary0, dst_cross_start);
-    ImVec2 p1 = vertical
-      ? ImVec2(dst_cross_start + dst_cross, primary1)
-      : ImVec2(primary1, dst_cross_start + dst_cross);
-
-    draw_list->AddImage(atlas.texture_id, p0, p1, ImVec2(u0, v0), ImVec2(u1, v1), tint);
-  }
-}
-
-NineSliceDefinition make_16px_frame(int index, float pixel_scale) {
+SlicedSprite make_16px_frame(int index, float pixel_scale) {
   const float frame_width = 16.0f;
   const float frame_height = 16.0f;
   ImVec2 source(
     frame_width * static_cast<float>(index),
     8.0f);
-  return NineSliceDefinition(source, ImVec2(frame_width, frame_height), 5.0f, pixel_scale);
+  return SlicedSprite(source, ImVec2(frame_width, frame_height), ImVec2(5.0f, 5.0f), pixel_scale);
 }
 
-NineSliceDefinition make_8px_frame(int index, int variant, float pixel_scale) {
+SlicedSprite make_8px_frame(int index, int variant, float pixel_scale) {
   const float frame_width = 8.0f;
   const float frame_height = 8.0f;
   const float base_y = 32.0f;
   ImVec2 source(
     frame_width * static_cast<float>(variant),
     base_y + frame_height * static_cast<float>(index));
-  return NineSliceDefinition(source, ImVec2(frame_width, frame_height), 3.0f, pixel_scale);
+  return SlicedSprite(source, ImVec2(frame_width, frame_height), ImVec2(3.0f, 3.0f), pixel_scale);
 }
 
-ThreeSliceDefinition make_scrollbar_track_definition(int variant, float pixel_scale) {
+SlicedSprite make_scrollbar_track_definition(int variant, float pixel_scale) {
   const float track_size = 8.0f;
   const float base_y = 24.0f;
   int clamped_variant = std::clamp(variant, 0, 2);
   ImVec2 source(
     track_size * static_cast<float>(clamped_variant),
     base_y);
-  return ThreeSliceDefinition(source, ImVec2(track_size, track_size), 3.0f, pixel_scale);
+  return SlicedSprite(source, ImVec2(track_size, track_size), ImVec2(0.0f, 3.0f), pixel_scale);
 }
 
-ThreeSliceDefinition make_scrollbar_thumb_definition(float pixel_scale) {
+SlicedSprite make_scrollbar_thumb_definition(float pixel_scale) {
   const float sprite_size = 8.0f;
   const ImVec2 source(24.0f, 24.0f);
-  return ThreeSliceDefinition(source, ImVec2(sprite_size, sprite_size), 3.0f, pixel_scale);
+  return SlicedSprite(source, ImVec2(sprite_size, sprite_size), ImVec2(3.0f, 3.0f), pixel_scale);
 }
 
 ScrollbarState begin_scrollbar_child(const char* id,
@@ -471,8 +356,8 @@ void end_scrollbar_child(ScrollbarState& state) {
 
 void draw_scrollbar_overlay(const ScrollbarState& state,
     const SpriteAtlas& atlas,
-    const ThreeSliceDefinition& track_def,
-    const ThreeSliceDefinition& thumb_def) {
+    const SlicedSprite& track_def,
+    const SlicedSprite& thumb_def) {
   if (!state.has_metrics) {
     return;
   }
@@ -523,6 +408,6 @@ void draw_scrollbar_overlay(const ScrollbarState& state,
   }
   ImU32 thumb_tint = ImGui::GetColorU32(thumb_tint_vec);
 
-  draw_three_slice_image(atlas, track_def, bar_min, ImVec2(scrollbar_size, bar_height), true);
-  draw_three_slice_image(atlas, thumb_def, thumb_pos, thumb_size, true, thumb_tint);
+  draw_nine_slice_image(atlas, track_def, bar_min, ImVec2(scrollbar_size, bar_height), Theme::COLOR_WHITE_U32);
+  draw_nine_slice_image(atlas, thumb_def, thumb_pos, thumb_size, thumb_tint);
 }

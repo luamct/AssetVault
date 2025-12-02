@@ -282,7 +282,7 @@ namespace {
 void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager,
     float panel_width, float panel_height) {
   SpriteAtlas tree_frame_atlas = texture_manager.get_ui_elements_atlas();
-  const NineSliceDefinition tree_frame_definition = make_16px_frame(1, 3.0f);
+  const SlicedSprite tree_frame_definition = make_16px_frame(1, 3.0f);
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
   if (tree_frame_atlas.texture_id != 0) {
@@ -400,8 +400,8 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
 
   SpriteAtlas scrollbar_atlas = texture_manager.get_ui_elements_atlas();
   if (scrollbar_atlas.texture_id != 0) {
-    ThreeSliceDefinition track_def = make_scrollbar_track_definition(0, scrollbar_style.pixel_scale);
-    ThreeSliceDefinition thumb_def = make_scrollbar_thumb_definition(scrollbar_style.pixel_scale);
+    SlicedSprite track_def = make_scrollbar_track_definition(0, scrollbar_style.pixel_scale);
+    SlicedSprite thumb_def = make_scrollbar_thumb_definition(scrollbar_style.pixel_scale);
     draw_scrollbar_overlay(scrollbar_state, scrollbar_atlas, track_def, thumb_def);
   }
 
