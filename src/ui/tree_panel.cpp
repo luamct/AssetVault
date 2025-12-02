@@ -281,12 +281,7 @@ namespace {
 
 void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager,
     float panel_width, float panel_height) {
-  TextureManager::UIAtlasInfo tree_frame_info = texture_manager.get_ui_elements_atlas();
-  NineSliceAtlas tree_frame_atlas;
-  tree_frame_atlas.texture_id = (ImTextureID) (intptr_t) tree_frame_info.texture_id;
-  tree_frame_atlas.atlas_size = ImVec2(
-    static_cast<float>(tree_frame_info.width),
-    static_cast<float>(tree_frame_info.height));
+  SpriteAtlas tree_frame_atlas = texture_manager.get_ui_elements_atlas();
   const NineSliceDefinition tree_frame_definition = make_16px_frame(1, 3.0f);
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
@@ -357,7 +352,13 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   ImGui::PopTextWrapPos();
   ImGui::Separator();
 
-  ImGui::BeginChild("FolderTreeScrollRegion", ImVec2(0, 0), false, scroll_flags);
+  ScrollbarStyle scrollbar_style;
+  scrollbar_style.pixel_scale = 2.0f;
+  ScrollbarState scrollbar_state = begin_scrollbar_child(
+    "FolderTreeScrollRegion",
+    ImVec2(0, 0),
+    scrollbar_style,
+    scroll_flags);
 
   ImGuiIO& tree_io = ImGui::GetIO();
   if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup) && tree_io.MouseWheel != 0.0f) {
@@ -395,7 +396,15 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
 
   ui_state.tree_nodes_to_open.clear();
 
-  ImGui::EndChild();
+  end_scrollbar_child(scrollbar_state);
+
+  SpriteAtlas scrollbar_atlas = texture_manager.get_ui_elements_atlas();
+  if (scrollbar_atlas.texture_id != 0) {
+    ThreeSliceDefinition track_def = make_scrollbar_track_definition(0, scrollbar_style.pixel_scale);
+    ThreeSliceDefinition thumb_def = make_scrollbar_thumb_definition(scrollbar_style.pixel_scale);
+    draw_scrollbar_overlay(scrollbar_state, scrollbar_atlas, track_def, thumb_def);
+  }
+
   ImGui::EndChild();
   ImGui::PopStyleColor(3);
   ImGui::SetCursorScreenPos(ImVec2(frame_pos.x, frame_pos.y + panel_height));

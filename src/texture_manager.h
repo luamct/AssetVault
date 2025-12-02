@@ -10,6 +10,7 @@
 #include <vector>
 #include <memory>
 #include <glm/glm.hpp>
+#include "imgui.h"
 
 // Only include OpenGL headers if available
 #ifdef GLAD_GL_VERSION_3_3
@@ -35,6 +36,10 @@ typedef unsigned int GLuint;
 // Forward declarations
 struct GLFWwindow;
 struct aiTexture;
+struct SpriteAtlas {
+  ImTextureID texture_id = 0;
+  ImVec2 atlas_size = ImVec2(1.0f, 1.0f);
+};
 
 // Exception class for thumbnail generation failures
 class ThumbnailGenerationException : public std::exception {
@@ -154,17 +159,7 @@ public:
   bool initialize();
   void cleanup();
 
-  struct UIAtlasInfo {
-    unsigned int texture_id = 0;
-    int width = 0;
-    int height = 0;
-
-    bool is_valid() const {
-      return texture_id != 0 && width > 0 && height > 0;
-    }
-  };
-
-  UIAtlasInfo get_ui_elements_atlas() const;
+  SpriteAtlas get_ui_elements_atlas() const;
 
   // Asset texture management
   unsigned int load_texture(const char* filename);

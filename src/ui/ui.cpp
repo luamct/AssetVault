@@ -258,12 +258,7 @@ void clear_ui_state(UIState& ui_state) {
 
 void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
   TextureManager& texture_manager, float panel_width, float panel_height) {
-  TextureManager::UIAtlasInfo progress_frame_info = texture_manager.get_ui_elements_atlas();
-  NineSliceAtlas progress_frame_atlas;
-  progress_frame_atlas.texture_id = (ImTextureID) (intptr_t) progress_frame_info.texture_id;
-  progress_frame_atlas.atlas_size = ImVec2(
-    static_cast<float>(progress_frame_info.width),
-    static_cast<float>(progress_frame_info.height));
+  SpriteAtlas progress_frame_atlas = texture_manager.get_ui_elements_atlas();
   const NineSliceDefinition progress_frame_definition = make_16px_frame(1, 3.0f);
   ImVec2 panel_pos = ImGui::GetCursorScreenPos();
   ImVec2 panel_size(panel_width, panel_height);

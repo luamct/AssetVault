@@ -43,7 +43,7 @@ namespace Theme {
   constexpr ImVec4 TEXT_WARNING = ImVec4(0.98f, 0.65f, 0.32f, 1.00f);       // Inline warnings
 
   // === CORE SURFACE COLORS ===
-  constexpr ImVec4 BACKGROUND_LIGHT_BLUE_1 = ImVec4(0.153f, 0.157f, 0.133f, 1.00f);     // Main background (#272822)
+  constexpr ImVec4 BACKGROUND_LIGHT_BLUE_1 = ImVec4(0.125f, 0.125f, 0.125f, 1.00f);     // Main background (#202020)
   constexpr ImVec4 BACKGROUND_LIGHT_GRAY = ImVec4(0.212f, 0.239f, 0.290f, 1.00f);      // Lighter panels (#363D4A)
   constexpr ImVec4 BACKGROUND_WHITE = ImVec4(0.263f, 0.305f, 0.373f, 1.00f);           // Raised cards (#43506a)
   constexpr ImVec4 FRAME_LIGHT_BLUE_3 = ImVec4(0.212f, 0.239f, 0.290f, 0.95f);         // Subtle frame fill
@@ -168,9 +168,9 @@ namespace Theme {
 
     // Widgets we actually render
     colors[ImGuiCol_ScrollbarBg] = SCROLLBAR_BG;
-    colors[ImGuiCol_ScrollbarGrab] = SCROLLBAR_GRAB;
-    colors[ImGuiCol_ScrollbarGrabHovered] = SCROLLBAR_GRAB_HOVERED;
-    colors[ImGuiCol_ScrollbarGrabActive] = SCROLLBAR_GRAB_HOVERED; // Active matches hovered per spec
+    colors[ImGuiCol_ScrollbarGrab] = COLOR_TRANSPARENT;
+    colors[ImGuiCol_ScrollbarGrabHovered] = COLOR_TRANSPARENT;
+    colors[ImGuiCol_ScrollbarGrabActive] = COLOR_TRANSPARENT;
     colors[ImGuiCol_CheckMark] = ACCENT_BLUE_1;
     colors[ImGuiCol_SliderGrab] = ACCENT_BLUE_1;
     colors[ImGuiCol_SliderGrabActive] = ACCENT_BLUE_2;

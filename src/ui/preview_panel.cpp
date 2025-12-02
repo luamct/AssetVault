@@ -415,12 +415,7 @@ static ImVec2 calculate_thumbnail_size(
 
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   Model& current_model, Camera3D& camera, float panel_width, float panel_height) {
-  TextureManager::UIAtlasInfo preview_frame_info = texture_manager.get_ui_elements_atlas();
-  NineSliceAtlas preview_frame_atlas;
-  preview_frame_atlas.texture_id = (ImTextureID) (intptr_t) preview_frame_info.texture_id;
-  preview_frame_atlas.atlas_size = ImVec2(
-    static_cast<float>(preview_frame_info.width),
-    static_cast<float>(preview_frame_info.height));
+  SpriteAtlas preview_frame_atlas = texture_manager.get_ui_elements_atlas();
   const NineSliceDefinition preview_frame_definition = make_16px_frame(1, 3.0f);
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();

@@ -202,7 +202,7 @@ std::shared_ptr<Animation2D> TextureManager::load_animated_gif_internal(const st
     return nullptr;
   }
 
-  LOG_INFO("[GIF] Loaded {} frames ({}x{}) from {}", frame_count, width, height, filepath);
+  LOG_DEBUG("[GIF] Loaded {} frames ({}x{}) from {}", frame_count, width, height, filepath);
 
   // Create 2D animation container
   auto anim_data = std::make_shared<Animation2D>();
@@ -1229,10 +1229,11 @@ void TextureManager::print_texture_cache(const std::string& assets_root_director
   LOG_INFO("================================");
 }
 
-TextureManager::UIAtlasInfo TextureManager::get_ui_elements_atlas() const {
-  UIAtlasInfo info;
-  info.texture_id = ui_elements_texture_;
-  info.width = ui_elements_width_;
-  info.height = ui_elements_height_;
-  return info;
+SpriteAtlas TextureManager::get_ui_elements_atlas() const {
+  SpriteAtlas atlas;
+  atlas.texture_id = (ImTextureID) (intptr_t) ui_elements_texture_;
+  atlas.atlas_size = ImVec2(
+    static_cast<float>(ui_elements_width_),
+    static_cast<float>(ui_elements_height_));
+  return atlas;
 }

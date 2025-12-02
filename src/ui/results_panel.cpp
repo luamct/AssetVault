@@ -258,8 +258,13 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   }
 
   // Create an inner scrolling region so the header above stays visible
+  ScrollbarStyle scrollbar_style;
+  scrollbar_style.pixel_scale = 2.0f;
   ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::BACKGROUND_LIGHT_BLUE_1);
-  ImGui::BeginChild("AssetGridScroll", ImVec2(0, 0), false);
+  ScrollbarState scrollbar_state = begin_scrollbar_child(
+    "AssetGridScroll",
+    ImVec2(0, 0),
+    scrollbar_style);
 
   const auto animation_now = std::chrono::steady_clock::now();
 
@@ -815,8 +820,16 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
   // End inner scrolling region (grid)
   grid_draw_list->ChannelsMerge();
-  ImGui::EndChild();
+  end_scrollbar_child(scrollbar_state);
   ImGui::PopStyleColor();
+
+  // Overlay custom vertical scrollbar art while keeping ImGui hit-testing intact
+  SpriteAtlas scrollbar_atlas = texture_manager.get_ui_elements_atlas();
+  if (scrollbar_atlas.texture_id != 0) {
+    ThreeSliceDefinition track_def = make_scrollbar_track_definition(0, scrollbar_style.pixel_scale);
+    ThreeSliceDefinition thumb_def = make_scrollbar_thumb_definition(scrollbar_style.pixel_scale);
+    draw_scrollbar_overlay(scrollbar_state, scrollbar_atlas, track_def, thumb_def);
+  }
 
   // Reset drag state when mouse button is released
   if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
