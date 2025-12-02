@@ -40,6 +40,12 @@ constexpr int WINDOW_HEIGHT = 1080;
 constexpr float SEARCH_PANEL_HEIGHT = 120.0f;
 constexpr int SEARCH_DEBOUNCE_MS = 250;
 
+// Side panel vertical spacing (should sum to 100%, considering there are two gaps)
+constexpr float PREVIEW_RATIO = 0.60f;
+constexpr float TREE_RATIO = 0.33f;
+constexpr float PROGRESS_RATIO = 0.05f;
+constexpr float GAP_RATIO = 0.01f;
+
 // File event callback function (runs on background thread)
 // Queues events for unified processing
 void on_file_event(const FileEvent& event) {
@@ -303,11 +309,11 @@ int run(std::atomic<bool>* shutdown_requested) {
       bottom_height = 0.0f;
     }
 
-    float progress_height = 35.0f;
-    float preview_folder_available = std::max(0.0f,
-      content_height - progress_height - spacing_y * 2.0f);
-    float preview_height = preview_folder_available * 0.7f;
-    float folder_tree_height = preview_folder_available - preview_height;
+    float clamped_height = std::max(0.0f, content_height);
+    float preview_height = clamped_height * PREVIEW_RATIO;
+    float folder_tree_height = clamped_height * TREE_RATIO;
+    float progress_height = clamped_height * PROGRESS_RATIO;
+    float vertical_gap = clamped_height * GAP_RATIO;
 
     // Left column (search + grid)
     ImGui::BeginGroup();
@@ -318,11 +324,16 @@ int run(std::atomic<bool>* shutdown_requested) {
     ImGui::SameLine();
 
     // Right column (preview + progress)
+    float original_item_spacing_x = ImGui::GetStyle().ItemSpacing.x;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(original_item_spacing_x, 0.0f));
     ImGui::BeginGroup();
     render_preview_panel(ui_state, texture_manager, current_model, camera, right_width, preview_height);
-    render_folder_tree_panel(ui_state, right_width, folder_tree_height);
-    render_progress_panel(ui_state, safe_assets, right_width, progress_height);
+    ImGui::Dummy(ImVec2(0.0f, vertical_gap));
+    render_folder_tree_panel(ui_state, texture_manager, right_width, folder_tree_height);
+    ImGui::Dummy(ImVec2(0.0f, vertical_gap));
+    render_progress_panel(ui_state, safe_assets, texture_manager, right_width, progress_height);
     ImGui::EndGroup();
+    ImGui::PopStyleVar();
 
     ImGui::End();
 

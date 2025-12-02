@@ -143,7 +143,7 @@ void render_search_panel(UIState& ui_state,
     float panel_width, float panel_height);
 
 void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
-    float panel_width, float panel_height);
+    TextureManager& texture_manager, float panel_width, float panel_height);
 
 void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     SafeAssets& safe_assets, float panel_width, float panel_height);
@@ -151,7 +151,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
     Model& current_model, Camera3D& camera, float panel_width, float panel_height);
 
-void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_height);
+void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager,
+    float panel_width, float panel_height);
 
 // Shared modal helpers
 void open_assets_directory_modal(UIState& ui_state);

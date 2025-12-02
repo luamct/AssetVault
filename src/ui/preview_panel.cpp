@@ -2,6 +2,7 @@
 #include "theme.h"
 #include "config.h"
 #include "texture_manager.h"
+#include "ui/components.h"
 #include "audio_manager.h"
 #include "services.h"
 #include "3d.h"
@@ -18,7 +19,10 @@
 #include <vector>
 
 namespace {
-constexpr float PREVIEW_INTERNAL_PADDING = 30.0f;
+// Additional breathing room to apply after the frame margin. Because the
+// frame already contributes 12px on each edge, this only needs to be subtle.
+constexpr float PREVIEW_INTERNAL_PADDING = 0.0f;
+constexpr float PREVIEW_FRAME_MARGIN = 16.0f;
 constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;
 constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;
 constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 20.0f;
@@ -411,13 +415,39 @@ static ImVec2 calculate_thumbnail_size(
 
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   Model& current_model, Camera3D& camera, float panel_width, float panel_height) {
-  ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::BACKGROUND_LIGHT_GRAY);
-  ImGui::BeginChild("AssetPreview", ImVec2(panel_width, panel_height), true);
+  TextureManager::UIAtlasInfo preview_frame_info = texture_manager.get_ui_elements_atlas();
+  NineSliceAtlas preview_frame_atlas;
+  preview_frame_atlas.texture_id = (ImTextureID) (intptr_t) preview_frame_info.texture_id;
+  preview_frame_atlas.atlas_size = ImVec2(
+    static_cast<float>(preview_frame_info.width),
+    static_cast<float>(preview_frame_info.height));
+  const NineSliceDefinition preview_frame_definition = make_16px_frame(1, 3.0f);
+
+  ImVec2 frame_pos = ImGui::GetCursorScreenPos();
+  ImVec2 frame_size(panel_width, std::max(0.0f, panel_height));
+  if (preview_frame_atlas.texture_id != 0) {
+    draw_nine_slice_image(preview_frame_atlas, preview_frame_definition, frame_pos, frame_size);
+  }
+
+  ImVec2 content_pos(
+    frame_pos.x + PREVIEW_FRAME_MARGIN,
+    frame_pos.y + PREVIEW_FRAME_MARGIN);
+  ImVec2 content_size(
+    std::max(0.0f, frame_size.x - PREVIEW_FRAME_MARGIN * 2.0f),
+    std::max(0.0f, frame_size.y - PREVIEW_FRAME_MARGIN * 2.0f));
+
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::COLOR_TRANSPARENT);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+  ImGui::SetCursorScreenPos(content_pos);
+  ImGui::BeginChild("AssetPreview", content_size, false);
 
 
-  // Use fixed panel dimensions for stable calculations
-  float avail_width = panel_width - PREVIEW_INTERNAL_PADDING; // Account for ImGui padding and margins
-  float avail_height = avail_width;                           // Square aspect ratio for preview area
+  // Use the smaller axis so the square viewport touches the frame evenly
+  ImVec2 content_avail = ImGui::GetContentRegionAvail();
+  float avail_side = std::max(0.0f,
+    std::min(content_avail.x, content_avail.y) - PREVIEW_INTERNAL_PADDING);
+  float avail_width = avail_side;
+  float avail_height = avail_side;
 
   // Track previously selected asset for cleanup
   static uint32_t prev_selected_id = 0;
@@ -887,5 +917,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   }
 
   ImGui::EndChild();
+  ImGui::PopStyleVar();
   ImGui::PopStyleColor();
+  ImGui::SetCursorScreenPos(ImVec2(frame_pos.x, frame_pos.y + frame_size.y));
 }

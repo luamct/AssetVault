@@ -23,8 +23,8 @@ void render_search_panel(UIState& ui_state,
   TextureManager::UIAtlasInfo search_pixel_atlas_info = texture_manager.get_ui_elements_atlas();
   NineSliceAtlas search_frame_atlas;
   const NineSliceDefinition search_frame_definition = make_16px_frame(0, 3.0f);
-  const NineSliceDefinition toggle_frame_definition = make_8px_frame(2, 3, 3.0f);
-  const NineSliceDefinition toggle_frame_definition_selected = make_8px_frame(2, 2, 3.0f);
+  const NineSliceDefinition toggle_frame_definition = make_8px_frame(2, 2, 3.0f);
+  const NineSliceDefinition toggle_frame_definition_selected = make_8px_frame(2, 4, 3.0f);
   const NineSliceDefinition& search_frame_definition_selected = search_frame_definition;
   search_frame_atlas.texture_id = (ImTextureID) (intptr_t) search_pixel_atlas_info.texture_id;
   search_frame_atlas.atlas_size = ImVec2(

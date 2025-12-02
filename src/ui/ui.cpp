@@ -4,6 +4,7 @@
 #include "config.h"
 #include "imgui.h"
 #include "texture_manager.h"
+#include "ui/components.h"
 #include "event_processor.h"
 #include "audio_manager.h"
 #include "asset.h"
@@ -256,47 +257,75 @@ void clear_ui_state(UIState& ui_state) {
 }
 
 void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
-  float panel_width, float panel_height) {
-  ImGui::BeginChild("ProgressRegion", ImVec2(panel_width, panel_height), false);
+  TextureManager& texture_manager, float panel_width, float panel_height) {
+  TextureManager::UIAtlasInfo progress_frame_info = texture_manager.get_ui_elements_atlas();
+  NineSliceAtlas progress_frame_atlas;
+  progress_frame_atlas.texture_id = (ImTextureID) (intptr_t) progress_frame_info.texture_id;
+  progress_frame_atlas.atlas_size = ImVec2(
+    static_cast<float>(progress_frame_info.width),
+    static_cast<float>(progress_frame_info.height));
+  const NineSliceDefinition progress_frame_definition = make_16px_frame(1, 3.0f);
+  ImVec2 panel_pos = ImGui::GetCursorScreenPos();
+  ImVec2 panel_size(panel_width, panel_height);
 
   // Unified progress bar for all asset processing
   bool show_progress = Services::event_processor().has_pending_work();
 
   if (show_progress) {
-    // Progress bar data from event processor
     float progress = Services::event_processor().get_progress();
     size_t processed = Services::event_processor().get_total_processed();
     size_t total = Services::event_processor().get_total_queued();
 
-    // Vertically center the progress bar within the panel child
-    float bar_height = 35.0f;
-    float target_y = (panel_height - bar_height) * 0.5f;
-    if (target_y > ImGui::GetCursorPosY()) {
-      ImGui::SetCursorPosY(target_y);
+    float bar_height = std::max(20.0f, panel_height - 8.0f);
+    bar_height = std::min(bar_height, panel_height);
+    float bar_y = panel_pos.y + std::max(0.0f, (panel_height - bar_height) * 0.5f);
+    float clamped_progress = std::clamp(progress, 0.0f, 1.0f);
+    ImVec2 bar_pos(panel_pos.x, bar_y);
+    ImVec2 bar_size(panel_width, bar_height);
+    ImVec2 bar_end(bar_pos.x, bar_pos.y + bar_height);
+
+    if (progress_frame_atlas.texture_id != 0) {
+      draw_nine_slice_image(progress_frame_atlas, progress_frame_definition,
+        bar_pos, bar_size, Theme::COLOR_WHITE_U32);
+
+      float frame_border = progress_frame_definition.border * progress_frame_definition.pixel_scale;
+      float fill_inset = std::max(2.0f, frame_border * 0.5f);
+      ImVec2 fill_pos(
+        bar_pos.x + fill_inset,
+        bar_pos.y + fill_inset);
+      ImVec2 fill_size(
+        std::max(0.0f, bar_size.x - fill_inset * 2.0f),
+        std::max(0.0f, bar_size.y - fill_inset * 2.0f));
+
+      if (clamped_progress > 0.0f && fill_size.x > 0.0f && fill_size.y > 0.0f) {
+        ImVec2 fill_end(
+          fill_pos.x + fill_size.x * clamped_progress,
+          fill_pos.y + fill_size.y);
+        ImGui::GetWindowDrawList()->AddRectFilled(fill_pos, fill_end,
+          Theme::ToImU32(Theme::TAG_TYPE_AUDIO));
+      }
     }
 
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 18.0f);
-    // Draw progress bar without text overlay
-    ImGui::ProgressBar(progress, ImVec2(-1.0f, bar_height), "");
-    ImGui::PopStyleVar();
-
-    // Overlay centered text on the progress bar
     char progress_text[64];
     snprintf(progress_text, sizeof(progress_text), "Processing %zu out of %zu", processed, total);
-
     ImVec2 text_size = ImGui::CalcTextSize(progress_text);
-    ImVec2 progress_bar_screen_pos = ImGui::GetItemRectMin();
-    ImVec2 progress_bar_screen_size = ImGui::GetItemRectSize();
-
-    // Center text on progress bar
+    float frame_border = progress_frame_definition.border * progress_frame_definition.pixel_scale;
+    float fill_inset = std::max(2.0f, frame_border * 0.5f);
+    ImVec2 inner_pos(
+      bar_pos.x + fill_inset,
+      bar_pos.y + fill_inset);
+    ImVec2 inner_size(
+      std::max(0.0f, bar_size.x - fill_inset * 2.0f),
+      std::max(0.0f, bar_size.y - fill_inset * 2.0f));
     ImVec2 text_pos = ImVec2(
-      progress_bar_screen_pos.x + (progress_bar_screen_size.x - text_size.x) * 0.5f,
-      progress_bar_screen_pos.y + (progress_bar_screen_size.y - text_size.y) * 0.5f);
-
+      inner_pos.x + (inner_size.x - text_size.x) * 0.5f,
+      bar_pos.y + (bar_size.y - text_size.y) * 0.5f);
     ImGui::GetWindowDrawList()->AddText(text_pos, Theme::ToImU32(Theme::TEXT_DARK), progress_text);
+
+    ImGui::SetCursorScreenPos(bar_end);
   }
 
-  ImGui::EndChild();
+  ImGui::SetCursorScreenPos(ImVec2(panel_pos.x, panel_pos.y + panel_height));
 
   if (ui_state.assets_directory_modal_requested) {
     ImGui::OpenPopup("Select Assets Directory");

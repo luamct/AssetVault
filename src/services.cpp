@@ -14,7 +14,7 @@
 #include <vector>
 
 namespace {
-constexpr bool DEBUG_CLEAN_START = false;
+constexpr bool DEBUG_CLEAN_START = true;
 }
 
 // Static member initialization

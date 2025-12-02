@@ -1,6 +1,8 @@
 #include "ui/ui.h"
 #include "theme.h"
 #include "imgui.h"
+#include "texture_manager.h"
+#include "ui/components.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -12,6 +14,8 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+  constexpr float TREE_FRAME_MARGIN = 16.0f;
 
   std::string get_display_name_for_path(const fs::path& path) {
     std::string name = path.filename().u8string();
@@ -275,17 +279,41 @@ namespace {
   }
 }
 
-void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_height) {
+void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager,
+    float panel_width, float panel_height) {
+  TextureManager::UIAtlasInfo tree_frame_info = texture_manager.get_ui_elements_atlas();
+  NineSliceAtlas tree_frame_atlas;
+  tree_frame_atlas.texture_id = (ImTextureID) (intptr_t) tree_frame_info.texture_id;
+  tree_frame_atlas.atlas_size = ImVec2(
+    static_cast<float>(tree_frame_info.width),
+    static_cast<float>(tree_frame_info.height));
+  const NineSliceDefinition tree_frame_definition = make_16px_frame(1, 3.0f);
+
+  ImVec2 frame_pos = ImGui::GetCursorScreenPos();
+  if (tree_frame_atlas.texture_id != 0) {
+    draw_nine_slice_image(tree_frame_atlas, tree_frame_definition, frame_pos,
+      ImVec2(panel_width, panel_height));
+  }
+
+  ImVec2 content_pos(
+    frame_pos.x + TREE_FRAME_MARGIN,
+    frame_pos.y + TREE_FRAME_MARGIN);
+  ImVec2 content_size(
+    std::max(0.0f, panel_width - TREE_FRAME_MARGIN * 2.0f),
+    std::max(0.0f, panel_height - TREE_FRAME_MARGIN * 2.0f));
+
   ImGuiWindowFlags scroll_flags = ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
   ImGuiWindowFlags container_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::COLOR_TRANSPARENT);
   ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::FRAME_LIGHT_BLUE_3);
   ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::FRAME_LIGHT_BLUE_4);
-  ImGui::BeginChild("FolderTreeRegion", ImVec2(panel_width, panel_height), true, container_flags);
+  ImGui::SetCursorScreenPos(content_pos);
+  ImGui::BeginChild("FolderTreeRegion", content_size, false, container_flags);
 
   if (ui_state.assets_directory.empty()) {
     ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "Set an assets directory to view folders.");
     ImGui::EndChild();
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(3);
     return;
   }
 
@@ -294,7 +322,7 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   if (!fs::exists(root_path, ec) || !fs::is_directory(root_path, ec)) {
     ImGui::TextColored(Theme::TEXT_WARNING, "Assets path unavailable: %s", ui_state.assets_directory.c_str());
     ImGui::EndChild();
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(3);
     return;
   }
 
@@ -322,7 +350,8 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
   ImGui::PopStyleVar();
   ImGui::PopID();
   ImGui::SameLine(0.0f, 4.0f);
-  float wrap_width = std::max(0.0f, panel_width - ImGui::GetCursorPos().x - 16.0f);
+  float content_width = content_size.x;
+  float wrap_width = std::max(0.0f, content_width - ImGui::GetCursorPos().x - 16.0f);
   ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + wrap_width);
   ImGui::TextColored(Theme::TEXT_LABEL, "%s", ui_state.assets_directory.c_str());
   ImGui::PopTextWrapPos();
@@ -368,7 +397,8 @@ void render_folder_tree_panel(UIState& ui_state, float panel_width, float panel_
 
   ImGui::EndChild();
   ImGui::EndChild();
-  ImGui::PopStyleColor(2);
+  ImGui::PopStyleColor(3);
+  ImGui::SetCursorScreenPos(ImVec2(frame_pos.x, frame_pos.y + panel_height));
 }
 
 namespace folder_tree_utils {
