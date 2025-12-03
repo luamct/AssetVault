@@ -45,7 +45,7 @@ namespace Theme {
   // === CORE SURFACE COLORS ===
   constexpr ImVec4 BACKGROUND_LIGHT_BLUE_1 = ImVec4(0.125f, 0.125f, 0.125f, 1.00f);     // Main background #202020
   constexpr ImVec4 BACKGROUND_LIGHT_GRAY = ImVec4(0.212f, 0.239f, 0.290f, 1.00f);      // Lighter panels #363D4A
-  constexpr ImVec4 BACKGROUND_WHITE = ImVec4(0.263f, 0.305f, 0.373f, 1.00f);           // Raised cards (#43506a)
+  constexpr ImVec4 BACKGROUND_WHITE = ImVec4(0.263f, 0.305f, 0.373f, 1.00f);           // Raised cards #43506a
   constexpr ImVec4 FRAME_LIGHT_BLUE_3 = ImVec4(0.212f, 0.239f, 0.290f, 0.95f);         // Subtle frame fill
   constexpr ImVec4 FRAME_LIGHT_BLUE_4 = ImVec4(0.263f, 0.305f, 0.373f, 0.95f);         // Header default / hovered widget fill
   constexpr ImVec4 FRAME_LIGHT_BLUE_5 = ImVec4(0.318f, 0.365f, 0.443f, 1.00f);         // Header hover / tiles
@@ -105,6 +105,7 @@ namespace Theme {
   constexpr ImVec4 TOGGLE_ON_BORDER = BORDER_LIGHT_BLUE_1;     // Neutral contrast border
   constexpr ImVec4 TOGGLE_ON_TEXT = TEXT_DARK;                 // White on state text
   constexpr ImVec4 TOGGLE_HOVER_BG = ImVec4(0.212f, 0.239f, 0.290f, 1.00f);      // Hover background for off state
+  constexpr ImVec4 SEPARATOR_GRAY = ImVec4(0.2745f, 0.2745f, 0.2745f, 1.00f);     // #464646
 
   // === 3D PREVIEW COLORS ===
   constexpr ImVec4 SKELETON_BONE = ImVec4(1.0f, 0.58f, 0.12f, 1.0f); // Warm yellow-orange bones

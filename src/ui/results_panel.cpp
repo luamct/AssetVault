@@ -178,7 +178,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   }
 
   float text_line_height = ImGui::GetTextLineHeight();
-  float text_y_offset = std::max(0.0f, button_size - text_line_height);
+  float text_y_offset = std::max(0.0f, (button_size - text_line_height) * 0.5f);
   ImGui::SetCursorPos(ImVec2(label_pos.x, label_pos.y + text_y_offset));
 
   bool open_assets_modal_from_header = false;
@@ -220,7 +220,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
   float total_button_width = button_size * 2.0f + style.ItemSpacing.x;
   float button_x = ImGui::GetWindowContentRegionMax().x - total_button_width;
-  float button_y = label_pos.y + text_y_offset * 0.5f;
+  float button_y = label_pos.y;
 
   ImVec2 minus_pos(button_x, button_y);
   ImVec2 plus_pos(button_x + button_size + style.ItemSpacing.x, button_y);
@@ -253,15 +253,16 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   float header_height = std::max(label_size.y, button_size);
   ImVec2 cursor = ImGui::GetCursorPos();
   cursor.x = label_pos.x;
-  cursor.y = label_pos.y + header_height + style.ItemSpacing.y;
+  cursor.y = label_pos.y + header_height;
   ImGui::SetCursorPos(cursor);
 
-  const float separator_thickness = 3.0f;
+  const float separator_thickness = 2.0f;
   const float separator_padding = 0.0f;
   ImGui::Dummy(ImVec2(0.0f, separator_padding));
   ImVec2 separator_start = ImGui::GetCursorScreenPos();
   float separator_width = ImGui::GetContentRegionAvail().x;
-  draw_dashed_separator(separator_start, separator_width, separator_thickness);
+  draw_solid_separator(separator_start, separator_width, separator_thickness,
+    Theme::ToImU32(Theme::SEPARATOR_GRAY));
   ImGui::Dummy(ImVec2(0.0f, separator_thickness + separator_padding));
 
   if (open_assets_modal_from_header) {

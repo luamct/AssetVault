@@ -38,6 +38,12 @@ void draw_dashed_separator(const ImVec2& start,
     float gap_length = 4.0f,
     ImU32 color = Theme::ToImU32(Theme::BACKGROUND_WHITE));
 
+// Draw a solid horizontal separator.
+void draw_solid_separator(const ImVec2& start,
+    float width,
+    float thickness = 2.0f,
+    ImU32 color = Theme::ToImU32(Theme::SEPARATOR_GRAY));
+
 SlicedSprite make_scrollbar_track_definition(int variant, float pixel_scale = 1.0f);
 SlicedSprite make_scrollbar_thumb_definition(float pixel_scale = 1.0f);
 

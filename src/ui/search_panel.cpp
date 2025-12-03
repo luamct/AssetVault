@@ -25,9 +25,6 @@ void render_search_panel(UIState& ui_state,
   const SlicedSprite toggle_frame_definition_selected = make_8px_frame(2, 2, 3.0f);
   const SlicedSprite& search_frame_definition_selected = search_frame_definition;
 
-  // Temp: tint the search panel background to visualize its bounds.
-  ImGui::PushStyleColor(ImGuiCol_ChildBg,
-    ImVec4(Theme::ACCENT_BLUE_1.x, Theme::ACCENT_BLUE_1.y, Theme::ACCENT_BLUE_1.z, 0.35f));
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), false);
 
   const float top_padding = 8.0f;
@@ -166,7 +163,6 @@ void render_search_panel(UIState& ui_state,
 
   ImGui::Dummy(ImVec2(0.0f, bottom_padding));
   ImGui::EndChild();
-  ImGui::PopStyleColor();
 
   const char* SETTINGS_MODAL_ID = "Settings";
   if (open_settings_modal) {
