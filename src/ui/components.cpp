@@ -81,6 +81,33 @@ bool draw_icon_button(const IconButtonParams& params) {
   return params.enabled && clicked;
 }
 
+void draw_dashed_separator(const ImVec2& start,
+    float width,
+    float thickness,
+    float dash_length,
+    float gap_length,
+    ImU32 color) {
+  if (width <= 0.0f || thickness <= 0.0f || dash_length <= 0.0f) {
+    return;
+  }
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (!draw_list) {
+    return;
+  }
+
+  float x = start.x;
+  float end_x = start.x + std::max(0.0f, width);
+  float y_min = start.y;
+  float y_max = start.y + thickness;
+
+  while (x < end_x) {
+    float dash_end = std::min(end_x, x + dash_length);
+    draw_list->AddRectFilled(ImVec2(x, y_min), ImVec2(dash_end, y_max), color);
+    x += dash_length + gap_length;
+  }
+}
+
 bool draw_wrapped_settings_entry(const char* id, const std::string& text,
     const ImVec4& text_color) {
   ImGui::PushID(id);

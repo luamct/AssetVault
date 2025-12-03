@@ -30,6 +30,14 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
     const ImVec2& dest_size,
     ImU32 tint = Theme::COLOR_WHITE_U32);
 
+// Draw a dashed horizontal separator with pixel-art style segments.
+void draw_dashed_separator(const ImVec2& start,
+    float width,
+    float thickness = 3.0f,
+    float dash_length = 6.0f,
+    float gap_length = 4.0f,
+    ImU32 color = Theme::ToImU32(Theme::BACKGROUND_WHITE));
+
 SlicedSprite make_scrollbar_track_definition(int variant, float pixel_scale = 1.0f);
 SlicedSprite make_scrollbar_thumb_definition(float pixel_scale = 1.0f);
 

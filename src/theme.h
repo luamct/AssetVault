@@ -43,8 +43,8 @@ namespace Theme {
   constexpr ImVec4 TEXT_WARNING = ImVec4(0.98f, 0.65f, 0.32f, 1.00f);       // Inline warnings
 
   // === CORE SURFACE COLORS ===
-  constexpr ImVec4 BACKGROUND_LIGHT_BLUE_1 = ImVec4(0.125f, 0.125f, 0.125f, 1.00f);     // Main background (#202020)
-  constexpr ImVec4 BACKGROUND_LIGHT_GRAY = ImVec4(0.212f, 0.239f, 0.290f, 1.00f);      // Lighter panels (#363D4A)
+  constexpr ImVec4 BACKGROUND_LIGHT_BLUE_1 = ImVec4(0.125f, 0.125f, 0.125f, 1.00f);     // Main background #202020
+  constexpr ImVec4 BACKGROUND_LIGHT_GRAY = ImVec4(0.212f, 0.239f, 0.290f, 1.00f);      // Lighter panels #363D4A
   constexpr ImVec4 BACKGROUND_WHITE = ImVec4(0.263f, 0.305f, 0.373f, 1.00f);           // Raised cards (#43506a)
   constexpr ImVec4 FRAME_LIGHT_BLUE_3 = ImVec4(0.212f, 0.239f, 0.290f, 0.95f);         // Subtle frame fill
   constexpr ImVec4 FRAME_LIGHT_BLUE_4 = ImVec4(0.263f, 0.305f, 0.373f, 0.95f);         // Header default / hovered widget fill
@@ -60,7 +60,7 @@ namespace Theme {
   constexpr ImVec4 VIEWPORT_CANVAS = ImVec4(0.286f, 0.325f, 0.392f, 1.00f);            // Shared grid/viewport canvas (#495368)
 
   // === BORDERS & OVERLAYS ===
-  constexpr ImVec4 BORDER_LIGHT_BLUE_1 = ImVec4(0.247f, 0.278f, 0.329f, 1.00f); // Soft steel borders (#3F4754)
+  constexpr ImVec4 BORDER_LIGHT_BLUE_1 = ImVec4(0.247f, 0.278f, 0.329f, 1.00f); // Soft steel borders #3F4754
   constexpr ImVec4 COLOR_TRANSPARENT = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);      // Invisible border
   constexpr ImVec4 COLOR_SEMI_TRANSPARENT = ImVec4(0.145f, 0.169f, 0.204f, 0.35f); // Hover overlay
   constexpr ImVec4 IMAGE_HOVER_OVERLAY = ImVec4(0.212f, 0.239f, 0.290f, 0.40f);    // Dark tint for thumbnails
@@ -77,6 +77,7 @@ namespace Theme {
   constexpr ImVec4 SCROLLBAR_GRAB = ImVec4(0.145f, 0.169f, 0.204f, 1.00f);        // Idle thumb (soft navy)
   constexpr ImVec4 SCROLLBAR_GRAB_HOVERED = ImVec4(0.212f, 0.239f, 0.290f, 1.00f); // Hovered thumb (lighter slate)
 
+  // TODO: Cleanup unused values
   // === TAG COLORS ===
   constexpr ImVec4 TAG_TYPE_2D = ImVec4(0.204f, 0.490f, 0.965f, 1.00f);      // #347DF6 for 2D assets
   constexpr ImVec4 TAG_TYPE_3D = ImVec4(0.918f, 0.239f, 0.180f, 1.00f);      // #EA3D2E for 3D assets

@@ -12,8 +12,7 @@
 #include <cfloat>
 
 namespace {
-constexpr float SEARCH_BOX_WIDTH = 375.0f;
-constexpr float SEARCH_BOX_HEIGHT = 60.0f;
+constexpr float SEARCH_BOX_WIDTH = 750.0f;
 }
 
 void render_search_panel(UIState& ui_state,
@@ -22,15 +21,19 @@ void render_search_panel(UIState& ui_state,
   float panel_width, float panel_height) {
   SpriteAtlas search_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite search_frame_definition = make_16px_frame(0, 3.0f);
-  const SlicedSprite toggle_frame_definition = make_8px_frame(2, 2, 3.0f);
-  const SlicedSprite toggle_frame_definition_selected = make_8px_frame(2, 4, 3.0f);
+  const SlicedSprite toggle_frame_definition = make_8px_frame(2, 3, 3.0f);
+  const SlicedSprite toggle_frame_definition_selected = make_8px_frame(2, 2, 3.0f);
   const SlicedSprite& search_frame_definition_selected = search_frame_definition;
 
+  // Temp: tint the search panel background to visualize its bounds.
+  ImGui::PushStyleColor(ImGuiCol_ChildBg,
+    ImVec4(Theme::ACCENT_BLUE_1.x, Theme::ACCENT_BLUE_1.y, Theme::ACCENT_BLUE_1.z, 0.35f));
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), false);
 
-  const float top_padding = 10.0f;
-  const float bottom_padding = 5.0f;
-  const float toggle_gap = 10.0f;
+  const float top_padding = 8.0f;
+  const float bottom_padding = 4.0f;
+  const float control_spacing_x = 12.0f;
+  const float toggle_spacing = 10.0f;
   const float toggle_button_height = 35.0f;
 
   bool open_settings_modal = false;
@@ -39,36 +42,31 @@ void render_search_panel(UIState& ui_state,
   ImVec2 content_origin = ImGui::GetCursorScreenPos();
   float content_width = ImGui::GetContentRegionAvail().x;
   float settings_button_size = ImGui::GetFrameHeight() * 2.0f;
-  float settings_button_padding = 8.0f;
   unsigned int settings_icon = texture_manager.get_settings_icon();
+  const float frame_padding_y = 16.0f;
+  float frame_height = ImGui::GetFontSize() + frame_padding_y * 2.0f;
 
   if (settings_icon != 0) {
     ImVec2 original_cursor = ImGui::GetCursorPos();
-    float button_x = std::max(0.0f, content_width - settings_button_size - settings_button_padding);
-    ImVec2 button_pos(button_x, top_padding);
+    float button_x = std::max(0.0f, content_width - settings_button_size);
+    float button_y = top_padding + std::max(0.0f, (frame_height - settings_button_size) * 0.5f);
+    ImVec2 button_pos(button_x, button_y);
     IconButtonParams settings_button;
     settings_button.id = "SettingsButton";
     settings_button.cursor_pos = button_pos;
     settings_button.size = settings_button_size;
     settings_button.icon_texture = settings_icon;
+    settings_button.highlight_color = Theme::ACCENT_BLUE_1_ALPHA_80;
     open_settings_modal = draw_icon_button(settings_button);
     ImGui::SetCursorPos(original_cursor);
   }
 
-  ImGuiIO& search_io = ImGui::GetIO();
-  char search_fps_buf[32];
-  snprintf(search_fps_buf, sizeof(search_fps_buf), "%.1f FPS", search_io.Framerate);
-  ImGui::TextColored(Theme::TEXT_SECONDARY, "%s", search_fps_buf);
+  float search_x = 0.0f;
+  float search_y = top_padding;
 
-  float local_search_x = (content_width - SEARCH_BOX_WIDTH) * 0.5f;
-  local_search_x = std::max(0.0f, local_search_x);
-  float content_search_y = top_padding;
-
-  ImGui::SetCursorPos(ImVec2(local_search_x, content_search_y));
+  ImGui::SetCursorPos(ImVec2(search_x, search_y));
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
-  const float frame_padding_y = 16.0f;
-  float frame_height = ImGui::GetFontSize() + frame_padding_y * 2.0f;
   ImVec2 frame_size(SEARCH_BOX_WIDTH, frame_height);
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -100,8 +98,6 @@ void render_search_panel(UIState& ui_state,
     draw_nine_slice_image(search_frame_atlas, search_frame_definition, frame_pos, frame_size);
   }
 
-  float search_bottom_y = content_search_y + SEARCH_BOX_HEIGHT;
-
   std::string current_input(ui_state.buffer);
 
   if (enter_pressed) {
@@ -127,19 +123,14 @@ void render_search_panel(UIState& ui_state,
     }
   }
 
-  float toggles_y = search_bottom_y + toggle_gap;
-  float toggle_spacing = 10.0f;
+  float toggles_y = search_y + std::max(0.0f, (frame_height - toggle_button_height) * 0.5f);
 
   float button_width_2d = 70.0f;
   float button_width_3d = 70.0f;
   float button_width_audio = 84.0f;
   float button_width_font = 72.0f;
 
-  float total_toggle_width = button_width_2d + button_width_3d + button_width_audio +
-    button_width_font + (toggle_spacing * 3);
-
-  float toggles_start_x = (content_width - total_toggle_width) * 0.5f;
-  toggles_start_x = std::max(0.0f, toggles_start_x);
+  float toggles_start_x = SEARCH_BOX_WIDTH + control_spacing_x;
 
   float current_x = toggles_start_x;
   bool any_toggle_changed = false;
@@ -175,6 +166,7 @@ void render_search_panel(UIState& ui_state,
 
   ImGui::Dummy(ImVec2(0.0f, bottom_padding));
   ImGui::EndChild();
+  ImGui::PopStyleColor();
 
   const char* SETTINGS_MODAL_ID = "Settings";
   if (open_settings_modal) {

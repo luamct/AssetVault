@@ -170,7 +170,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Always show results header (status text + zoom buttons)
   ImVec2 label_pos = ImGui::GetCursorPos();
   ImGuiStyle& style = ImGui::GetStyle();
-  float button_size = ImGui::GetFrameHeight() * 1.5f;
+  float button_size = ImGui::GetFrameHeight() * 1.25;
 
   ImFont* larger_font = Theme::get_primary_font_large();
   if (larger_font) {
@@ -206,7 +206,11 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   }
   else {
     size_t matched_count = ui_state.results.size();
+    float base_font_size = ImGui::GetFontSize();
+    float font_scale = (base_font_size + 2.0f) / std::max(1.0f, base_font_size);
+    ImGui::SetWindowFontScale(font_scale);
     ImGui::Text("Showing %zu out of %zu assets", matched_count, total_indexed_assets);
+    ImGui::SetWindowFontScale(1.0f);
   }
 
   if (larger_font) {
@@ -216,7 +220,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
   float total_button_width = button_size * 2.0f + style.ItemSpacing.x;
   float button_x = ImGui::GetWindowContentRegionMax().x - total_button_width;
-  float button_y = label_pos.y;
+  float button_y = label_pos.y + text_y_offset * 0.5f;
 
   ImVec2 minus_pos(button_x, button_y);
   ImVec2 plus_pos(button_x + button_size + style.ItemSpacing.x, button_y);
@@ -230,6 +234,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   minus_button.icon_texture = zoom_out_icon;
   minus_button.fallback_label = "-";
   minus_button.enabled = can_zoom_out;
+  minus_button.highlight_color = Theme::ACCENT_BLUE_1_ALPHA_80;
   if (draw_icon_button(minus_button)) {
     apply_zoom_delta_and_log(-1, "decreased");
   }
@@ -251,7 +256,13 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   cursor.y = label_pos.y + header_height + style.ItemSpacing.y;
   ImGui::SetCursorPos(cursor);
 
-  ImGui::Separator();
+  const float separator_thickness = 3.0f;
+  const float separator_padding = 0.0f;
+  ImGui::Dummy(ImVec2(0.0f, separator_padding));
+  ImVec2 separator_start = ImGui::GetCursorScreenPos();
+  float separator_width = ImGui::GetContentRegionAvail().x;
+  draw_dashed_separator(separator_start, separator_width, separator_thickness);
+  ImGui::Dummy(ImVec2(0.0f, separator_thickness + separator_padding));
 
   if (open_assets_modal_from_header) {
     open_assets_directory_modal(ui_state);
@@ -518,13 +529,14 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
           : is_drag_preview_target;
       }
 
-      ImU32 container_bg_color = Theme::ToImU32(
-        show_selected ? Theme::ACCENT_BLUE_1_ALPHA_35 : Theme::BACKGROUND_LIGHT_BLUE_1);
-      grid_draw_list->AddRectFilled(
-        container_pos,
-        container_max,
-        container_bg_color,
-        RESULTS_THUMBNAIL_CORNER_RADIUS);
+      if (show_selected) {
+        ImU32 container_bg_color = Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_35);
+        grid_draw_list->AddRectFilled(
+          container_pos,
+          container_max,
+          container_bg_color,
+          RESULTS_THUMBNAIL_CORNER_RADIUS);
+      }
 
       if (show_selected) {
         grid_draw_list->AddRect(

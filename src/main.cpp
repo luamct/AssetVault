@@ -37,7 +37,7 @@ namespace fs = std::filesystem;
 namespace {
 constexpr int WINDOW_WIDTH = 1960;
 constexpr int WINDOW_HEIGHT = 1080;
-constexpr float SEARCH_PANEL_HEIGHT = 120.0f;
+constexpr float SEARCH_PANEL_HEIGHT = 70.0f;
 constexpr int SEARCH_DEBOUNCE_MS = 250;
 
 // Side panel vertical spacing (should sum to 100%, considering there are two gaps)
