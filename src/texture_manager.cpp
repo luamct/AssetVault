@@ -994,7 +994,10 @@ TextureData TextureManager::create_solid_color_data(float r, float g, float b) {
 
   const auto encode_srgb_byte = [](float value) {
     float clamped = std::clamp(value, 0.0f, 1.0f);
-    return static_cast<unsigned char>(clamped * 255.0f + 0.5f);
+    // Convert from linear to sRGB before storing so the shader's srgb_to_linear
+    // helper doesn't darken procedural material textures.
+    float encoded = std::pow(clamped, 1.0f / 2.2f);
+    return static_cast<unsigned char>(encoded * 255.0f + 0.5f);
   };
 
   color_data[0] = encode_srgb_byte(r);
