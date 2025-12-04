@@ -11,10 +11,6 @@
 #include <chrono>
 #include <cfloat>
 
-namespace {
-constexpr float SEARCH_BOX_WIDTH = 750.0f;
-}
-
 void render_search_panel(UIState& ui_state,
   const SafeAssets& safe_assets,
   TextureManager& texture_manager,
@@ -38,15 +34,16 @@ void render_search_panel(UIState& ui_state,
 
   ImVec2 content_origin = ImGui::GetCursorScreenPos();
   float content_width = ImGui::GetContentRegionAvail().x;
+  float search_box_width = std::max(0.0f, content_width * 0.5f);
   float settings_button_size = ImGui::GetFrameHeight() * 2.0f;
   unsigned int settings_icon = texture_manager.get_settings_icon();
   const float frame_padding_y = 16.0f;
   float frame_height = ImGui::GetFontSize() + frame_padding_y * 2.0f;
+  float button_x = std::max(0.0f, content_width - settings_button_size);
 
   if (settings_icon != 0) {
     ImVec2 original_cursor = ImGui::GetCursorPos();
-    float button_x = std::max(0.0f, content_width - settings_button_size);
-    float button_y = top_padding + std::max(0.0f, (frame_height - settings_button_size) * 0.5f);
+    float button_y = 0.0f;
     ImVec2 button_pos(button_x, button_y);
     IconButtonParams settings_button;
     settings_button.id = "SettingsButton";
@@ -64,7 +61,7 @@ void render_search_panel(UIState& ui_state,
   ImGui::SetCursorPos(ImVec2(search_x, search_y));
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
-  ImVec2 frame_size(SEARCH_BOX_WIDTH, frame_height);
+  ImVec2 frame_size(search_box_width, frame_height);
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   bool can_layer_frame = (search_frame_atlas.texture_id != 0) && (draw_list != nullptr);
@@ -74,7 +71,7 @@ void render_search_panel(UIState& ui_state,
   }
 
   bool enter_pressed = fancy_text_input("##Search", ui_state.buffer, sizeof(ui_state.buffer),
-    SEARCH_BOX_WIDTH, 20.0f, frame_padding_y, 0.0f);
+    search_box_width, 20.0f, frame_padding_y, 0.0f);
 
   if (can_layer_frame) {
     ImVec2 input_min = ImGui::GetItemRectMin();
@@ -127,7 +124,12 @@ void render_search_panel(UIState& ui_state,
   float button_width_audio = 84.0f;
   float button_width_font = 72.0f;
 
-  float toggles_start_x = SEARCH_BOX_WIDTH + control_spacing_x;
+  float toggles_width = button_width_2d + button_width_3d + button_width_audio + button_width_font +
+    toggle_spacing * 3.0f;
+  float space_start = search_box_width + control_spacing_x;
+  float space_end = button_x;
+  float available_between = std::max(0.0f, space_end - space_start);
+  float toggles_start_x = space_start + std::max(0.0f, (available_between - toggles_width) * 0.5f);
 
   float current_x = toggles_start_x;
   bool any_toggle_changed = false;
