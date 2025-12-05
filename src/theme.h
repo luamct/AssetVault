@@ -57,7 +57,7 @@ namespace Theme {
   constexpr ImVec4 SEARCH_BOX_BG_ACTIVE = ImVec4(1.000f, 1.000f, 1.000f, 1.00f);       // #FFFFFF active
   constexpr ImVec4 SEARCH_BOX_TEXT = ImVec4(0.078f, 0.098f, 0.125f, 1.00f);            // Dark text for light search box
   constexpr ImVec4 SEARCH_BOX_CURSOR = ImVec4(0.078f, 0.098f, 0.125f, 1.00f);          // Matching caret color
-  constexpr ImVec4 VIEWPORT_CANVAS = ImVec4(0.286f, 0.325f, 0.392f, 1.00f);            // Shared grid/viewport canvas (#495368)
+  constexpr ImVec4 VIEWPORT_CANVAS = ImVec4(0.450f, 0.450f, 0.450f, 1.00f);            // Shared grid/viewport canvas (lighter slate #5C6678)
 
   // === BORDERS & OVERLAYS ===
   constexpr ImVec4 BORDER_LIGHT_BLUE_1 = ImVec4(0.247f, 0.278f, 0.329f, 1.00f); // Soft steel borders #3F4754

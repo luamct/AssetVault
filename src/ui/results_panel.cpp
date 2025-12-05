@@ -21,7 +21,6 @@ constexpr int GRID_ZOOM_MIN_LEVEL = static_cast<int>(ZoomLevel::Level0);
 constexpr int GRID_ZOOM_MAX_LEVEL = static_cast<int>(ZoomLevel::Level5);
 constexpr float RESULTS_TEXT_HEIGHT = 20.0f;
 constexpr float RESULTS_GRID_SPACING = 15.0f;
-constexpr float RESULTS_TEXT_MAX_LENGTH = 30.0f;
 constexpr float RESULTS_THUMBNAIL_CORNER_RADIUS = 9.0f;
 
 constexpr int zoom_level_index(ZoomLevel level) {
@@ -694,8 +693,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         show_label_always;
 
       if (can_show_label) {
-        std::string truncated_name = truncate_filename(ui_state.results[i].name, RESULTS_TEXT_MAX_LENGTH);
-        ImVec2 text_size = ImGui::CalcTextSize(truncated_name.c_str());
+        const std::string& full_name = ui_state.results[i].name;
+        ImVec2 text_size = ImGui::CalcTextSize(full_name.c_str());
         grid_draw_list->ChannelsSetCurrent(1);
 
         float label_top = std::max(container_pos.y, container_pos.y + container_height - label_height);
@@ -723,7 +722,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
         grid_draw_list->AddRectFilled(text_bg_min, text_bg_max, background_color, 3.0f);
         grid_draw_list->AddRect(text_bg_min, text_bg_max, border_color, 3.0f, 0, 1.0f);
-        grid_draw_list->AddText(text_pos, text_color, truncated_name.c_str());
+        grid_draw_list->AddText(text_pos, text_color, full_name.c_str());
         grid_draw_list->ChannelsSetCurrent(0);
       }
 

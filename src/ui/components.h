@@ -108,5 +108,14 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
     const SlicedSprite& frame_default,
     const SlicedSprite& frame_selected);
 
+// Pixel-art tag chip with 8px frame backing.
+void draw_tag_chip(const std::string& text,
+    const ImVec4& fill_color,
+    const ImVec4& text_color,
+    const char* id_suffix,
+    const SpriteAtlas& atlas,
+    const SlicedSprite& frame_def,
+    ImVec2 padding = ImVec2(10.0f, 4.0f));
+
 SlicedSprite make_16px_frame(int index, float pixel_scale = 1.0f);
 SlicedSprite make_8px_frame(int index, int variant, float pixel_scale = 1.0f);

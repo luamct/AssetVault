@@ -3,6 +3,7 @@
 #include "imgui.h"
 #include "texture_manager.h"
 #include "ui/components.h"
+#include "utils.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -22,7 +23,7 @@ namespace {
     if (name.empty()) {
       name = path.u8string();
     }
-    return name;
+    return truncate_with_ellipsis(name, 36);
   }
 
   std::string path_key(const fs::path& path) {

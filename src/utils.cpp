@@ -27,12 +27,11 @@
 
 namespace fs = std::filesystem;
 
-// Function to truncate filename to specified length with ellipsis
-std::string truncate_filename(const std::string& filename, size_t max_length) {
-  if (filename.length() <= max_length) {
-    return filename;
+std::string truncate_with_ellipsis(const std::string& text, size_t max_length) {
+  if (text.length() <= max_length || max_length <= 3) {
+    return text;
   }
-  return filename.substr(0, max_length - 3) + "...";
+  return text.substr(0, max_length - 3) + "...";
 }
 
 // Function to convert string to lowercase for case-insensitive search

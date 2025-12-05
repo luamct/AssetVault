@@ -41,8 +41,8 @@ constexpr float SEARCH_PANEL_HEIGHT = 65.0f;
 constexpr int SEARCH_DEBOUNCE_MS = 250;
 
 // Side panel vertical spacing (should sum to 100%, considering there are two gaps)
-constexpr float PREVIEW_RATIO = 0.60f;
-constexpr float TREE_RATIO = 0.33f;
+constexpr float PREVIEW_RATIO = 0.62f;
+constexpr float TREE_RATIO = 0.31f;
 constexpr float PROGRESS_RATIO = 0.05f;
 constexpr float GAP_RATIO = 0.01f;
 

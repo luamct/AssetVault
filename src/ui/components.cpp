@@ -226,6 +226,50 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
   return clicked;
 }
 
+void draw_tag_chip(const std::string& text,
+    const ImVec4& fill_color,
+    const ImVec4& text_color,
+    const char* id_suffix,
+    const SpriteAtlas& atlas,
+    const SlicedSprite& frame_def,
+    ImVec2 padding) {
+  std::string label = text;
+  label.append("##");
+  label.append(id_suffix);
+
+  ImFont* tag_font = Theme::get_tag_font();
+  if (tag_font) ImGui::PushFont(tag_font);
+
+  ImVec2 text_size = ImGui::CalcTextSize(text.c_str());
+  ImVec2 frame_size(text_size.x + padding.x * 2.0f, text_size.y + padding.y * 2.0f);
+  ImVec2 pos = ImGui::GetCursorScreenPos();
+
+  ImGui::InvisibleButton(label.c_str(), frame_size);
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (draw_list && atlas.texture_id != 0) {
+    draw_nine_slice_image(atlas, frame_def, pos, frame_size);
+
+    // Frame art has a 1px outline; scale it up to match the chosen pixel scale.
+    float border_px = frame_def.pixel_scale;
+    ImVec2 inner_min(pos.x + border_px, pos.y + border_px);
+    ImVec2 inner_max(pos.x + frame_size.x - border_px, pos.y + frame_size.y - border_px);
+    draw_list->AddRectFilled(inner_min, inner_max, Theme::ToImU32(fill_color), 0.0f);
+  } else if (draw_list) {
+    draw_list->AddRectFilled(pos, ImVec2(pos.x + frame_size.x, pos.y + frame_size.y),
+      Theme::ToImU32(fill_color), 0.0f);
+  }
+
+  ImVec2 text_pos(
+    pos.x + (frame_size.x - text_size.x) * 0.5f,
+    pos.y + (frame_size.y - text_size.y) * 0.5f);
+  if (draw_list) {
+    draw_list->AddText(text_pos, Theme::ToImU32(text_color), text.c_str());
+  }
+
+  if (tag_font) ImGui::PopFont();
+}
+
 void draw_nine_slice_image(const SpriteAtlas& atlas,
     const SlicedSprite& definition,
     const ImVec2& dest_pos,

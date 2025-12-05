@@ -17,7 +17,7 @@ void render_search_panel(UIState& ui_state,
   float panel_width, float panel_height) {
   SpriteAtlas search_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite search_frame_definition = make_16px_frame(0, 3.0f);
-  const SlicedSprite toggle_frame_definition = make_8px_frame(2, 3, 3.0f);
+  const SlicedSprite toggle_frame_definition = make_8px_frame(2, 1, 3.0f);
   const SlicedSprite toggle_frame_definition_selected = make_8px_frame(2, 2, 3.0f);
   const SlicedSprite& search_frame_definition_selected = search_frame_definition;
 

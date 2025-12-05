@@ -50,39 +50,6 @@ static std::string uppercase_copy(std::string text) {
   return text;
 }
 
-static void draw_tag_chip(const std::string& text, const ImVec4& fill_color,
-  const ImVec4& text_color, const char* id_suffix) {
-  const float rounding = 14.0f;
-  const ImVec2 padding(14.0f, 4.0f);
-  const float border_size = 1.0f;
-
-  std::string label = text;
-  label.append("##");
-  label.append(id_suffix);
-
-  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, rounding);
-  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, padding);
-  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, border_size);
-  ImGui::PushStyleColor(ImGuiCol_Border, Theme::TAG_PILL_BORDER);
-  ImGui::PushStyleColor(ImGuiCol_Button, fill_color);
-  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, fill_color);
-  ImGui::PushStyleColor(ImGuiCol_ButtonActive, fill_color);
-  ImGui::PushStyleColor(ImGuiCol_Text, text_color);
-
-  ImFont* tag_font = Theme::get_tag_font();
-  if (tag_font) {
-    ImGui::PushFont(tag_font);
-  }
-
-  ImGui::Button(label.c_str());
-
-  if (tag_font) {
-    ImGui::PopFont();
-  }
-
-  ImGui::PopStyleColor(5);
-  ImGui::PopStyleVar(3);
-}
 
 static ImVec4 get_type_tag_color(AssetType type) {
   switch (type) {
@@ -109,7 +76,7 @@ static ImVec4 get_type_tag_color(AssetType type) {
   }
 }
 
-static void render_asset_tags(const Asset& asset) {
+static void render_asset_tags(const Asset& asset, const SpriteAtlas& atlas, const SlicedSprite& frame_def) {
   std::string type_text = uppercase_copy(get_asset_type_string(asset.type));
   if (type_text.empty()) {
     type_text = "UNKNOWN";
@@ -124,9 +91,9 @@ static void render_asset_tags(const Asset& asset) {
     extension_text = "NO EXT";
   }
 
-  draw_tag_chip(type_text, get_type_tag_color(asset.type), Theme::TAG_TYPE_TEXT, "TypeTag");
+  draw_tag_chip(type_text, get_type_tag_color(asset.type), Theme::TAG_TYPE_TEXT, "TypeTag", atlas, frame_def);
   ImGui::SameLine(0.0f, 8.0f);
-  draw_tag_chip(extension_text, Theme::TAG_EXTENSION_FILL, Theme::TAG_EXTENSION_TEXT, "ExtTag");
+  draw_tag_chip(extension_text, Theme::TAG_EXTENSION_FILL, Theme::TAG_EXTENSION_TEXT, "ExtTag", atlas, frame_def);
   ImGui::Spacing();
 }
 
@@ -157,6 +124,10 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
 
   for (size_t i = 0; i < segments.size(); ++i) {
     bool is_clickable = (i < clickable_segments);
+    const std::string& raw_segment = segments[i];
+    std::string display_segment = is_clickable
+      ? truncate_with_ellipsis(raw_segment, 36)
+      : raw_segment;
 
     // Calculate the width this segment would take (including separator if not first)
     float separator_width = 0.0f;
@@ -165,7 +136,7 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
     }
 
     // Text width calculation (same for both clickable and non-clickable now)
-    float segment_width = ImGui::CalcTextSize(segments[i].c_str()).x;
+    float segment_width = ImGui::CalcTextSize(display_segment.c_str()).x;
 
     // Check if we need to wrap to next line
     if (i > 0) {
@@ -206,7 +177,7 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
 
       // Render as clickable text link
       ImGui::PushStyleColor(ImGuiCol_Text, link_color);
-      ImGui::Text("%s", segments[i].c_str());
+      ImGui::Text("%s", display_segment.c_str());
       ImGui::PopStyleColor();
 
       // Get item rect for interaction and underline
@@ -217,7 +188,7 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
       // Draw underline on hover
       if (!is_active && is_hovered) {
         ImGui::GetWindowDrawList()->AddText(text_min,
-          Theme::ToImU32(Theme::ACCENT_BLUE_1), segments[i].c_str());
+          Theme::ToImU32(Theme::ACCENT_BLUE_1), display_segment.c_str());
       }
 
       if (is_hovered) {
@@ -250,8 +221,22 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
   }
 }
 
-// Renders asset attributes aligned into columns
-void render_attribute_rows(const std::vector<AttributeRow>& rows) {
+// Renders asset attributes aligned into columns, framing each value individually.
+void render_attribute_rows(const std::vector<AttributeRow>& rows, TextureManager& texture_manager) {
+  constexpr float ROW_SPACING = 6.0f;
+  constexpr float TAGS_TO_PATH_SPACING = 6.0f;
+  constexpr float PATH_LINE_GAP = 8.0f;
+  constexpr float PATH_AFTER_LINE_SPACING = 20.0f;
+  constexpr float VALUE_PADDING_X = 8.0f;
+  constexpr float VALUE_PADDING_Y = 4.0f;
+
+  SpriteAtlas atlas = texture_manager.get_ui_elements_atlas();
+  const SlicedSprite value_frame = make_8px_frame(0, 0, 1.0f); // lighter, smaller frame
+  bool has_frame = atlas.texture_id != 0;
+
+  // Spacer after tags to ensure downstream layout shifts as spacing changes
+  ImGui::Dummy(ImVec2(0.0f, TAGS_TO_PATH_SPACING));
+
   float max_label_width = 0.0f;
   for (const auto& row : rows) {
     std::string label = uppercase_copy(row.label);
@@ -261,6 +246,11 @@ void render_attribute_rows(const std::vector<AttributeRow>& rows) {
 
   float label_column_x = ImGui::GetCursorPosX();
   float value_column_x = label_column_x + max_label_width + 30.0f;
+
+  ImVec2 window_pos = ImGui::GetWindowPos();
+  ImVec2 region_min = ImGui::GetWindowContentRegionMin();
+  ImVec2 region_max = ImGui::GetWindowContentRegionMax();
+  float frame_end_x = window_pos.x + region_max.x;
 
   for (const auto& row : rows) {
     std::string label = uppercase_copy(row.label);
@@ -274,7 +264,13 @@ void render_attribute_rows(const std::vector<AttributeRow>& rows) {
       else {
         ImGui::TextColored(Theme::TEXT_PATH, "%s", row.value.c_str());
       }
-      ImGui::Dummy(ImVec2(0.0f, 0.0f));
+      float line_y = window_pos.y + ImGui::GetCursorPosY() + PATH_LINE_GAP;
+      draw_solid_separator(
+        ImVec2(window_pos.x + region_min.x, line_y),
+        region_max.x - region_min.x,
+        2.0f,
+        Theme::ToImU32(Theme::SEPARATOR_GRAY));
+      ImGui::SetCursorPosY(ImGui::GetCursorPosY() + PATH_AFTER_LINE_SPACING);
       continue;
     }
 
@@ -285,6 +281,20 @@ void render_attribute_rows(const std::vector<AttributeRow>& rows) {
     if (tag_font) ImGui::PopFont();
     ImGui::SameLine();
     ImGui::SetCursorPosX(value_column_x);
+
+    ImVec2 value_cursor = ImGui::GetCursorScreenPos();
+    float line_height = ImGui::GetTextLineHeight();
+    ImVec2 frame_min(value_cursor.x, value_cursor.y - VALUE_PADDING_Y * 0.5f);
+    ImVec2 frame_size(frame_end_x - value_cursor.x, line_height + VALUE_PADDING_Y);
+    if (has_frame && frame_size.x > 0.0f && frame_size.y > 0.0f) {
+      draw_nine_slice_image(
+        atlas,
+        value_frame,
+        frame_min,
+        frame_size);
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(value_cursor.x + VALUE_PADDING_X, value_cursor.y));
     ImGui::PushStyleColor(ImGuiCol_Text, Theme::TEXT_DARK);
     if (row.renderer) {
       row.renderer();
@@ -293,7 +303,7 @@ void render_attribute_rows(const std::vector<AttributeRow>& rows) {
       ImGui::Text("%s", row.value.c_str());
     }
     ImGui::PopStyleColor();
-    ImGui::Dummy(ImVec2(0.0f, 0.0f));
+    ImGui::Dummy(ImVec2(0.0f, ROW_SPACING));
   }
 }
 
@@ -417,6 +427,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   Model& current_model, Camera3D& camera, float panel_width, float panel_height) {
   SpriteAtlas preview_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite preview_frame_definition = make_16px_frame(1, 3.0f);
+  const SlicedSprite tag_frame_definition = make_8px_frame(0, 2, 2.0f);
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
   ImVec2 frame_size(panel_width, std::max(0.0f, panel_height));
@@ -434,7 +445,11 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::COLOR_TRANSPARENT);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
   ImGui::SetCursorScreenPos(content_pos);
-  ImGui::BeginChild("AssetPreview", content_size, false);
+  ImGui::BeginChild(
+    "AssetPreview",
+    content_size,
+    false,
+    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 
   // Use the smaller axis so the square viewport touches the frame evenly
@@ -607,7 +622,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       // Restore cursor for info below
       ImGui::SetCursorScreenPos(container_pos);
       ImGui::Dummy(ImVec2(0, avail_height + 10));
-      render_asset_tags(selected_asset);
+      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition);
 
       if (current_model_ref.loaded) {
         int vertex_count =
@@ -618,7 +633,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         detail_rows.emplace_back("Faces", std::to_string(face_count));
       }
 
-      render_attribute_rows(detail_rows);
+      render_attribute_rows(detail_rows, texture_manager);
     }
     else if (selected_asset.type == AssetType::Audio && Services::audio_manager().is_initialized()) {
       // Audio handling for sound assets
@@ -663,7 +678,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::SetCursorScreenPos(container_pos);
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
-      render_asset_tags(selected_asset);
+      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition);
 
       // Audio controls - single row layout
       if (Services::audio_manager().has_audio_loaded()) {
@@ -782,7 +797,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::PopStyleColor(3);
       }
 
-      render_attribute_rows(detail_rows);
+      render_attribute_rows(detail_rows, texture_manager);
     }
     else if (selected_asset.extension == ".gif") {
       auto now = std::chrono::steady_clock::now();
@@ -841,15 +856,15 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
 
-      render_asset_tags(selected_asset);
+      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition);
 
       if (animation) {
         std::string dimensions = std::to_string(animation->width) + "x" + std::to_string(animation->height);
-        detail_rows.emplace_back("Size", dimensions);
+        detail_rows.emplace_back("Dimensions", dimensions);
         detail_rows.emplace_back("Frames", std::to_string(animation->frame_count()));
       }
 
-      render_attribute_rows(detail_rows);
+      render_attribute_rows(detail_rows, texture_manager);
     }
     else {
       // 2D Preview for non-GIF assets
@@ -893,18 +908,18 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
 
-      render_asset_tags(selected_asset);
+      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition);
 
       if (selected_asset.type == AssetType::_2D) {
         int width = 0;
         int height = 0;
         if (texture_manager.get_texture_dimensions(selected_asset.path, width, height)) {
           std::string dimensions = std::to_string(width) + "x" + std::to_string(height);
-          detail_rows.emplace_back("Size", dimensions);
+          detail_rows.emplace_back("Dimensions", dimensions);
         }
       }
 
-      render_attribute_rows(detail_rows);
+      render_attribute_rows(detail_rows, texture_manager);
     }
   }
   else {

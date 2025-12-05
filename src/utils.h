@@ -14,7 +14,8 @@ using TimePoint = std::chrono::steady_clock::time_point;
 struct Asset;
 
 // String utility functions
-std::string truncate_filename(const std::string& filename, size_t max_length);
+// Truncate any string to a maximum length (including ellipsis).
+std::string truncate_with_ellipsis(const std::string& text, size_t max_length);
 std::string to_lowercase(const std::string& str);
 std::string trim_string(const std::string& str);
 
