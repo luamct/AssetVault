@@ -5,7 +5,7 @@
 
 SlicedSprite::SlicedSprite(const ImVec2& source,
     const ImVec2& size,
-    const ImVec2& border_pixels,
+    const ImVec4& border_pixels,
     float scale,
     bool fill)
   : source_pos(source),
@@ -285,9 +285,9 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
 
   float scale = std::max(1.0f, definition.pixel_scale);
   float left_border = std::max(0.0f, definition.border.x * scale);
-  float top_border = std::max(0.0f, definition.border.y * scale);
-  float right_border = left_border;
-  float bottom_border = top_border;
+  float right_border = std::max(0.0f, definition.border.y * scale);
+  float top_border = std::max(0.0f, definition.border.z * scale);
+  float bottom_border = std::max(0.0f, definition.border.w * scale);
 
   // Ensure borders don't exceed source dimensions
   float max_horizontal = left_border + right_border;
@@ -311,19 +311,35 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
   float dest_top = std::min(top_border, dest_size.y * 0.5f);
   float dest_bottom = std::min(bottom_border, dest_size.y - dest_top);
 
-  float src_border_x = std::min(definition.border.x, definition.source_size.x * 0.5f);
-  float src_border_y = std::min(definition.border.y, definition.source_size.y * 0.5f);
+  float src_border_left = std::max(0.0f, definition.border.x);
+  float src_border_right = std::max(0.0f, definition.border.y);
+  float src_border_top = std::max(0.0f, definition.border.z);
+  float src_border_bottom = std::max(0.0f, definition.border.w);
+
+  float src_total_horizontal = src_border_left + src_border_right;
+  if (src_total_horizontal > definition.source_size.x && src_total_horizontal > 0.0f) {
+    float adjust = definition.source_size.x / src_total_horizontal;
+    src_border_left *= adjust;
+    src_border_right *= adjust;
+  }
+
+  float src_total_vertical = src_border_top + src_border_bottom;
+  if (src_total_vertical > definition.source_size.y && src_total_vertical > 0.0f) {
+    float adjust = definition.source_size.y / src_total_vertical;
+    src_border_top *= adjust;
+    src_border_bottom *= adjust;
+  }
 
   float src_x[4] = {
     definition.source_pos.x,
-    definition.source_pos.x + src_border_x,
-    definition.source_pos.x + definition.source_size.x - src_border_x,
+    definition.source_pos.x + src_border_left,
+    definition.source_pos.x + definition.source_size.x - src_border_right,
     definition.source_pos.x + definition.source_size.x
   };
   float src_y[4] = {
     definition.source_pos.y,
-    definition.source_pos.y + src_border_y,
-    definition.source_pos.y + definition.source_size.y - src_border_y,
+    definition.source_pos.y + src_border_top,
+    definition.source_pos.y + definition.source_size.y - src_border_bottom,
     definition.source_pos.y + definition.source_size.y
   };
 
@@ -381,7 +397,8 @@ SlicedSprite make_16px_frame(int index, float pixel_scale) {
   ImVec2 source(
     frame_width * static_cast<float>(index),
     8.0f);
-  return SlicedSprite(source, ImVec2(frame_width, frame_height), ImVec2(5.0f, 5.0f), pixel_scale);
+  return SlicedSprite(source, ImVec2(frame_width, frame_height),
+    ImVec4(5.0f, 5.0f, 5.0f, 5.0f), pixel_scale);
 }
 
 SlicedSprite make_8px_frame(int index, int variant, float pixel_scale) {
@@ -391,7 +408,8 @@ SlicedSprite make_8px_frame(int index, int variant, float pixel_scale) {
   ImVec2 source(
     frame_width * static_cast<float>(variant),
     base_y + frame_height * static_cast<float>(index));
-  return SlicedSprite(source, ImVec2(frame_width, frame_height), ImVec2(3.0f, 3.0f), pixel_scale);
+  return SlicedSprite(source, ImVec2(frame_width, frame_height),
+    ImVec4(3.0f, 3.0f, 3.0f, 3.0f), pixel_scale);
 }
 
 SlicedSprite make_scrollbar_track_definition(int variant, float pixel_scale) {
@@ -401,13 +419,22 @@ SlicedSprite make_scrollbar_track_definition(int variant, float pixel_scale) {
   ImVec2 source(
     track_size * static_cast<float>(clamped_variant),
     base_y);
-  return SlicedSprite(source, ImVec2(track_size, track_size), ImVec2(0.0f, 3.0f), pixel_scale);
+  return SlicedSprite(source, ImVec2(track_size, track_size),
+    ImVec4(0.0f, 0.0f, 3.0f, 3.0f), pixel_scale);
 }
 
 SlicedSprite make_scrollbar_thumb_definition(float pixel_scale) {
   const float sprite_size = 8.0f;
   const ImVec2 source(24.0f, 24.0f);
-  return SlicedSprite(source, ImVec2(sprite_size, sprite_size), ImVec2(3.0f, 3.0f), pixel_scale);
+  return SlicedSprite(source, ImVec2(sprite_size, sprite_size),
+    ImVec4(3.0f, 3.0f, 3.0f, 3.0f), pixel_scale);
+}
+
+SlicedSprite make_modal_combined_frame(float pixel_scale) {
+  const ImVec2 source(96.0f, 8.0f);
+  const ImVec2 size(16.0f, 26.0f);
+  return SlicedSprite(source, size,
+    ImVec4(5.0f, 5.0f, 20.0f, 5.0f), pixel_scale);
 }
 
 ScrollbarState begin_scrollbar_child(const char* id,

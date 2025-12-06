@@ -167,23 +167,34 @@ void render_search_panel(UIState& ui_state,
   ImGui::EndChild();
 
   const char* SETTINGS_MODAL_ID = "Settings";
-  if (open_settings_modal) {
-    ImGui::OpenPopup(SETTINGS_MODAL_ID);
-  }
-
-  bool settings_popup_active = ImGui::IsPopupOpen(SETTINGS_MODAL_ID);
-  bool prepare_modal = open_settings_modal || settings_popup_active;
-  if (prepare_modal) {
+  auto configure_settings_modal = [&](bool force_position) {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     float modal_width = viewport ? viewport->Size.x * 0.5f : 400.0f;
-    ImVec2 modal_size(modal_width, 0.0f);
     if (viewport) {
       ImVec2 modal_center(
         viewport->Pos.x + viewport->Size.x * 0.5f,
         viewport->Pos.y + viewport->Size.y * 0.5f);
-      ImGui::SetNextWindowPos(modal_center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+      ImGui::SetNextWindowPos(modal_center,
+        force_position ? ImGuiCond_Always : ImGuiCond_Appearing,
+        ImVec2(0.5f, 0.5f));
     }
-    ImGui::SetNextWindowSize(modal_size, ImGuiCond_Always);
+    ImVec2 modal_size(modal_width, 0.0f);
+    ImGui::SetNextWindowSize(modal_size,
+      force_position ? ImGuiCond_Always : ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(
+      ImVec2(modal_width, 0.0f),
+      ImVec2(modal_width, FLT_MAX));
+  };
+
+  bool settings_popup_active = ImGui::IsPopupOpen(SETTINGS_MODAL_ID);
+  bool force_position = open_settings_modal;
+  if (open_settings_modal) {
+    ImGui::OpenPopup(SETTINGS_MODAL_ID);
+    settings_popup_active = true;
+  }
+
+  if (settings_popup_active) {
+    configure_settings_modal(force_position);
   }
 
   bool dim_color_pushed = false;
@@ -192,8 +203,46 @@ void render_search_panel(UIState& ui_state,
     dim_color_pushed = true;
   }
 
-  if (ImGui::BeginPopupModal(SETTINGS_MODAL_ID, nullptr,
-      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+  bool popup_background_pushed = false;
+  if (settings_popup_active) {
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_Border, Theme::COLOR_TRANSPARENT);
+    popup_background_pushed = true;
+  }
+
+  constexpr ImGuiWindowFlags SETTINGS_MODAL_FLAGS =
+    ImGuiWindowFlags_AlwaysAutoResize |
+    ImGuiWindowFlags_NoSavedSettings |
+    ImGuiWindowFlags_NoTitleBar;
+
+  if (ImGui::BeginPopupModal(SETTINGS_MODAL_ID, nullptr, SETTINGS_MODAL_FLAGS)) {
+    SpriteAtlas modal_atlas = texture_manager.get_ui_elements_atlas();
+    ImDrawList* modal_draw_list = ImGui::GetWindowDrawList();
+    if (modal_atlas.texture_id != 0 && modal_draw_list != nullptr) {
+      static const SlicedSprite modal_frame = make_modal_combined_frame(2.0f);
+      ImVec2 window_pos = ImGui::GetWindowPos();
+      ImVec2 window_size = ImGui::GetWindowSize();
+
+      draw_nine_slice_image(modal_atlas, modal_frame, window_pos, window_size);
+
+      float header_height = modal_frame.border.z * modal_frame.pixel_scale;
+      const char* header_text = "Settings";
+      ImFont* header_font = Theme::get_primary_font_large();
+      ImFont* draw_font = header_font ? header_font : ImGui::GetFont();
+      float title_font_size = ImGui::GetFontSize() + 2.0f;
+      ImVec2 text_size = draw_font->CalcTextSizeA(title_font_size, FLT_MAX, 0.0f, header_text);
+      ImVec2 text_pos(
+        window_pos.x + (window_size.x - text_size.x) * 0.5f,
+        window_pos.y + (header_height - text_size.y) * 0.5f - 5.0f);
+      modal_draw_list->AddText(draw_font, title_font_size, text_pos,
+        Theme::ToImU32(Theme::TEXT_LABEL), header_text);
+
+      float content_offset = header_height - ImGui::GetStyle().WindowPadding.y;
+      if (content_offset > 0.0f) {
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + content_offset);
+      }
+    }
+
     constexpr float SETTINGS_LABEL_Y_OFFSET = 4.0f;
     if (ImGui::BeginTable("SettingsTable", 2, ImGuiTableFlags_SizingStretchProp)) {
       ImGui::TableSetupColumn("Setting", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8.0f);
@@ -280,6 +329,9 @@ void render_search_panel(UIState& ui_state,
 
   if (dim_color_pushed) {
     ImGui::PopStyleColor();
+  }
+  if (popup_background_pushed) {
+    ImGui::PopStyleColor(2);
   }
 
   if (request_assets_directory_modal) {

@@ -18,6 +18,7 @@ Run the full verification suite before handing work back:
 ```
 ctest --preset windows
 ```
+Always finish by building the Debug target (`cmake --build --preset windows --config Debug`) to ensure changes compile.
 Set `VCPKG_ROOT` (e.g., `/c/vcpkg`) so dependency resolution succeeds, and clean stale builds with `rm -rf build/ vcpkg_installed/` when toolchains drift.
 
 ## Coding Style & Naming Conventions

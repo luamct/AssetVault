@@ -9,15 +9,15 @@
 struct SlicedSprite {
   ImVec2 source_pos;
   ImVec2 source_size;
-  // Border thickness in pixels for X (left/right) and Y (top/bottom)
-  ImVec2 border;
+  // Border thickness in pixels for left, right, top, bottom order.
+  ImVec4 border;
   // Optional uniform scaling factor for the entire sprite (1px -> scale px)
   float pixel_scale;
   bool fill_center;
 
   SlicedSprite(const ImVec2& source,
       const ImVec2& size,
-      const ImVec2& border_pixels,
+      const ImVec4& border_pixels,
       float scale = 1.0f,
       bool fill = true);
 };
@@ -119,3 +119,4 @@ void draw_tag_chip(const std::string& text,
 
 SlicedSprite make_16px_frame(int index, float pixel_scale = 1.0f);
 SlicedSprite make_8px_frame(int index, int variant, float pixel_scale = 1.0f);
+SlicedSprite make_modal_combined_frame(float pixel_scale = 2.0f);
