@@ -270,6 +270,136 @@ void draw_tag_chip(const std::string& text,
   if (tag_font) ImGui::PopFont();
 }
 
+bool draw_pixel_radio_button(const char* id,
+    bool selected,
+    const SpriteAtlas& atlas,
+    float pixel_scale) {
+  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+    return false;
+  }
+
+  float size = 8.0f * std::max(1.0f, pixel_scale);
+  ImVec2 button_size(size, size);
+  ImGui::PushID(id);
+  ImGui::InvisibleButton("PixelRadio", button_size);
+  bool clicked = ImGui::IsItemClicked();
+  bool hovered = ImGui::IsItemHovered();
+  ImGui::PopID();
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (!draw_list) {
+    return clicked;
+  }
+
+  ImVec2 min = ImGui::GetItemRectMin();
+  ImVec2 max = ImGui::GetItemRectMax();
+
+  ImVec2 src_min = selected ? ImVec2(72.0f, 72.0f) : ImVec2(64.0f, 72.0f);
+  ImVec2 src_max = ImVec2(src_min.x + 8.0f, src_min.y + 8.0f);
+  ImVec2 uv_min(src_min.x / atlas.atlas_size.x, src_min.y / atlas.atlas_size.y);
+  ImVec2 uv_max(src_max.x / atlas.atlas_size.x, src_max.y / atlas.atlas_size.y);
+
+  draw_list->AddImage(atlas.texture_id, min, max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
+
+  if (hovered) {
+    draw_list->AddRect(min, max, Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80), 2.0f, 0, 1.0f);
+  }
+
+  return clicked;
+}
+
+bool draw_pixel_checkbox(const char* id,
+    bool& value,
+    const SpriteAtlas& atlas,
+    float pixel_scale) {
+  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+    return false;
+  }
+
+  float size = 8.0f * std::max(1.0f, pixel_scale);
+  ImVec2 box_size(size, size);
+  ImGui::PushID(id);
+  ImGui::InvisibleButton("PixelCheckbox", box_size);
+  bool clicked = ImGui::IsItemClicked();
+  bool hovered = ImGui::IsItemHovered();
+  ImGui::PopID();
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (!draw_list) {
+    return false;
+  }
+
+  ImVec2 min = ImGui::GetItemRectMin();
+  ImVec2 max = ImGui::GetItemRectMax();
+
+  ImVec2 src_min = value ? ImVec2(72.0f, 80.0f) : ImVec2(64.0f, 80.0f);
+  ImVec2 src_max = ImVec2(src_min.x + 8.0f, src_min.y + 8.0f);
+  ImVec2 uv_min(src_min.x / atlas.atlas_size.x, src_min.y / atlas.atlas_size.y);
+  ImVec2 uv_max(src_max.x / atlas.atlas_size.x, src_max.y / atlas.atlas_size.y);
+
+  draw_list->AddImage(atlas.texture_id, min, max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
+
+  if (hovered) {
+    draw_list->AddRect(min, max, Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80), 2.0f, 0, 1.0f);
+  }
+
+  if (clicked) {
+    value = !value;
+  }
+
+  return clicked;
+}
+
+bool draw_small_frame_button(const char* id,
+    const char* label,
+    const SpriteAtlas& atlas,
+    const ImVec2& size,
+    float pixel_scale) {
+  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+    return ImGui::Button(label, size);
+  }
+
+  ImVec2 button_size = size;
+  if (button_size.y <= 0.0f) {
+    button_size.y = ImGui::GetFrameHeightWithSpacing();
+  }
+
+  ImGui::PushID(id);
+  ImGui::InvisibleButton("SmallFrameButton", button_size);
+  bool clicked = ImGui::IsItemClicked();
+  bool hovered = ImGui::IsItemHovered();
+  bool active = ImGui::IsItemActive();
+  ImGui::PopID();
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (!draw_list) {
+    return clicked;
+  }
+
+  const SlicedSprite default_frame = make_8px_frame(1, 1, pixel_scale);
+  const SlicedSprite hover_frame = make_8px_frame(1, 2, pixel_scale);
+  const SlicedSprite active_frame = make_8px_frame(1, 4, pixel_scale);
+  const SlicedSprite* current_frame = &default_frame;
+  if (active) {
+    current_frame = &active_frame;
+  }
+  else if (hovered) {
+    current_frame = &hover_frame;
+  }
+
+  ImVec2 min = ImGui::GetItemRectMin();
+  ImVec2 max = ImGui::GetItemRectMax();
+  ImVec2 frame_size(max.x - min.x, max.y - min.y);
+  draw_nine_slice_image(atlas, *current_frame, min, frame_size);
+
+  ImVec2 text_size = ImGui::CalcTextSize(label);
+  ImVec2 text_pos(
+    min.x + (frame_size.x - text_size.x) * 0.5f,
+    min.y + (frame_size.y - text_size.y) * 0.5f);
+  draw_list->AddText(text_pos, Theme::ToImU32(Theme::TEXT_DARK), label);
+  return clicked;
+}
+
 void draw_nine_slice_image(const SpriteAtlas& atlas,
     const SlicedSprite& definition,
     const ImVec2& dest_pos,

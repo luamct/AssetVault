@@ -117,6 +117,22 @@ void draw_tag_chip(const std::string& text,
     const SlicedSprite& frame_def,
     ImVec2 padding = ImVec2(10.0f, 4.0f));
 
+bool draw_pixel_radio_button(const char* id,
+    bool selected,
+    const SpriteAtlas& atlas,
+    float pixel_scale = 2.0f);
+
+bool draw_pixel_checkbox(const char* id,
+    bool& value,
+    const SpriteAtlas& atlas,
+    float pixel_scale = 2.0f);
+
+bool draw_small_frame_button(const char* id,
+    const char* label,
+    const SpriteAtlas& atlas,
+    const ImVec2& size,
+    float pixel_scale = 3.0f);
+
 SlicedSprite make_16px_frame(int index, float pixel_scale = 1.0f);
 SlicedSprite make_8px_frame(int index, int variant, float pixel_scale = 1.0f);
 SlicedSprite make_modal_combined_frame(float pixel_scale = 2.0f);

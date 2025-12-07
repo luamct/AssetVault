@@ -243,17 +243,20 @@ void render_search_panel(UIState& ui_state,
       }
     }
 
-    constexpr float SETTINGS_LABEL_Y_OFFSET = 4.0f;
     if (ImGui::BeginTable("SettingsTable", 2, ImGuiTableFlags_SizingStretchProp)) {
+      const float SETTINGS_ROW_HEIGHT = 40.0f;
+      auto next_row = [&]() {
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, SETTINGS_ROW_HEIGHT);
+      };
       ImGui::TableSetupColumn("Setting", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8.0f);
       ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-      ImGui::TableNextRow();
+      next_row();
       ImGui::TableSetColumnIndex(0);
-      ImVec2 label_pos = ImGui::GetCursorPos();
-      ImGui::SetCursorPos(ImVec2(label_pos.x, label_pos.y + SETTINGS_LABEL_Y_OFFSET));
+      ImGui::AlignTextToFramePadding();
       ImGui::TextColored(Theme::TEXT_SECONDARY, "Assets directory");
 
       ImGui::TableSetColumnIndex(1);
+      ImGui::AlignTextToFramePadding();
       if (!ui_state.assets_directory.empty()) {
         const std::string display_path = ui_state.assets_directory;
         if (draw_wrapped_settings_entry("AssetsDirectoryButton", display_path,
@@ -270,57 +273,55 @@ void render_search_panel(UIState& ui_state,
         }
       }
 
-      ImGui::TableNextRow();
+      next_row();
       ImGui::TableSetColumnIndex(0);
-      ImVec2 axes_label_pos = ImGui::GetCursorPos();
-      ImGui::SetCursorPos(ImVec2(axes_label_pos.x, axes_label_pos.y + SETTINGS_LABEL_Y_OFFSET));
+      ImGui::AlignTextToFramePadding();
       ImGui::TextColored(Theme::TEXT_SECONDARY, "Draw debug axes");
 
       ImGui::TableSetColumnIndex(1);
-      ImGuiStyle& settings_style = ImGui::GetStyle();
-      ImVec2 compact_padding(settings_style.FramePadding.x * 0.7f,
-        settings_style.FramePadding.y * 0.7f);
-      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, compact_padding);
+      ImGui::AlignTextToFramePadding();
       bool draw_axes = Config::draw_debug_axes();
-      ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
-      if (ImGui::Checkbox("##DrawDebugAxes", &draw_axes)) {
+      if (draw_pixel_checkbox("DrawDebugAxesCheckbox", draw_axes, modal_atlas, 2.5f)) {
         Config::set_draw_debug_axes(draw_axes);
       }
-      ImGui::PopStyleColor(3);
-      ImGui::PopStyleVar();
+      ImGui::SameLine(0.0f, 8.0f);
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextColored(draw_axes ? Theme::TEXT_DARK : Theme::TEXT_SECONDARY, "Show axes overlay");
 
-      ImGui::TableNextRow();
+      next_row();
       ImGui::TableSetColumnIndex(0);
-      ImVec2 projection_label_pos = ImGui::GetCursorPos();
-      ImGui::SetCursorPos(ImVec2(projection_label_pos.x,
-        projection_label_pos.y + SETTINGS_LABEL_Y_OFFSET));
+      ImGui::AlignTextToFramePadding();
       ImGui::TextColored(Theme::TEXT_SECONDARY, "3D projection");
 
       ImGui::TableSetColumnIndex(1);
+      ImGui::AlignTextToFramePadding();
       std::string projection_pref = ui_state.preview_projection;
       bool ortho_selected = projection_pref != Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
-      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, compact_padding);
-      if (ImGui::RadioButton("Orthographic##PreviewProjection", ortho_selected)) {
+      auto draw_projection_option = [&](const char* label, bool selected, const char* id) {
+        bool toggled = draw_pixel_radio_button(id, selected, modal_atlas, 2.5f);
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::TextColored(selected ? Theme::TEXT_DARK : Theme::TEXT_SECONDARY, "%s", label);
+        return toggled && !selected;
+      };
+      if (draw_projection_option("Orthographic", ortho_selected, "ProjectionOrtho")) {
         projection_pref = Config::CONFIG_VALUE_PROJECTION_ORTHOGRAPHIC;
         ui_state.preview_projection = projection_pref;
         Config::set_preview_projection(projection_pref);
       }
-      ImGui::SameLine();
+      ImGui::SameLine(0.0f, 18.0f);
       bool perspective_selected = projection_pref == Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
-      if (ImGui::RadioButton("Perspective##PreviewProjection", perspective_selected)) {
+      if (draw_projection_option("Perspective", perspective_selected, "ProjectionPerspective")) {
         projection_pref = Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
         ui_state.preview_projection = projection_pref;
         Config::set_preview_projection(projection_pref);
       }
-      ImGui::PopStyleVar();
 
       ImGui::EndTable();
     }
 
     ImGui::Spacing();
-    if (ImGui::Button("Close", ImVec2(120.0f, 0.0f))) {
+    ImVec2 close_button_size(140.0f, 38.0f);
+    if (draw_small_frame_button("SettingsCloseButton", "Close", modal_atlas, close_button_size, 3.0f)) {
       ImGui::CloseCurrentPopup();
     }
 
