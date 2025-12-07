@@ -39,6 +39,10 @@ struct aiTexture;
 struct SpriteAtlas {
   ImTextureID texture_id = 0;
   ImVec2 atlas_size = ImVec2(1.0f, 1.0f);
+
+  bool is_valid() const {
+    return texture_id != 0 && atlas_size.x > 0.0f && atlas_size.y > 0.0f;
+  }
 };
 
 // Exception class for thumbnail generation failures

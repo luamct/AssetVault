@@ -96,8 +96,13 @@ struct IconButtonParams {
 
 bool draw_icon_button(const IconButtonParams& params);
 
-bool draw_wrapped_settings_entry(const char* id, const std::string& text,
-    const ImVec4& text_color);
+bool draw_wrapped_settings_entry_with_frame(const char* id,
+    const std::string& text,
+    const ImVec4& text_color,
+    const SpriteAtlas& atlas,
+    const SlicedSprite& frame_def,
+    float padding_x = 8.0f,
+    float padding_y = 4.0f);
 
 bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float width,
     float padding_x = 20.0f, float padding_y = 16.0f, float corner_radius = 25.0f);

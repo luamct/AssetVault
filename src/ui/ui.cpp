@@ -279,7 +279,7 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
     ImVec2 bar_size(panel_width, bar_height);
     ImVec2 bar_end(bar_pos.x, bar_pos.y + bar_height);
 
-    if (progress_frame_atlas.texture_id != 0) {
+    if (progress_frame_atlas.is_valid()) {
       draw_nine_slice_image(progress_frame_atlas, progress_frame_definition,
         bar_pos, bar_size, Theme::COLOR_WHITE_U32);
 

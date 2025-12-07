@@ -286,7 +286,7 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   const SlicedSprite tree_frame_definition = make_16px_frame(1, 3.0f);
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
-  if (tree_frame_atlas.texture_id != 0) {
+  if (tree_frame_atlas.is_valid()) {
     draw_nine_slice_image(tree_frame_atlas, tree_frame_definition, frame_pos,
       ImVec2(panel_width, panel_height));
   }
@@ -400,7 +400,7 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   end_scrollbar_child(scrollbar_state);
 
   SpriteAtlas scrollbar_atlas = texture_manager.get_ui_elements_atlas();
-  if (scrollbar_atlas.texture_id != 0) {
+  if (scrollbar_atlas.is_valid()) {
     SlicedSprite track_def = make_scrollbar_track_definition(0, scrollbar_style.pixel_scale);
     SlicedSprite thumb_def = make_scrollbar_thumb_definition(scrollbar_style.pixel_scale);
     draw_scrollbar_overlay(scrollbar_state, scrollbar_atlas, track_def, thumb_def);

@@ -64,7 +64,7 @@ void render_search_panel(UIState& ui_state,
   ImVec2 frame_size(search_box_width, frame_height);
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  bool can_layer_frame = (search_frame_atlas.texture_id != 0) && (draw_list != nullptr);
+  bool can_layer_frame = search_frame_atlas.is_valid() && (draw_list != nullptr);
   if (can_layer_frame) {
     draw_list->ChannelsSplit(2);
     draw_list->ChannelsSetCurrent(1);
@@ -88,7 +88,7 @@ void render_search_panel(UIState& ui_state,
     draw_nine_slice_image(search_frame_atlas, frame_def, input_min, input_size);
     draw_list->ChannelsMerge();
   }
-  else if (search_frame_atlas.texture_id != 0) {
+  else if (search_frame_atlas.is_valid()) {
     draw_nine_slice_image(search_frame_atlas, search_frame_definition, frame_pos, frame_size);
   }
 
@@ -218,7 +218,7 @@ void render_search_panel(UIState& ui_state,
   if (ImGui::BeginPopupModal(SETTINGS_MODAL_ID, nullptr, SETTINGS_MODAL_FLAGS)) {
     SpriteAtlas modal_atlas = texture_manager.get_ui_elements_atlas();
     ImDrawList* modal_draw_list = ImGui::GetWindowDrawList();
-    if (modal_atlas.texture_id != 0 && modal_draw_list != nullptr) {
+    if (modal_atlas.is_valid() && modal_draw_list != nullptr) {
       static const SlicedSprite modal_frame = make_modal_combined_frame(2.0f);
       ImVec2 window_pos = ImGui::GetWindowPos();
       ImVec2 window_size = ImGui::GetWindowSize();
@@ -255,19 +255,22 @@ void render_search_panel(UIState& ui_state,
       ImGui::AlignTextToFramePadding();
       ImGui::TextColored(Theme::TEXT_SECONDARY, "Assets directory");
 
+      static const SlicedSprite value_frame = make_8px_frame(0, 0, 1.5f);
+
       ImGui::TableSetColumnIndex(1);
       ImGui::AlignTextToFramePadding();
       if (!ui_state.assets_directory.empty()) {
         const std::string display_path = ui_state.assets_directory;
-        if (draw_wrapped_settings_entry("AssetsDirectoryButton", display_path,
-            Theme::TEXT_SECONDARY)) {
+        if (draw_wrapped_settings_entry_with_frame("AssetsDirectoryButton",
+            display_path, Theme::TEXT_SECONDARY, modal_atlas, value_frame, 10.0f, 8.0f)) {
           request_assets_directory_modal = true;
           ImGui::CloseCurrentPopup();
         }
       }
       else {
-        if (draw_wrapped_settings_entry("AssetsDirectoryPlaceholder",
-            "Select Assets Folder", Theme::TEXT_DISABLED_DARK)) {
+        if (draw_wrapped_settings_entry_with_frame("AssetsDirectoryPlaceholder",
+            "Select Assets Folder", Theme::TEXT_DISABLED_DARK,
+            modal_atlas, value_frame, 10.0f, 8.0f)) {
           request_assets_directory_modal = true;
           ImGui::CloseCurrentPopup();
         }
@@ -285,7 +288,6 @@ void render_search_panel(UIState& ui_state,
         Config::set_draw_debug_axes(draw_axes);
       }
       ImGui::SameLine(0.0f, 8.0f);
-      ImGui::AlignTextToFramePadding();
       ImGui::TextColored(draw_axes ? Theme::TEXT_DARK : Theme::TEXT_SECONDARY, "Show axes overlay");
 
       next_row();
@@ -320,7 +322,10 @@ void render_search_panel(UIState& ui_state,
     }
 
     ImGui::Spacing();
-    ImVec2 close_button_size(140.0f, 38.0f);
+    ImVec2 close_button_size(200.0f, 40.0f);
+    float available_width = ImGui::GetContentRegionAvail().x;
+    float center_offset = std::max(0.0f, (available_width - close_button_size.x) * 0.5f);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center_offset);
     if (draw_small_frame_button("SettingsCloseButton", "Close", modal_atlas, close_button_size, 3.0f)) {
       ImGui::CloseCurrentPopup();
     }

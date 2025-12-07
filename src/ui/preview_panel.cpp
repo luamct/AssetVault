@@ -232,7 +232,7 @@ void render_attribute_rows(const std::vector<AttributeRow>& rows, TextureManager
 
   SpriteAtlas atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite value_frame = make_8px_frame(0, 0, 1.0f); // lighter, smaller frame
-  bool has_frame = atlas.texture_id != 0;
+  bool has_frame = atlas.is_valid();
 
   // Spacer after tags to ensure downstream layout shifts as spacing changes
   ImGui::Dummy(ImVec2(0.0f, TAGS_TO_PATH_SPACING));
@@ -431,7 +431,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
   ImVec2 frame_size(panel_width, std::max(0.0f, panel_height));
-  if (preview_frame_atlas.texture_id != 0) {
+  if (preview_frame_atlas.is_valid()) {
     draw_nine_slice_image(preview_frame_atlas, preview_frame_definition, frame_pos, frame_size);
   }
 

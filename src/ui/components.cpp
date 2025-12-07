@@ -127,10 +127,32 @@ void draw_solid_separator(const ImVec2& start,
   draw_list->AddRectFilled(ImVec2(start.x, y_min), ImVec2(end_x, y_max), color);
 }
 
-bool draw_wrapped_settings_entry(const char* id, const std::string& text,
-    const ImVec4& text_color) {
+bool draw_wrapped_settings_entry_with_frame(const char* id,
+    const std::string& text,
+    const ImVec4& text_color,
+    const SpriteAtlas& atlas,
+    const SlicedSprite& frame_def,
+    float padding_x,
+    float padding_y) {
+  IM_ASSERT(atlas.is_valid() && "Settings frame requires a valid atlas");
+
   ImGui::PushID(id);
-  float wrap_limit = ImGui::GetCursorPos().x + ImGui::GetColumnWidth();
+  float column_width = ImGui::GetColumnWidth();
+  ImVec2 cursor_pos = ImGui::GetCursorPos();
+  ImVec2 cursor_screen = ImGui::GetCursorScreenPos();
+  float wrap_limit = cursor_pos.x + column_width;
+  ImVec2 text_size = ImGui::CalcTextSize(text.c_str(), nullptr, false, column_width);
+
+  ImVec2 frame_min(
+    cursor_screen.x - padding_x,
+    cursor_screen.y - padding_y * 0.5f);
+  ImVec2 frame_size(
+    text_size.x + padding_x * 2.0f,
+    text_size.y + padding_y);
+  if (frame_size.x > 0.0f && frame_size.y > 0.0f) {
+    draw_nine_slice_image(atlas, frame_def, frame_min, frame_size);
+  }
+
   ImGui::PushTextWrapPos(wrap_limit);
   ImGui::TextColored(text_color, "%s", text.c_str());
   ImGui::PopTextWrapPos();
@@ -140,7 +162,7 @@ bool draw_wrapped_settings_entry(const char* id, const std::string& text,
   ImVec2 size = ImVec2(max.x - min.x, max.y - min.y);
 
   ImGui::SetCursorScreenPos(min);
-  bool clicked = ImGui::InvisibleButton("WrappedEntry", size);
+  bool clicked = ImGui::InvisibleButton("FramedWrappedEntry", size);
   bool hovered = ImGui::IsItemHovered();
 
   if (hovered) {
@@ -203,7 +225,7 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
       draw_list->AddRectFilled(button_min, button_max, Theme::ToImU32(bg_color));
     }
 
-    if (frame_atlas.texture_id != 0) {
+    if (frame_atlas.is_valid()) {
       const SlicedSprite& frame_def = (is_hovered || toggle_state)
         ? frame_selected
         : frame_default;
@@ -247,7 +269,7 @@ void draw_tag_chip(const std::string& text,
   ImGui::InvisibleButton(label.c_str(), frame_size);
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  if (draw_list && atlas.texture_id != 0) {
+  if (draw_list && atlas.is_valid()) {
     draw_nine_slice_image(atlas, frame_def, pos, frame_size);
 
     // Frame art has a 1px outline; scale it up to match the chosen pixel scale.
@@ -274,12 +296,13 @@ bool draw_pixel_radio_button(const char* id,
     bool selected,
     const SpriteAtlas& atlas,
     float pixel_scale) {
-  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+  if (!atlas.is_valid()) {
     return false;
   }
 
-  float size = 8.0f * std::max(1.0f, pixel_scale);
-  ImVec2 button_size(size, size);
+  float art_size = 8.0f * std::max(1.0f, pixel_scale);
+  float button_height = std::max(art_size, ImGui::GetFrameHeight());
+  ImVec2 button_size(art_size, button_height);
   ImGui::PushID(id);
   ImGui::InvisibleButton("PixelRadio", button_size);
   bool clicked = ImGui::IsItemClicked();
@@ -292,17 +315,19 @@ bool draw_pixel_radio_button(const char* id,
   }
 
   ImVec2 min = ImGui::GetItemRectMin();
-  ImVec2 max = ImGui::GetItemRectMax();
+  float vertical_padding = (button_height - art_size) * 0.5f;
+  ImVec2 image_min(min.x, min.y + vertical_padding);
+  ImVec2 image_max(image_min.x + art_size, image_min.y + art_size);
 
   ImVec2 src_min = selected ? ImVec2(72.0f, 72.0f) : ImVec2(64.0f, 72.0f);
   ImVec2 src_max = ImVec2(src_min.x + 8.0f, src_min.y + 8.0f);
   ImVec2 uv_min(src_min.x / atlas.atlas_size.x, src_min.y / atlas.atlas_size.y);
   ImVec2 uv_max(src_max.x / atlas.atlas_size.x, src_max.y / atlas.atlas_size.y);
 
-  draw_list->AddImage(atlas.texture_id, min, max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
+  draw_list->AddImage(atlas.texture_id, image_min, image_max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
 
   if (hovered) {
-    draw_list->AddRect(min, max, Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80), 2.0f, 0, 1.0f);
+    draw_list->AddRect(image_min, image_max, Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80), 2.0f, 0, 1.0f);
   }
 
   return clicked;
@@ -312,12 +337,13 @@ bool draw_pixel_checkbox(const char* id,
     bool& value,
     const SpriteAtlas& atlas,
     float pixel_scale) {
-  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+  if (!atlas.is_valid()) {
     return false;
   }
 
-  float size = 8.0f * std::max(1.0f, pixel_scale);
-  ImVec2 box_size(size, size);
+  float art_size = 8.0f * std::max(1.0f, pixel_scale);
+  float button_height = std::max(art_size, ImGui::GetFrameHeight());
+  ImVec2 box_size(art_size, button_height);
   ImGui::PushID(id);
   ImGui::InvisibleButton("PixelCheckbox", box_size);
   bool clicked = ImGui::IsItemClicked();
@@ -330,17 +356,19 @@ bool draw_pixel_checkbox(const char* id,
   }
 
   ImVec2 min = ImGui::GetItemRectMin();
-  ImVec2 max = ImGui::GetItemRectMax();
+  float vertical_padding = (button_height - art_size) * 0.5f;
+  ImVec2 image_min(min.x, min.y + vertical_padding);
+  ImVec2 image_max(image_min.x + art_size, image_min.y + art_size);
 
   ImVec2 src_min = value ? ImVec2(72.0f, 80.0f) : ImVec2(64.0f, 80.0f);
   ImVec2 src_max = ImVec2(src_min.x + 8.0f, src_min.y + 8.0f);
   ImVec2 uv_min(src_min.x / atlas.atlas_size.x, src_min.y / atlas.atlas_size.y);
   ImVec2 uv_max(src_max.x / atlas.atlas_size.x, src_max.y / atlas.atlas_size.y);
 
-  draw_list->AddImage(atlas.texture_id, min, max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
+  draw_list->AddImage(atlas.texture_id, image_min, image_max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
 
   if (hovered) {
-    draw_list->AddRect(min, max, Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80), 2.0f, 0, 1.0f);
+    draw_list->AddRect(image_min, image_max, Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80), 2.0f, 0, 1.0f);
   }
 
   if (clicked) {
@@ -355,7 +383,7 @@ bool draw_small_frame_button(const char* id,
     const SpriteAtlas& atlas,
     const ImVec2& size,
     float pixel_scale) {
-  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+  if (!atlas.is_valid()) {
     return ImGui::Button(label, size);
   }
 
@@ -405,7 +433,7 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
     const ImVec2& dest_pos,
     const ImVec2& dest_size,
     ImU32 tint) {
-  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+  if (!atlas.is_valid()) {
     return;
   }
 
@@ -608,7 +636,7 @@ void draw_scrollbar_overlay(const ScrollbarState& state,
   if (!state.has_metrics) {
     return;
   }
-  if (atlas.texture_id == 0 || atlas.atlas_size.x <= 0.0f || atlas.atlas_size.y <= 0.0f) {
+  if (!atlas.is_valid()) {
     return;
   }
 
