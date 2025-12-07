@@ -262,7 +262,7 @@ void render_search_panel(UIState& ui_state,
       if (!ui_state.assets_directory.empty()) {
         const std::string display_path = ui_state.assets_directory;
         if (draw_wrapped_settings_entry_with_frame("AssetsDirectoryButton",
-            display_path, Theme::TEXT_SECONDARY, modal_atlas, value_frame, 10.0f, 8.0f)) {
+            display_path, Theme::TEXT_LIGHTER, modal_atlas, value_frame, 10.0f, 8.0f)) {
           request_assets_directory_modal = true;
           ImGui::CloseCurrentPopup();
         }
@@ -302,7 +302,7 @@ void render_search_panel(UIState& ui_state,
       auto draw_projection_option = [&](const char* label, bool selected, const char* id) {
         bool toggled = draw_pixel_radio_button(id, selected, modal_atlas, 2.5f);
         ImGui::SameLine(0.0f, 6.0f);
-        ImGui::TextColored(selected ? Theme::TEXT_DARK : Theme::TEXT_SECONDARY, "%s", label);
+        ImGui::TextColored(selected ? Theme::TEXT_LIGHTER : Theme::TEXT_SECONDARY, "%s", label);
         return toggled && !selected;
       };
       if (draw_projection_option("Orthographic", ortho_selected, "ProjectionOrtho")) {

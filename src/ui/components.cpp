@@ -137,21 +137,19 @@ bool draw_wrapped_settings_entry_with_frame(const char* id,
   IM_ASSERT(atlas.is_valid() && "Settings frame requires a valid atlas");
 
   ImGui::PushID(id);
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (!draw_list) {
+    ImGui::PopID();
+    return false;
+  }
+  ImDrawListSplitter splitter;
+  splitter.Split(draw_list, 2);
+  splitter.SetCurrentChannel(draw_list, 1);
+
   float column_width = ImGui::GetColumnWidth();
   ImVec2 cursor_pos = ImGui::GetCursorPos();
   ImVec2 cursor_screen = ImGui::GetCursorScreenPos();
   float wrap_limit = cursor_pos.x + column_width;
-  ImVec2 text_size = ImGui::CalcTextSize(text.c_str(), nullptr, false, column_width);
-
-  ImVec2 frame_min(
-    cursor_screen.x - padding_x,
-    cursor_screen.y - padding_y * 0.5f);
-  ImVec2 frame_size(
-    text_size.x + padding_x * 2.0f,
-    text_size.y + padding_y);
-  if (frame_size.x > 0.0f && frame_size.y > 0.0f) {
-    draw_nine_slice_image(atlas, frame_def, frame_min, frame_size);
-  }
 
   ImGui::PushTextWrapPos(wrap_limit);
   ImGui::TextColored(text_color, "%s", text.c_str());
@@ -159,16 +157,26 @@ bool draw_wrapped_settings_entry_with_frame(const char* id,
 
   ImVec2 min = ImGui::GetItemRectMin();
   ImVec2 max = ImGui::GetItemRectMax();
-  ImVec2 size = ImVec2(max.x - min.x, max.y - min.y);
+  const float VERTICAL_SCALE = 1.2f;
+  ImVec2 frame_min(cursor_screen.x - padding_x, min.y - padding_y * 0.5f);
+  ImVec2 frame_size(column_width + padding_x * 2.0f, ((max.y - min.y) + padding_y) * VERTICAL_SCALE);
+  if (frame_size.x > 0.0f && frame_size.y > 0.0f) {
+    splitter.SetCurrentChannel(draw_list, 0);
+    draw_nine_slice_image(atlas, frame_def, frame_min, frame_size);
+    splitter.SetCurrentChannel(draw_list, 1);
+  }
 
-  ImGui::SetCursorScreenPos(min);
-  bool clicked = ImGui::InvisibleButton("FramedWrappedEntry", size);
+  ImGui::SetCursorScreenPos(frame_min);
+  bool clicked = ImGui::InvisibleButton("FramedWrappedEntry", frame_size);
   bool hovered = ImGui::IsItemHovered();
 
   if (hovered) {
-    ImGui::GetWindowDrawList()->AddRectFilled(min, max,
+    draw_list->AddRectFilled(frame_min,
+      ImVec2(frame_min.x + frame_size.x, frame_min.y + frame_size.y),
       Theme::ToImU32(Theme::COLOR_SEMI_TRANSPARENT), 6.0f);
   }
+
+  splitter.Merge(draw_list);
 
   ImGui::SetCursorScreenPos(ImVec2(min.x, max.y));
   ImGui::PopID();

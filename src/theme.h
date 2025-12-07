@@ -37,6 +37,7 @@ namespace Theme {
 
   // === CORE TEXT COLORS (actively used) ===
   constexpr ImVec4 TEXT_DARK = ImVec4(0.98f, 0.98f, 0.99f, 1.00f);          // Primary text (bright white)
+  constexpr ImVec4 TEXT_LIGHTER = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);          // Secondary text (a bit darker)
   constexpr ImVec4 TEXT_SECONDARY = ImVec4(0.63f, 0.68f, 0.75f, 1.00f);     // Disabled/secondary text
   constexpr ImVec4 TEXT_DISABLED_DARK = ImVec4(0.42f, 0.46f, 0.52f, 1.00f); // Muted UI chrome
   constexpr ImVec4 TEXT_LABEL = ImVec4(0.58f, 0.75f, 0.92f, 1.00f);         // Small labels and pills
