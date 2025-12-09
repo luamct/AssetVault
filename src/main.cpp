@@ -213,11 +213,6 @@ int run(std::atomic<bool>* shutdown_requested) {
 
       glfwPollEvents();
 
-    // Development shortcut: ESC to close app
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-      glfwSetWindowShouldClose(window, GLFW_TRUE);
-    }
-
     // Reset folder tree if a processing batch finished
     if (ui_state.event_batch_finished.exchange(false)) {
       reset_folder_tree_state(ui_state);
@@ -254,6 +249,18 @@ int run(std::atomic<bool>* shutdown_requested) {
 
     // Handle keyboard input
     ImGuiIO& input_io = ImGui::GetIO();
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape) && !input_io.WantTextInput) {
+      if (ui_state.assets_directory_modal_open) {
+        ui_state.close_assets_directory_modal_requested = true;
+      }
+      else if (ui_state.settings_modal_open) {
+        ui_state.close_settings_modal_requested = true;
+      }
+      else {
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+      }
+    }
 
     // Spacebar pause/unpause for audio assets
     if (ImGui::IsKeyPressed(ImGuiKey_Space) && !input_io.WantTextInput) {

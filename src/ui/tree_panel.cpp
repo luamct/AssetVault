@@ -17,6 +17,7 @@ namespace fs = std::filesystem;
 namespace {
 
   constexpr float TREE_FRAME_MARGIN = 16.0f;
+  constexpr float TREE_CHECKBOX_PIXEL_SCALE = 2.5f;
 
   std::string get_display_name_for_path(const fs::path& path) {
     std::string name = path.filename().u8string();
@@ -206,7 +207,8 @@ namespace {
   // Renders a single folder entry, handles left/right-click interactions, and
   // recurses into lazily loaded children.
   void render_folder_tree_node(UIState& ui_state, const fs::path& dir_path,
-      const fs::path& root_path) {
+      const fs::path& root_path, const SpriteAtlas& checkbox_atlas,
+      float checkbox_scale) {
     std::string path_id = path_key(dir_path);
     bool stored_checked = get_checkbox_state(ui_state, path_id);
 
@@ -215,16 +217,25 @@ namespace {
     bool has_children = has_known_children ? !cache_it->second.empty() : true;
 
     std::string display_name = get_display_name_for_path(dir_path);
-    std::string checkbox_id = "##FolderCheck" + path_id;
-
-    ImGui::PushID(checkbox_id.c_str());
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
+    std::string checkbox_id = "FolderCheck" + path_id;
     bool checkbox_value = stored_checked;
-    bool checkbox_clicked = ImGui::Checkbox("", &checkbox_value);
+    bool checkbox_clicked = false;
+    bool using_pixel_checkbox = checkbox_atlas.is_valid();
+    if (using_pixel_checkbox) {
+      checkbox_clicked = draw_pixel_checkbox(checkbox_id.c_str(), checkbox_value,
+        checkbox_atlas, checkbox_scale);
+    } else {
+      ImGui::PushID(checkbox_id.c_str());
+      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
+      checkbox_clicked = ImGui::Checkbox("", &checkbox_value);
+      ImGui::PopStyleColor(4);
+      ImGui::PopStyleVar();
+      ImGui::PopID();
+    }
     bool right_click_exclusive = ImGui::IsItemClicked(ImGuiMouseButton_Right);
     if (right_click_exclusive) {
       fs::path relative = dir_path == root_path ? fs::path() :
@@ -240,9 +251,6 @@ namespace {
       }
       stored_checked = checkbox_value;
     }
-    ImGui::PopStyleColor(4);
-    ImGui::PopStyleVar();
-    ImGui::PopID();
     ImGui::SameLine(0.0f, 4.0f);
 
     std::string tree_label = display_name + "##FolderNode" + path_id;
@@ -270,7 +278,8 @@ namespace {
     if (open) {
       const auto& children = folder_tree_utils::ensure_children_loaded(ui_state, dir_path);
       for (const std::string& child_id : children) {
-        render_folder_tree_node(ui_state, fs::path(child_id), root_path);
+        render_folder_tree_node(ui_state, fs::path(child_id), root_path,
+          checkbox_atlas, checkbox_scale);
       }
     }
 
@@ -323,14 +332,23 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   }
 
   bool root_checked = get_checkbox_state(ui_state, root_path.u8string());
-  ImGui::PushID("RootFolderCheckbox");
-  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
-  ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
   bool root_checkbox_value = root_checked;
-  bool root_clicked = ImGui::Checkbox("", &root_checkbox_value);
+  bool root_clicked = false;
+  if (tree_frame_atlas.is_valid()) {
+    root_clicked = draw_pixel_checkbox("RootFolderCheckbox", root_checkbox_value,
+      tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE);
+  } else {
+    ImGui::PushID("RootFolderCheckbox");
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
+    root_clicked = ImGui::Checkbox("", &root_checkbox_value);
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar();
+    ImGui::PopID();
+  }
   bool root_right_click = ImGui::IsItemClicked(ImGuiMouseButton_Right);
   if (root_right_click) {
     select_path_exclusive(ui_state, root_path, fs::path(), true);
@@ -342,9 +360,6 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
       set_folder_subtree_checked(ui_state, root_path, false);
     }
   }
-  ImGui::PopStyleColor(4);
-  ImGui::PopStyleVar();
-  ImGui::PopID();
   ImGui::SameLine(0.0f, 4.0f);
   float content_width = content_size.x;
   float wrap_width = std::max(0.0f, content_width - ImGui::GetCursorPos().x - 16.0f);
@@ -371,7 +386,8 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   apply_pending_tree_selection(ui_state, root_path);
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
   for (const auto& child : root_subdirectories) {
-    render_folder_tree_node(ui_state, fs::path(child), root_path);
+    render_folder_tree_node(ui_state, fs::path(child), root_path,
+      tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE);
   }
   ImGui::PopStyleVar();
   ui_state.collapse_tree_requested = false;

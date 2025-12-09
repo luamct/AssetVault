@@ -93,6 +93,33 @@ std::string get_relative_path(const std::string& full_path, const std::string& a
   return normalized_full_path;
 }
 
+std::string add_spaces_around_path_separators(const std::string& path) {
+  std::string normalized = normalize_path_separators(path);
+  if (normalized.empty()) {
+    return normalized;
+  }
+
+  std::string spaced;
+  spaced.reserve(normalized.size() * 2);
+  for (char c : normalized) {
+    if (c == '/') {
+      if (!spaced.empty() && spaced.back() != ' ') {
+        spaced.push_back(' ');
+      }
+      spaced.push_back('/');
+      spaced.push_back(' ');
+    } else {
+      spaced.push_back(c);
+    }
+  }
+
+  // Trim trailing space if inserted after final separator
+  while (!spaced.empty() && std::isspace(static_cast<unsigned char>(spaced.back()))) {
+    spaced.pop_back();
+  }
+  return spaced;
+}
+
 std::string format_file_size(uint64_t size_bytes) {
   if (size_bytes >= 1024 * 1024) {
     // Convert to MB

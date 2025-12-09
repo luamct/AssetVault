@@ -196,6 +196,7 @@ void render_search_panel(UIState& ui_state,
   if (settings_popup_active) {
     configure_settings_modal(force_position);
   }
+  ui_state.settings_modal_open = settings_popup_active;
 
   bool dim_color_pushed = false;
   if (settings_popup_active) {
@@ -218,6 +219,10 @@ void render_search_panel(UIState& ui_state,
   if (ImGui::BeginPopupModal(SETTINGS_MODAL_ID, nullptr, SETTINGS_MODAL_FLAGS)) {
     SpriteAtlas modal_atlas = texture_manager.get_ui_elements_atlas();
     ImDrawList* modal_draw_list = ImGui::GetWindowDrawList();
+    if (ui_state.close_settings_modal_requested) {
+      ImGui::CloseCurrentPopup();
+      ui_state.close_settings_modal_requested = false;
+    }
     if (modal_atlas.is_valid() && modal_draw_list != nullptr) {
       static const SlicedSprite modal_frame = make_modal_combined_frame(2.0f);
       ImVec2 window_pos = ImGui::GetWindowPos();
@@ -288,7 +293,11 @@ void render_search_panel(UIState& ui_state,
         Config::set_draw_debug_axes(draw_axes);
       }
       ImGui::SameLine(0.0f, 8.0f);
-      ImGui::TextColored(draw_axes ? Theme::TEXT_DARK : Theme::TEXT_SECONDARY, "Show axes overlay");
+      ImGui::TextColored(draw_axes ? Theme::TEXT_LIGHTER : Theme::TEXT_SECONDARY, "Show axes overlay");
+      if (ImGui::IsItemClicked()) {
+        draw_axes = !draw_axes;
+        Config::set_draw_debug_axes(draw_axes);
+      }
 
       next_row();
       ImGui::TableSetColumnIndex(0);
@@ -303,7 +312,8 @@ void render_search_panel(UIState& ui_state,
         bool toggled = draw_pixel_radio_button(id, selected, modal_atlas, 2.5f);
         ImGui::SameLine(0.0f, 6.0f);
         ImGui::TextColored(selected ? Theme::TEXT_LIGHTER : Theme::TEXT_SECONDARY, "%s", label);
-        return toggled && !selected;
+        bool text_clicked = ImGui::IsItemClicked();
+        return (toggled || text_clicked) && !selected;
       };
       if (draw_projection_option("Orthographic", ortho_selected, "ProjectionOrtho")) {
         projection_pref = Config::CONFIG_VALUE_PROJECTION_ORTHOGRAPHIC;

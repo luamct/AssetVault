@@ -43,9 +43,52 @@ namespace {
       popup_style_pushed = true;
     }
 
-    if (ImGui::BeginPopupModal("Select Assets Directory", nullptr,
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+    bool popup_background_pushed = false;
+    if (popup_open) {
+      ImGui::PushStyleColor(ImGuiCol_PopupBg, Theme::COLOR_TRANSPARENT);
+      ImGui::PushStyleColor(ImGuiCol_Border, Theme::COLOR_TRANSPARENT);
+      popup_background_pushed = true;
+    }
+
+    constexpr ImGuiWindowFlags ASSETS_MODAL_FLAGS =
+      ImGuiWindowFlags_NoCollapse |
+      ImGuiWindowFlags_NoResize |
+      ImGuiWindowFlags_NoTitleBar;
+
+    if (ImGui::BeginPopupModal("Select Assets Directory", nullptr, ASSETS_MODAL_FLAGS)) {
       ui_state.assets_directory_modal_open = true;
+      if (ui_state.close_assets_directory_modal_requested) {
+        ImGui::CloseCurrentPopup();
+        ui_state.close_assets_directory_modal_requested = false;
+      }
+
+      SpriteAtlas modal_atlas = Services::texture_manager().get_ui_elements_atlas();
+      ImDrawList* modal_draw_list = ImGui::GetWindowDrawList();
+      if (modal_atlas.is_valid() && modal_draw_list != nullptr) {
+        static const SlicedSprite modal_frame = make_modal_combined_frame(2.0f);
+        ImVec2 window_pos = ImGui::GetWindowPos();
+        ImVec2 window_size = ImGui::GetWindowSize();
+
+        draw_nine_slice_image(modal_atlas, modal_frame, window_pos, window_size);
+
+        float header_height = modal_frame.border.z * modal_frame.pixel_scale;
+        const char* header_text = "Select Assets Directory";
+        ImFont* header_font = Theme::get_primary_font_large();
+        ImFont* draw_font = header_font ? header_font : ImGui::GetFont();
+        float title_font_size = ImGui::GetFontSize() + 2.0f;
+        ImVec2 text_size = draw_font->CalcTextSizeA(title_font_size, FLT_MAX, 0.0f, header_text);
+        ImVec2 text_pos(
+          window_pos.x + (window_size.x - text_size.x) * 0.5f,
+          window_pos.y + (header_height - text_size.y) * 0.5f - 5.0f);
+        modal_draw_list->AddText(draw_font, title_font_size, text_pos,
+          Theme::ToImU32(Theme::TEXT_LABEL), header_text);
+
+        float content_offset = header_height - ImGui::GetStyle().WindowPadding.y;
+        if (content_offset > 0.0f) {
+          ImGui::SetCursorPosY(ImGui::GetCursorPosY() + content_offset);
+        }
+      }
+
       namespace fs = std::filesystem;
       if (ui_state.assets_path_selected.empty()) {
         ui_state.assets_path_selected = get_home_directory();
@@ -56,26 +99,48 @@ namespace {
       std::string selected_path = !ui_state.assets_path_selected.empty()
         ? ui_state.assets_path_selected
         : get_home_directory();
+      ImVec2 action_button_size(200.0f, 40.0f);
+      const float BUTTON_BOTTOM_MARGIN = 12.0f;
 
-      ImGui::TextColored(Theme::TEXT_LABEL, "Assets directory:");
-      ImGui::SameLine();
-      ImGui::TextWrapped("%s", selected_path.c_str());
-
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::Spacing();
+      ui_state.formatted_assets_path = add_spaces_around_path_separators(selected_path);
+      ImGui::Dummy(ImVec2(0.0f, 12.0f));
+      ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + ImGui::GetContentRegionAvail().x);
+      ImGui::TextColored(Theme::TEXT_LIGHTER, "%s", ui_state.formatted_assets_path.c_str());
+      ImGui::PopTextWrapPos();
+      ImGui::Dummy(ImVec2(0.0f, 12.0f));
 
       if (!fs::exists(current_path, fs_error) || !fs::is_directory(current_path, fs_error)) {
         ImGui::TextColored(Theme::TEXT_WARNING, "Directory unavailable");
       }
       else {
-        std::string display_path = current_path.u8string();
-        ImGui::TextWrapped("%s", display_path.c_str());
-
-        ImGui::Spacing();
-        float list_height = ImGui::GetContentRegionAvail().y - (ImGui::GetFrameHeightWithSpacing() * 2.0f);
-        list_height = std::max(list_height, 160.0f);
-        ImGui::BeginChild("AssetsDirectoryList", ImVec2(0.0f, list_height), true);
+        float list_height = ImGui::GetContentRegionAvail().y - action_button_size.y - BUTTON_BOTTOM_MARGIN;
+        list_height = std::max(list_height, 180.0f);
+        const float LIST_PADDING = 14.0f;
+        SpriteAtlas list_atlas = modal_atlas;
+        ImVec2 list_pos = ImGui::GetCursorScreenPos();
+        ImVec2 list_size(ImGui::GetContentRegionAvail().x, list_height);
+        static const SlicedSprite list_frame = make_8px_frame(1, 2, 2.0f);
+        if (list_atlas.is_valid() && list_size.x > 0.0f && list_size.y > 0.0f) {
+          draw_nine_slice_image(list_atlas, list_frame, list_pos, list_size);
+        }
+        ImVec2 child_pos(
+          list_pos.x + LIST_PADDING,
+          list_pos.y + LIST_PADDING);
+        ImVec2 child_size(
+          std::max(0.0f, list_size.x - LIST_PADDING * 2.0f),
+          std::max(0.0f, list_size.y - LIST_PADDING * 2.0f));
+        ImGui::SetCursorScreenPos(child_pos);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::COLOR_TRANSPARENT);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
+        ScrollbarStyle list_scroll_style;
+        list_scroll_style.pixel_scale = 2.0f;
+        ScrollbarState list_scroll = begin_scrollbar_child(
+          "AssetsDirectoryList",
+          child_size,
+          list_scroll_style,
+          ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
         // Navigate to parent directory
         fs::path parent_path = current_path.parent_path();
@@ -173,12 +238,26 @@ namespace {
           }
         }
 
-        ImGui::EndChild();
+        end_scrollbar_child(list_scroll);
+        ImGui::PopStyleColor(4);
 
-        ImGui::Spacing();
+        SpriteAtlas scrollbar_atlas = Services::texture_manager().get_ui_elements_atlas();
+        if (scrollbar_atlas.is_valid()) {
+          SlicedSprite track_def = make_scrollbar_track_definition(0, list_scroll_style.pixel_scale);
+          SlicedSprite thumb_def = make_scrollbar_thumb_definition(list_scroll_style.pixel_scale);
+          draw_scrollbar_overlay(list_scroll, scrollbar_atlas, track_def, thumb_def);
+        }
+
+        ImGui::SetCursorScreenPos(ImVec2(list_pos.x, list_pos.y + list_size.y));
+        ImGui::Dummy(ImVec2(0.0f, BUTTON_BOTTOM_MARGIN));
       }
 
-      if (ImGui::Button("Select", ImVec2(160.0f, 0.0f))) {
+      const float BUTTON_SPACING = 16.0f;
+      float available_width = ImGui::GetContentRegionAvail().x;
+      float total_width = action_button_size.x * 2.0f + BUTTON_SPACING;
+      float center_offset = std::max(0.0f, (available_width - total_width) * 0.5f);
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center_offset);
+      if (draw_small_frame_button("AssetsSelectButton", "Select", modal_atlas, action_button_size, 3.0f)) {
         if (!ui_state.assets_path_selected.empty() && !ui_state.show_drive_roots) {
           LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
           directory_changed = true;
@@ -186,8 +265,8 @@ namespace {
         ui_state.show_drive_roots = false;
         ImGui::CloseCurrentPopup();
       }
-      ImGui::SameLine();
-      if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f))) {
+      ImGui::SameLine(0.0f, BUTTON_SPACING);
+      if (draw_small_frame_button("AssetsCancelButton", "Cancel", modal_atlas, action_button_size, 3.0f)) {
         ui_state.show_drive_roots = false;
         ImGui::CloseCurrentPopup();
       }
@@ -203,6 +282,9 @@ namespace {
     }
     if (popup_style_pushed) {
       ImGui::PopStyleColor();
+    }
+    if (popup_background_pushed) {
+      ImGui::PopStyleColor(2);
     }
 
     return directory_changed;

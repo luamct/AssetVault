@@ -62,6 +62,10 @@ struct UIState {
   bool show_drive_roots = false;
   bool assets_directory_modal_open = false;
   bool assets_directory_modal_requested = false;
+  bool settings_modal_open = false;
+  bool close_settings_modal_requested = false;
+  bool close_assets_directory_modal_requested = false;
+  std::string formatted_assets_path; // cached path with spaced separators for modal display
 
   // Fast membership check for current results (IDs only)
   std::unordered_set<uint32_t> results_ids;
