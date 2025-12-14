@@ -1,5 +1,0 @@
-Windows Registry Editor Version 5.00
-
-[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\AssetInventory.exe]
-"DumpCount"=dword:00000005
-"DumpType"=dword:00000002

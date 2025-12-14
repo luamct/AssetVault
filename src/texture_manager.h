@@ -37,12 +37,15 @@ typedef unsigned int GLuint;
 struct GLFWwindow;
 struct aiTexture;
 struct SpriteAtlas {
+  unsigned int gl_id = 0;
   ImTextureID texture_id = 0;
   ImVec2 atlas_size = ImVec2(1.0f, 1.0f);
 
   bool is_valid() const {
-    return texture_id != 0 && atlas_size.x > 0.0f && atlas_size.y > 0.0f;
+    return gl_id != 0 && texture_id != 0 && atlas_size.x > 0.0f && atlas_size.y > 0.0f;
   }
+
+  void reset();
 };
 
 // Exception class for thumbnail generation failures
@@ -164,6 +167,7 @@ public:
   void cleanup();
 
   SpriteAtlas get_ui_elements_atlas() const;
+  SpriteAtlas get_ui_icons_atlas() const;
 
   // Asset texture management
   unsigned int load_texture(const char* filename);
@@ -258,11 +262,11 @@ private:
   unsigned int zoom_out_icon_;
   unsigned int settings_icon_;
   unsigned int folder_icon_;
-  unsigned int ui_elements_texture_;
-  int ui_elements_width_;
-  int ui_elements_height_;
+  SpriteAtlas ui_elements_atlas_;
+  SpriteAtlas ui_icons_atlas_;
 
   bool load_ui_elements_atlas();
+  bool load_ui_icons_atlas();
 
 
   // Helper methods

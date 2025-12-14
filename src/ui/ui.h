@@ -24,6 +24,8 @@ struct Asset;
 struct Model;
 struct Camera3D;
 struct Animation2D;
+struct SpriteAtlas;
+struct SlicedSprite;
 
 // Grid zoom levels for the results pane
 enum class ZoomLevel : int {
@@ -137,7 +139,9 @@ void render_clickable_path(const Asset& asset, UIState& ui_state);
 void render_common_asset_info(const Asset& asset, UIState& ui_state);
 
 // Custom audio seek bar widget
-bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width, float height = 4.0f);
+bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width,
+  const SpriteAtlas& atlas, const SlicedSprite& track_frame,
+  const ImVec2& handle_src, const ImVec2& handle_size, float handle_scale = 1.0f);
 
 
 // Main UI panel rendering functions

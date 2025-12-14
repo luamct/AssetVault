@@ -38,12 +38,20 @@ namespace {
 constexpr float THUMBNAIL_SIZE = 240.0f;
 }
 
+void SpriteAtlas::reset() {
+  if (gl_id != 0) {
+    glDeleteTextures(1, &gl_id);
+  }
+  gl_id = 0;
+  texture_id = 0;
+  atlas_size = ImVec2(0.0f, 0.0f);
+}
+
 TextureManager::TextureManager()
   : default_texture_(0), preview_texture_(0), preview_depth_texture_(0),
   preview_framebuffer_(0), preview_initialized_(false),
   play_icon_(0), pause_icon_(0), speaker_icon_(0),
-  zoom_in_icon_(0), zoom_out_icon_(0), settings_icon_(0), folder_icon_(0),
-  ui_elements_texture_(0), ui_elements_width_(0), ui_elements_height_(0) {
+  zoom_in_icon_(0), zoom_out_icon_(0), settings_icon_(0), folder_icon_(0) {
 }
 
 TextureManager::~TextureManager() {
@@ -91,7 +99,12 @@ bool TextureManager::initialize() {
   folder_icon_ = load_packaged_texture("images/folder.png");
 
   if (!load_ui_elements_atlas()) {
-    LOG_WARN("Failed to load pixel UI atlas: images/8x8_ui_elements.png");
+    LOG_ERROR("Failed to load pixel UI atlas: images/8x8_ui_elements.png");
+    return false;
+  }
+  if (!load_ui_icons_atlas()) {
+    LOG_ERROR("Failed to load pixel UI icon sheet: images/8x8_ui_icons.png");
+    return false;
   }
 
   LOG_INFO("TextureManager initialized successfully");
@@ -134,12 +147,8 @@ void TextureManager::cleanup_all_textures() {
   if (zoom_out_icon_ != 0) glDeleteTextures(1, &zoom_out_icon_);
   if (settings_icon_ != 0) glDeleteTextures(1, &settings_icon_);
   if (folder_icon_ != 0) glDeleteTextures(1, &folder_icon_);
-  if (ui_elements_texture_ != 0) {
-    glDeleteTextures(1, &ui_elements_texture_);
-    ui_elements_texture_ = 0;
-    ui_elements_width_ = 0;
-    ui_elements_height_ = 0;
-  }
+  ui_elements_atlas_.reset();
+  ui_icons_atlas_.reset();
 
   std::vector<std::shared_ptr<Animation2D>> animations;
   {
@@ -346,16 +355,51 @@ bool TextureManager::load_ui_elements_atlas() {
     return false;
   }
 
-  ui_elements_width_ = texture_data.width;
-  ui_elements_height_ = texture_data.height;
-
   TextureParameters params = TextureParameters::ui_texture();
-  ui_elements_texture_ = create_opengl_texture(texture_data, params);
-  if (ui_elements_texture_ == 0) {
-    ui_elements_width_ = 0;
-    ui_elements_height_ = 0;
+  unsigned int gl_id = create_opengl_texture(texture_data, params);
+  if (gl_id == 0) {
+    ui_elements_atlas_.reset();
     return false;
   }
+
+  ui_elements_atlas_.gl_id = gl_id;
+  ui_elements_atlas_.texture_id = (ImTextureID) (intptr_t) gl_id;
+  ui_elements_atlas_.atlas_size = ImVec2(
+    static_cast<float>(texture_data.width),
+    static_cast<float>(texture_data.height));
+
+  return true;
+}
+
+bool TextureManager::load_ui_icons_atlas() {
+  const auto embedded = embedded_assets::get("images/8x8_ui_icons.png");
+  if (!embedded.has_value()) {
+    LOG_ERROR("[TextureManager] Embedded UI icons not found: images/8x8_ui_icons.png");
+    return false;
+  }
+
+  TextureData texture_data = load_texture_data_from_memory(
+    embedded->data,
+    static_cast<int>(embedded->size),
+    "images/8x8_ui_icons.png");
+
+  if (!texture_data.is_valid()) {
+    LOG_ERROR("[TextureManager] Failed to decode UI icons texture");
+    return false;
+  }
+
+  TextureParameters params = TextureParameters::ui_texture();
+  unsigned int gl_id = create_opengl_texture(texture_data, params);
+  if (gl_id == 0) {
+    ui_icons_atlas_.reset();
+    return false;
+  }
+
+  ui_icons_atlas_.gl_id = gl_id;
+  ui_icons_atlas_.texture_id = (ImTextureID) (intptr_t) gl_id;
+  ui_icons_atlas_.atlas_size = ImVec2(
+    static_cast<float>(texture_data.width),
+    static_cast<float>(texture_data.height));
 
   return true;
 }
@@ -1233,10 +1277,9 @@ void TextureManager::print_texture_cache(const std::string& assets_root_director
 }
 
 SpriteAtlas TextureManager::get_ui_elements_atlas() const {
-  SpriteAtlas atlas;
-  atlas.texture_id = (ImTextureID) (intptr_t) ui_elements_texture_;
-  atlas.atlas_size = ImVec2(
-    static_cast<float>(ui_elements_width_),
-    static_cast<float>(ui_elements_height_));
-  return atlas;
+  return ui_elements_atlas_;
+}
+
+SpriteAtlas TextureManager::get_ui_icons_atlas() const {
+  return ui_icons_atlas_;
 }

@@ -50,6 +50,18 @@ static std::string uppercase_copy(std::string text) {
   return text;
 }
 
+// Pixel assets for audio controls (from images/8x8_ui_elements.png)
+static const SlicedSprite AUDIO_TRACK_FRAME(
+  ImVec2(72.0f, 48.0f),   // source pos (second variant, 8px lower)
+  ImVec2(20.0f, 8.0f),    // source size
+  ImVec4(3.0f, 3.0f, 3.0f, 3.0f),
+  2.0f);                  // pixel scale
+static const ImVec2 AUDIO_HANDLE_SRC(112.0f, 64.0f);
+static const ImVec2 AUDIO_HANDLE_SIZE(16.0f, 16.0f);
+static constexpr float AUDIO_HANDLE_SCALE = 1.75f; // Slightly larger than track for overlap
+static const ImVec2 AUDIO_VOLUME_ICON_SRC(0.0f, 24.0f);
+static const ImVec2 AUDIO_VOLUME_ICON_SIZE(8.0f, 8.0f);
+
 
 static ImVec4 get_type_tag_color(AssetType type) {
   switch (type) {
@@ -322,24 +334,26 @@ void append_common_asset_rows(const Asset& asset, UIState& ui_state,
   ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
   rows.emplace_back("Modified", ss.str());
 }
-// Custom slider component for audio seek bar
-bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width, float height) {
-  ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+// Custom slider component for audio seek bar using pixel art track + handle
+bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width,
+  const SpriteAtlas& atlas, const SlicedSprite& track_frame,
+  const ImVec2& handle_src, const ImVec2& handle_size, float handle_scale) {
+  IM_ASSERT(atlas.is_valid() && "Audio seek bar requires a valid sprite atlas");
 
-  // Calculate dimensions
-  const float handle_radius = height * 2.0f; // Circle handle is ~4x the line height
-  const ImVec2 size(width, handle_radius * 2.0f);
+  const float track_height = track_frame.source_size.y * track_frame.pixel_scale;
+  ImVec2 handle_draw_size(handle_size.x * handle_scale, handle_size.y * handle_scale);
+  const float button_height = std::max(track_height, handle_draw_size.y);
+  ImVec2 button_size(width, button_height);
 
-  // Create invisible button for interaction
-  ImGui::InvisibleButton(id, size);
-  bool hovered = ImGui::IsItemHovered();
+  ImGui::InvisibleButton(id, button_size);
   bool active = ImGui::IsItemActive();
+  ImVec2 button_min = ImGui::GetItemRectMin();
 
   // Calculate value based on mouse position when dragging
   bool value_changed = false;
   if (active) {
     ImVec2 mouse_pos = ImGui::GetMousePos();
-    float mouse_x = mouse_pos.x - cursor_pos.x;
+    float mouse_x = mouse_pos.x - button_min.x;
     float new_value = (mouse_x / width) * (max_value - min_value) + min_value;
     if (new_value < min_value) new_value = min_value;
     if (new_value > max_value) new_value = max_value;
@@ -351,50 +365,29 @@ bool audio_seek_bar(const char* id, float* value, float min_value, float max_val
 
   // Calculate current position
   float position_ratio = (max_value > min_value) ? (*value - min_value) / (max_value - min_value) : 0.0f;
-  if (position_ratio < 0.0f) position_ratio = 0.0f;
-  if (position_ratio > 1.0f) position_ratio = 1.0f;
-  float handle_x = cursor_pos.x + position_ratio * width;
+  position_ratio = std::clamp(position_ratio, 0.0f, 1.0f);
+  float handle_center_x = button_min.x + position_ratio * width;
 
-  // Colors
-  const ImU32 line_color_played = ImGui::GetColorU32(ImVec4(0.3f, 0.3f, 0.3f, 1.0f));    // Darker line (played portion - before handle)
-  const ImU32 line_color_unplayed = ImGui::GetColorU32(ImVec4(0.7f, 0.7f, 0.7f, 1.0f));  // Lighter line (unplayed portion - after handle)
-  const ImU32 handle_color = hovered || active ?
-    ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)) :    // White when hovered/active
-    ImGui::GetColorU32(ImVec4(0.9f, 0.9f, 0.9f, 1.0f));     // Light gray normally
+  // Draw the track using the atlas frame
+  ImVec2 track_pos(
+    button_min.x,
+    button_min.y + (button_height - track_height) * 0.5f);
+  draw_nine_slice_image(atlas, track_frame, track_pos, ImVec2(width, track_height));
 
-  // Draw the seek bar
+  // Draw handle
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (draw_list) {
+    ImVec2 handle_min(
+      handle_center_x - handle_draw_size.x * 0.5f,
+      button_min.y + (button_height - handle_draw_size.y) * 0.5f);
+    ImVec2 handle_max(handle_min.x + handle_draw_size.x, handle_min.y + handle_draw_size.y);
 
-  // Line center Y position
-  float line_y = cursor_pos.y + size.y * 0.5f;
-
-  // Draw played portion (left of handle) - darker
-  if (position_ratio > 0.0f) {
-    draw_list->AddRectFilled(
-      ImVec2(cursor_pos.x, line_y - height * 0.5f),
-      ImVec2(handle_x, line_y + height * 0.5f),
-      line_color_played,
-      height * 0.5f
-    );
+    ImVec2 uv_min(handle_src.x / atlas.atlas_size.x, handle_src.y / atlas.atlas_size.y);
+    ImVec2 uv_max(
+      (handle_src.x + handle_size.x) / atlas.atlas_size.x,
+      (handle_src.y + handle_size.y) / atlas.atlas_size.y);
+    draw_list->AddImage(atlas.texture_id, handle_min, handle_max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
   }
-
-  // Draw unplayed portion (right of handle) - lighter
-  if (position_ratio < 1.0f) {
-    draw_list->AddRectFilled(
-      ImVec2(handle_x, line_y - height * 0.5f),
-      ImVec2(cursor_pos.x + width, line_y + height * 0.5f),
-      line_color_unplayed,
-      height * 0.5f
-    );
-  }
-
-  // Draw circular handle
-  draw_list->AddCircleFilled(
-    ImVec2(handle_x, line_y),
-    handle_radius,
-    handle_color,
-    16  // Number of segments for smooth circle
-  );
 
   return value_changed;
 }
@@ -431,9 +424,8 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
   ImVec2 frame_size(panel_width, std::max(0.0f, panel_height));
-  if (preview_frame_atlas.is_valid()) {
-    draw_nine_slice_image(preview_frame_atlas, preview_frame_definition, frame_pos, frame_size);
-  }
+  IM_ASSERT(preview_frame_atlas.is_valid() && "UI elements atlas missing");
+  draw_nine_slice_image(preview_frame_atlas, preview_frame_definition, frame_pos, frame_size);
 
   ImVec2 content_pos(
     frame_pos.x + PREVIEW_FRAME_MARGIN,
@@ -693,25 +685,54 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           char buffer[16];
           snprintf(buffer, sizeof(buffer), "%02d:%02d", mins, secs);
           return std::string(buffer);
-          };
+        };
 
         // Create a single row with all controls
         ImGui::BeginGroup();
 
-        // 1. Square Play/Pause button with transparent background
+        // 1. Square Play/Pause button with pixel frame + atlas icon
         const float button_size = 32.0f;
+        const ImVec2 icon_src_size(8.0f, 8.0f);
+        const ImVec2 play_icon_src(0.0f, 48.0f);
+        const ImVec2 pause_icon_src(40.0f, 56.0f);
+        const float icon_scale = 2.25f; // ~25% smaller than default
+        SpriteAtlas icon_atlas = texture_manager.get_ui_icons_atlas();
+        IM_ASSERT(icon_atlas.is_valid() && "UI icon atlas missing");
+        IM_ASSERT(preview_frame_atlas.is_valid() && "UI elements atlas missing");
+        static const SlicedSprite audio_button_frame = make_8px_frame(1, 3, 2.0f); // variant 3 for button frame
 
         // Store the baseline Y position BEFORE drawing the button for proper alignment
         float baseline_y = ImGui::GetCursorPosY();
 
-        unsigned int icon_texture = is_playing ? texture_manager.get_pause_icon() : texture_manager.get_play_icon();
+        ImVec2 button_size_vec(button_size, button_size);
+        ImGui::InvisibleButton("##PlayPause", button_size_vec);
+        bool button_clicked = ImGui::IsItemClicked();
+        bool button_hovered = ImGui::IsItemHovered();
+        ImVec2 button_min = ImGui::GetItemRectMin();
 
-        // Make button background transparent
-        ImGui::PushStyleColor(ImGuiCol_Button, Theme::COLOR_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.8f, 0.8f, 0.1f)); // Very light hover
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.7f, 0.7f, 0.2f));  // Light press
+        ImU32 frame_tint = button_hovered
+          ? Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80)
+          : Theme::COLOR_WHITE_U32;
+        draw_nine_slice_image(preview_frame_atlas, audio_button_frame, button_min, button_size_vec, frame_tint);
 
-        if (ImGui::ImageButton("##PlayPause", (ImTextureID) (intptr_t) icon_texture, ImVec2(button_size, button_size))) {
+        ImVec2 button_center(
+          button_min.x + button_size_vec.x * 0.5f,
+          button_min.y + button_size_vec.y * 0.5f);
+        ImVec2 icon_half_size(icon_src_size.x * icon_scale * 0.5f, icon_src_size.y * icon_scale * 0.5f);
+        ImVec2 icon_min(button_center.x - icon_half_size.x, button_center.y - icon_half_size.y);
+        ImVec2 icon_max(button_center.x + icon_half_size.x, button_center.y + icon_half_size.y);
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        if (draw_list) {
+          const ImVec2& src_pos = is_playing ? pause_icon_src : play_icon_src;
+          ImVec2 uv_min(src_pos.x / icon_atlas.atlas_size.x, src_pos.y / icon_atlas.atlas_size.y);
+          ImVec2 uv_max(
+            (src_pos.x + icon_src_size.x) / icon_atlas.atlas_size.x,
+            (src_pos.y + icon_src_size.y) / icon_atlas.atlas_size.y);
+          draw_list->AddImage(icon_atlas.texture_id, icon_min, icon_max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
+        }
+
+        if (button_clicked) {
           if (is_playing) {
             Services::audio_manager().pause();
           }
@@ -720,12 +741,11 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           }
         }
 
-        ImGui::PopStyleColor(3);
-
         ImGui::SameLine(0, 8); // 8px spacing
 
         // 2. Current timestamp
-        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - 6.0);
+        float text_center_y = baseline_y + (button_size - ImGui::GetTextLineHeight()) * 0.5f - 3.0f;
+        ImGui::SetCursorPosY(text_center_y);
         ImGui::Text("%s", format_time(position).c_str());
 
         ImGui::SameLine(0, 16);
@@ -738,12 +758,15 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           seek_position = position;
         }
 
-        const float seek_bar_width = 120.0f;
-        const float seek_bar_height = 4.0f; // Thin line height
+        const float seek_bar_width = 110.0f;
+        const float seek_bar_height = std::max(
+          AUDIO_TRACK_FRAME.source_size.y * AUDIO_TRACK_FRAME.pixel_scale,
+          AUDIO_HANDLE_SIZE.y * AUDIO_HANDLE_SCALE);
 
         // Use our custom seek bar - vertically centered
-        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - seek_bar_height); // Center based on handle radius
-        bool seek_changed = audio_seek_bar("##CustomSeek", &seek_position, 0.0f, duration, seek_bar_width, seek_bar_height);
+        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - (seek_bar_height * 0.5f));
+        bool seek_changed = audio_seek_bar("##CustomSeek", &seek_position, 0.0f, duration, seek_bar_width,
+          preview_frame_atlas, AUDIO_TRACK_FRAME, AUDIO_HANDLE_SRC, AUDIO_HANDLE_SIZE, AUDIO_HANDLE_SCALE);
 
         if (seek_changed) {
           seeking = true;
@@ -755,29 +778,41 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           seeking = false;
         }
 
-        ImGui::SameLine(0, 12);
+        ImGui::SameLine(0, 7);
 
         // 4. Total duration
-        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - 6.0f);
+        ImGui::SetCursorPosY(text_center_y);
         ImGui::Text("%s", format_time(duration).c_str());
 
         ImGui::SameLine(0, 12);
 
         // 5. Speaker icon - vertically centered
-        const float icon_size = 24.0f;
-        ImGui::SetCursorPosY(baseline_y + (button_size - 0.5 * icon_size) * 0.5f);
-        ImGui::Image((ImTextureID) (intptr_t) texture_manager.get_speaker_icon(), ImVec2(icon_size, icon_size));
+        const float volume_icon_scale = 2.0f;
+        ImVec2 volume_icon_size(AUDIO_VOLUME_ICON_SIZE.x * volume_icon_scale, AUDIO_VOLUME_ICON_SIZE.y * volume_icon_scale);
+        ImGui::SetCursorPosY(baseline_y + (button_size - volume_icon_size.y) * 0.5f);
+        ImVec2 volume_icon_min = ImGui::GetCursorScreenPos();
+        ImVec2 volume_icon_max(volume_icon_min.x + volume_icon_size.x, volume_icon_min.y + volume_icon_size.y);
+        ImVec2 volume_uv_min(
+          AUDIO_VOLUME_ICON_SRC.x / icon_atlas.atlas_size.x,
+          AUDIO_VOLUME_ICON_SRC.y / icon_atlas.atlas_size.y);
+        ImVec2 volume_uv_max(
+          (AUDIO_VOLUME_ICON_SRC.x + AUDIO_VOLUME_ICON_SIZE.x) / icon_atlas.atlas_size.x,
+          (AUDIO_VOLUME_ICON_SRC.y + AUDIO_VOLUME_ICON_SIZE.y) / icon_atlas.atlas_size.y);
+        if (ImDrawList* draw_list_volume = ImGui::GetWindowDrawList()) {
+          draw_list_volume->AddImage(icon_atlas.texture_id, volume_icon_min, volume_icon_max, volume_uv_min, volume_uv_max, Theme::COLOR_WHITE_U32);
+        }
+        ImGui::Dummy(volume_icon_size);
 
         ImGui::SameLine(0, 6);
 
         // 6. Volume slider - custom horizontal seek bar style
         static float audio_volume = 0.5f; // Start at 50%
         const float volume_width = 60.0f;  // Small horizontal slider
-        const float volume_height = 3.0f;   // Thinner than seek bar
 
-        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f);
+        ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - (seek_bar_height * 0.5f));
 
-        if (audio_seek_bar("##VolumeBar", &audio_volume, 0.0f, 1.0f, volume_width, volume_height)) {
+        if (audio_seek_bar("##VolumeBar", &audio_volume, 0.0f, 1.0f, volume_width,
+          preview_frame_atlas, AUDIO_TRACK_FRAME, AUDIO_HANDLE_SRC, AUDIO_HANDLE_SIZE, AUDIO_HANDLE_SCALE)) {
           Services::audio_manager().set_volume(audio_volume);
         }
 
@@ -786,15 +821,46 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           ImGui::SetTooltip("Volume: %d%%", (int) (audio_volume * 100));
         }
 
+        ImGui::SameLine(0, 10);
+
+        // 7. Auto toggle button with play icon
+        const float auto_button_size = 28.0f;
+        ImVec2 auto_button_size_vec(auto_button_size, auto_button_size);
+        ImVec2 auto_button_pos = ImGui::GetCursorPos();
+        auto_button_pos.y = baseline_y + (button_size - auto_button_size) * 0.5f;
+        ImGui::SetCursorPos(auto_button_pos);
+
+        ImGui::InvisibleButton("##AutoPlayToggle", auto_button_size_vec);
+        bool auto_clicked = ImGui::IsItemClicked();
+        ImVec2 auto_button_min = ImGui::GetItemRectMin();
+        ImVec2 auto_button_center(
+          auto_button_min.x + auto_button_size_vec.x * 0.5f,
+          auto_button_min.y + auto_button_size_vec.y * 0.5f);
+
+        const bool auto_active = ui_state.auto_play_audio;
+        ImVec4 auto_tint_vec = auto_active ? ImVec4(0.35f, 0.75f, 0.45f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        ImU32 auto_tint = Theme::ToImU32(auto_tint_vec);
+        static const SlicedSprite auto_button_frame = make_8px_frame(2, 3, 2.0f); // variant 3 frame
+        draw_nine_slice_image(preview_frame_atlas, auto_button_frame, auto_button_min, auto_button_size_vec, auto_tint);
+
+        const float auto_icon_scale = 1.5f; // smaller than main play/pause
+        ImVec2 auto_icon_half(icon_src_size.x * auto_icon_scale * 0.5f, icon_src_size.y * auto_icon_scale * 0.5f);
+        ImVec2 auto_icon_min(auto_button_center.x - auto_icon_half.x, auto_button_center.y - auto_icon_half.y);
+        ImVec2 auto_icon_max(auto_button_center.x + auto_icon_half.x, auto_button_center.y + auto_icon_half.y);
+        ImVec2 auto_uv_min(play_icon_src.x / icon_atlas.atlas_size.x, play_icon_src.y / icon_atlas.atlas_size.y);
+        ImVec2 auto_uv_max(
+          (play_icon_src.x + icon_src_size.x) / icon_atlas.atlas_size.x,
+          (play_icon_src.y + icon_src_size.y) / icon_atlas.atlas_size.y);
+        if (ImDrawList* draw_list_auto = ImGui::GetWindowDrawList()) {
+          draw_list_auto->AddImage(icon_atlas.texture_id, auto_icon_min, auto_icon_max, auto_uv_min, auto_uv_max, auto_tint);
+        }
+
+        if (auto_clicked) {
+          ui_state.auto_play_audio = !ui_state.auto_play_audio;
+        }
+
         ImGui::EndGroup();
 
-        // Auto-play checkbox below the player
-        ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
-        ImGui::Checkbox("Auto-play", &ui_state.auto_play_audio);
-        ImGui::PopStyleColor(3);
       }
 
       render_attribute_rows(detail_rows, texture_manager);

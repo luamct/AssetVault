@@ -60,27 +60,20 @@ def parse_args() -> argparse.Namespace:
   return parser.parse_args()
 
 
-def compute_block_size(width: int, height: int, target_size: int) -> int:
-  if width != height:
-    raise ValueError(f"input image must be square, got {width}x{height}")
-  if width % target_size != 0:
-    raise ValueError(
-        f"image size {width} is not divisible by target size {target_size}"
-    )
-  return width // target_size
-
-
-def sample_centers(
-    image: Image.Image, target_size: int, block_size: int
-) -> List[Color]:
+def sample_centers(image: Image.Image, target_size: int) -> List[Color]:
+  """Sample a grid of centers even if the source size is not an exact multiple."""
   pixels = image.load()
   samples: List[Color] = []
-  center_offset = block_size // 2
+
+  step_x = image.width / float(target_size)
+  step_y = image.height / float(target_size)
 
   for y_index in range(target_size):
     for x_index in range(target_size):
-      x = x_index * block_size + center_offset
-      y = y_index * block_size + center_offset
+      x = int((x_index + 0.5) * step_x)
+      y = int((y_index + 0.5) * step_y)
+      x = min(max(x, 0), image.width - 1)
+      y = min(max(y, 0), image.height - 1)
       samples.append(pixels[x, y])
 
   return samples
@@ -131,8 +124,7 @@ def downscale(
     input_path: pathlib.Path, output_path: pathlib.Path, target_size: int, tolerance: float
 ) -> None:
   image = Image.open(input_path).convert("RGBA")
-  block_size = compute_block_size(image.width, image.height, target_size)
-  centers = sample_centers(image, target_size, block_size)
+  centers = sample_centers(image, target_size)
   merged = merge_palette(centers, tolerance)
   write_output(output_path, target_size, merged)
 
