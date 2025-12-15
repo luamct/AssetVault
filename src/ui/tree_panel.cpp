@@ -20,6 +20,7 @@ namespace {
   constexpr float TREE_CHECKBOX_PIXEL_SCALE = 2.0f;
   constexpr float TREE_LABEL_SPACING = 0.0f;
   constexpr float TREE_LABEL_GAP_REDUCTION = 24.0f;
+  constexpr float TREE_TEXT_OFFSET_Y = -3.0f;
 
   bool draw_folder_checkbox(const char* id, bool& value,
       const SpriteAtlas& atlas, float pixel_scale) {
@@ -292,7 +293,7 @@ namespace {
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     if (draw_list) {
-      float text_y = item_min.y + (item_max.y - item_min.y - ImGui::GetFontSize()) * 0.5f;
+      float text_y = item_min.y + (item_max.y - item_min.y - ImGui::GetFontSize()) * 0.5f + TREE_TEXT_OFFSET_Y;
       float text_x = item_min.x + label_spacing;
       draw_list->AddText(ImVec2(text_x, text_y), Theme::ToImU32(Theme::TEXT_LABEL),
         display_name.c_str());
@@ -386,13 +387,9 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   ImGui::InvisibleButton("AssetsDirHeader", header_size);
   ImVec2 header_min = ImGui::GetItemRectMin();
   ImVec2 header_max = ImGui::GetItemRectMax();
-  bool header_hovered = ImGui::IsItemHovered();
-  bool header_active = ImGui::IsItemActive();
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  if (draw_list) {
-    ImGuiCol bg_col = header_active ? ImGuiCol_HeaderActive :
-      (header_hovered ? ImGuiCol_HeaderHovered : ImGuiCol_Header);
-    draw_list->AddRectFilled(header_min, header_max, ImGui::GetColorU32(bg_col));
+  if (ImGui::IsItemHovered()) {
+    draw_list->AddRectFilled(header_min, header_max, ImGui::GetColorU32(ImGuiCol_HeaderHovered));
   }
   
   bool click_assets_dir = ImGui::IsItemClicked();
@@ -400,7 +397,7 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
     ui_state.assets_directory_modal_requested = true;
   }
   if (draw_list) {
-    float text_y = header_min.y + (header_max.y - header_min.y - ImGui::GetFontSize()) * 0.5f;
+    float text_y = header_min.y + (header_max.y - header_min.y - ImGui::GetFontSize()) * 0.5f + TREE_TEXT_OFFSET_Y;
     float text_x = header_min.x + label_spacing;
     draw_list->AddText(ImVec2(text_x, text_y), Theme::ToImU32(Theme::TEXT_LABEL),
       assets_label.c_str());
