@@ -311,6 +311,7 @@ void reset_folder_tree_state(UIState& ui_state) {
   ui_state.collapse_tree_requested = false;
   ui_state.folder_checkbox_states.clear();
   ui_state.folder_children_cache.clear();
+  ui_state.folder_filters_dirty = true;
   ui_state.path_filters.clear();
   ui_state.path_filter_active = false;
   ui_state.folder_selection_covers_all = true;

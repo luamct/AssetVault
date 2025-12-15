@@ -17,7 +17,29 @@ namespace fs = std::filesystem;
 namespace {
 
   constexpr float TREE_FRAME_MARGIN = 16.0f;
-  constexpr float TREE_CHECKBOX_PIXEL_SCALE = 2.5f;
+  constexpr float TREE_CHECKBOX_PIXEL_SCALE = 2.0f;
+  constexpr float TREE_LABEL_SPACING = 0.0f;
+  constexpr float TREE_LABEL_GAP_REDUCTION = 24.0f;
+
+  bool draw_folder_checkbox(const char* id, bool& value,
+      const SpriteAtlas& atlas, float pixel_scale) {
+    if (atlas.is_valid()) {
+      return draw_pixel_checkbox(id, value, atlas, pixel_scale);
+    }
+
+    ImGui::PushID(id);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
+    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
+    bool clicked = ImGui::Checkbox("", &value);
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar();
+    ImGui::PopID();
+    return clicked;
+  }
+
 
   std::string get_display_name_for_path(const fs::path& path) {
     std::string name = path.filename().u8string();
@@ -96,6 +118,7 @@ namespace {
   // Marks the supplied folder and every cached descendant as checked/unchecked
   // without touching ancestors; does not load children lazily.
   void set_folder_subtree_checked(UIState& ui_state, const fs::path& dir_path, bool checked) {
+    ui_state.folder_filters_dirty = true;
     std::string path_id = path_key(dir_path);
     ui_state.folder_checkbox_states[path_id] = checked;
 
@@ -117,6 +140,7 @@ namespace {
       return;
     }
 
+    ui_state.folder_filters_dirty = true;
     fs::path current = dir_path;
     while (true) {
       current = current.parent_path();
@@ -138,6 +162,7 @@ namespace {
   // for user actions that should affect parents and visible descendants.
   void set_folder_checked_with_relatives(UIState& ui_state, const fs::path& dir_path,
       const fs::path& root_path, bool include_loaded_children) {
+    ui_state.folder_filters_dirty = true;
     if (include_loaded_children) {
       set_folder_subtree_checked(ui_state, dir_path, true);
     } else {
@@ -151,6 +176,7 @@ namespace {
   // Convenience helper used by exclusive selection flows to reset all
   // checkboxes without discarding cached nodes.
   void clear_all_folder_checks(UIState& ui_state) {
+    ui_state.folder_filters_dirty = true;
     for (auto& entry : ui_state.folder_checkbox_states) {
       entry.second = false;
     }
@@ -208,7 +234,7 @@ namespace {
   // recurses into lazily loaded children.
   void render_folder_tree_node(UIState& ui_state, const fs::path& dir_path,
       const fs::path& root_path, const SpriteAtlas& checkbox_atlas,
-      float checkbox_scale) {
+      float checkbox_scale, float label_spacing) {
     std::string path_id = path_key(dir_path);
     bool stored_checked = get_checkbox_state(ui_state, path_id);
 
@@ -219,23 +245,10 @@ namespace {
     std::string display_name = get_display_name_for_path(dir_path);
     std::string checkbox_id = "FolderCheck" + path_id;
     bool checkbox_value = stored_checked;
-    bool checkbox_clicked = false;
-    bool using_pixel_checkbox = checkbox_atlas.is_valid();
-    if (using_pixel_checkbox) {
-      checkbox_clicked = draw_pixel_checkbox(checkbox_id.c_str(), checkbox_value,
-        checkbox_atlas, checkbox_scale);
-    } else {
-      ImGui::PushID(checkbox_id.c_str());
-      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
-      ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
-      ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
-      checkbox_clicked = ImGui::Checkbox("", &checkbox_value);
-      ImGui::PopStyleColor(4);
-      ImGui::PopStyleVar();
-      ImGui::PopID();
-    }
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 3.0f));
+    bool checkbox_clicked = draw_folder_checkbox(checkbox_id.c_str(),
+      checkbox_value, checkbox_atlas, checkbox_scale);
+    ImGui::PopStyleVar();
     bool right_click_exclusive = ImGui::IsItemClicked(ImGuiMouseButton_Right);
     if (right_click_exclusive) {
       fs::path relative = dir_path == root_path ? fs::path() :
@@ -251,15 +264,16 @@ namespace {
       }
       stored_checked = checkbox_value;
     }
-    ImGui::SameLine(0.0f, 4.0f);
+    ImGui::SameLine(0.0f, TREE_LABEL_SPACING);
 
     std::string tree_label = display_name + "##FolderNode" + path_id;
     ImGuiTreeNodeFlags node_flags = 0;
     if (has_known_children && !has_children) {
       node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
+    node_flags |= ImGuiTreeNodeFlags_SpanAvailWidth;
 
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 3.0f));
     bool path_should_open = false;
     auto open_it = ui_state.tree_nodes_to_open.find(path_id);
     if (open_it != ui_state.tree_nodes_to_open.end()) {
@@ -270,7 +284,19 @@ namespace {
     if (ui_state.collapse_tree_requested && !path_should_open) {
       ImGui::SetNextItemOpen(false, ImGuiCond_Always);
     }
+    ImGui::PushStyleColor(ImGuiCol_Text, Theme::COLOR_TRANSPARENT);
     bool open = ImGui::TreeNodeEx(tree_label.c_str(), node_flags);
+    ImVec2 item_min = ImGui::GetItemRectMin();
+    ImVec2 item_max = ImGui::GetItemRectMax();
+    ImGui::PopStyleColor();
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    if (draw_list) {
+      float text_y = item_min.y + (item_max.y - item_min.y - ImGui::GetFontSize()) * 0.5f;
+      float text_x = item_min.x + label_spacing;
+      draw_list->AddText(ImVec2(text_x, text_y), Theme::ToImU32(Theme::TEXT_LABEL),
+        display_name.c_str());
+    }
     ImGui::PopStyleVar();
 
     bool should_tree_pop = open && (node_flags & ImGuiTreeNodeFlags_NoTreePushOnOpen) == 0;
@@ -279,7 +305,7 @@ namespace {
       const auto& children = folder_tree_utils::ensure_children_loaded(ui_state, dir_path);
       for (const std::string& child_id : children) {
         render_folder_tree_node(ui_state, fs::path(child_id), root_path,
-          checkbox_atlas, checkbox_scale);
+          checkbox_atlas, checkbox_scale, label_spacing);
       }
     }
 
@@ -293,6 +319,8 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
     float panel_width, float panel_height) {
   SpriteAtlas tree_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite tree_frame_definition = make_16px_frame(1, 3.0f);
+  float label_spacing = std::max(0.0f, ImGui::GetTreeNodeToLabelSpacing() - TREE_LABEL_GAP_REDUCTION);
+  float indent_spacing = ImGui::GetStyle().IndentSpacing * 0.5f;
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
   if (tree_frame_atlas.is_valid()) {
@@ -333,22 +361,10 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
 
   bool root_checked = get_checkbox_state(ui_state, root_path.u8string());
   bool root_checkbox_value = root_checked;
-  bool root_clicked = false;
-  if (tree_frame_atlas.is_valid()) {
-    root_clicked = draw_pixel_checkbox("RootFolderCheckbox", root_checkbox_value,
-      tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE);
-  } else {
-    ImGui::PushID("RootFolderCheckbox");
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
-    root_clicked = ImGui::Checkbox("", &root_checkbox_value);
-    ImGui::PopStyleColor(4);
-    ImGui::PopStyleVar();
-    ImGui::PopID();
-  }
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 3.0f));
+  bool root_clicked = draw_folder_checkbox("RootFolderCheckbox",
+    root_checkbox_value, tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE);
+  ImGui::PopStyleVar();
   bool root_right_click = ImGui::IsItemClicked(ImGuiMouseButton_Right);
   if (root_right_click) {
     select_path_exclusive(ui_state, root_path, fs::path(), true);
@@ -360,14 +376,38 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
       set_folder_subtree_checked(ui_state, root_path, false);
     }
   }
-  ImGui::SameLine(0.0f, 4.0f);
-  float content_width = content_size.x;
-  float wrap_width = std::max(0.0f, content_width - ImGui::GetCursorPos().x - 16.0f);
-  ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + wrap_width);
-  ImGui::TextColored(Theme::TEXT_LABEL, "%s", ui_state.assets_directory.c_str());
-  ImGui::PopTextWrapPos();
+  ImGui::SameLine(0.0f, TREE_LABEL_SPACING);
+  std::string assets_label = get_display_name_for_path(root_path);
+  ImVec2 header_start = ImGui::GetCursorScreenPos();
+  float header_height = ImGui::GetFrameHeight();
+  ImVec2 header_size(
+    std::max(0.0f, content_size.x - (header_start.x - content_pos.x)),
+    header_height);
+  ImGui::InvisibleButton("AssetsDirHeader", header_size);
+  ImVec2 header_min = ImGui::GetItemRectMin();
+  ImVec2 header_max = ImGui::GetItemRectMax();
+  bool header_hovered = ImGui::IsItemHovered();
+  bool header_active = ImGui::IsItemActive();
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  if (draw_list) {
+    ImGuiCol bg_col = header_active ? ImGuiCol_HeaderActive :
+      (header_hovered ? ImGuiCol_HeaderHovered : ImGuiCol_Header);
+    draw_list->AddRectFilled(header_min, header_max, ImGui::GetColorU32(bg_col));
+  }
+  
+  bool click_assets_dir = ImGui::IsItemClicked();
+  if (click_assets_dir) {
+    ui_state.assets_directory_modal_requested = true;
+  }
+  if (draw_list) {
+    float text_y = header_min.y + (header_max.y - header_min.y - ImGui::GetFontSize()) * 0.5f;
+    float text_x = header_min.x + label_spacing;
+    draw_list->AddText(ImVec2(text_x, text_y), Theme::ToImU32(Theme::TEXT_LABEL),
+      assets_label.c_str());
+  }
   ImGui::Separator();
 
+  ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, indent_spacing);
   ScrollbarStyle scrollbar_style;
   scrollbar_style.pixel_scale = 2.0f;
   ScrollbarState scrollbar_state = begin_scrollbar_child(
@@ -384,31 +424,35 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
 
   const auto& root_subdirectories = folder_tree_utils::ensure_children_loaded(ui_state, root_path);
   apply_pending_tree_selection(ui_state, root_path);
-  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 1.0f));
   for (const auto& child : root_subdirectories) {
     render_folder_tree_node(ui_state, fs::path(child), root_path,
-      tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE);
+      tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE, label_spacing);
   }
-  ImGui::PopStyleVar();
+  ImGui::PopStyleVar(2);
   ui_state.collapse_tree_requested = false;
 
-  folder_tree_utils::FilterComputationResult filter_result =
-    folder_tree_utils::collect_active_filters(ui_state, root_path);
-  std::vector<std::string> new_folder_filters = filter_result.filters;
-  bool new_path_filter_active = !filter_result.all_selected;
-  bool new_selection_empty = !filter_result.any_selected;
+  if (ui_state.folder_filters_dirty) {
+    folder_tree_utils::FilterComputationResult filter_result =
+      folder_tree_utils::collect_active_filters(ui_state, root_path);
+    std::vector<std::string> new_folder_filters = filter_result.filters;
+    bool new_path_filter_active = !filter_result.all_selected;
+    bool new_selection_empty = !filter_result.any_selected;
 
-  bool filters_changed = (new_folder_filters != ui_state.path_filters) ||
-    (ui_state.path_filter_active != new_path_filter_active) ||
-    (ui_state.folder_selection_covers_all != filter_result.all_selected) ||
-    (ui_state.folder_selection_empty != new_selection_empty);
+    bool filters_changed = (new_folder_filters != ui_state.path_filters) ||
+      (ui_state.path_filter_active != new_path_filter_active) ||
+      (ui_state.folder_selection_covers_all != filter_result.all_selected) ||
+      (ui_state.folder_selection_empty != new_selection_empty);
 
-  if (filters_changed) {
-    ui_state.path_filters = std::move(new_folder_filters);
-    ui_state.path_filter_active = new_path_filter_active;
-    ui_state.folder_selection_covers_all = filter_result.all_selected;
-    ui_state.folder_selection_empty = new_selection_empty;
-    ui_state.filters_changed = true;
+    if (filters_changed) {
+      ui_state.path_filters = std::move(new_folder_filters);
+      ui_state.path_filter_active = new_path_filter_active;
+      ui_state.folder_selection_covers_all = filter_result.all_selected;
+      ui_state.folder_selection_empty = new_selection_empty;
+      ui_state.filters_changed = true;
+    }
+
+    ui_state.folder_filters_dirty = false;
   }
 
   ui_state.tree_nodes_to_open.clear();

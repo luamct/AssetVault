@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Downscale a rasterized 1024x1024 pixel-art image to 16x16.
+"""Downscale a rasterized pixel-art image by inferring the pixel grid.
 
-The script samples the center pixel of each 64x64 block (computed from the
-input size and desired output size) and then merges colors that are within a
-given RGB tolerance to reduce tiny rasterization variations.
+The script:
+1) Finds the content bounding box (alpha-aware, or by background color).
+2) Expands that box to a square.
+3) Snaps the square to a pixel grid inferred from the desired output size.
+4) Samples the center of each grid cell, optionally merging near colors to
+   smooth minor rasterization noise.
 """
 
 from __future__ import annotations
@@ -14,64 +17,316 @@ import pathlib
 from typing import Iterable, List, Sequence, Tuple
 
 try:
-  from PIL import Image
+  from PIL import Image, ImageDraw
 except ImportError as exc:  # pragma: no cover - depends on environment
   raise SystemExit(
       "Pillow is required to run this script. Install it with `pip install Pillow`."
   ) from exc
 
 Color = Tuple[int, int, int, int]
+BBox = Tuple[int, int, int, int]
+BACKGROUND_THRESHOLD = 16
 
 
 def parse_args() -> argparse.Namespace:
   parser = argparse.ArgumentParser(
       description=(
-          "Downscale a pixel-art image by sampling the center of each block and "
-          "merging similar colors."
+          "Downscale a pixel-art image by aligning to the inferred pixel grid and "
+          "sampling the center of each cell."
       )
   )
   parser.add_argument(
       "--input",
       type=pathlib.Path,
-      default=pathlib.Path("images/zoom-in-16.png"),
-      help="Path to the source image (default: images/zoom-in-16.png)",
+      default=pathlib.Path("images/headphone_big.png"),
+      help="Path to the source image (default: images/headphone_big.png)",
   )
   parser.add_argument(
       "--output",
       type=pathlib.Path,
-      default=pathlib.Path("images/zoom-in-16-downscaled.png"),
-      help="Destination path for the 16x16 output image",
+      default=pathlib.Path("images/headphone_downscaled.png"),
+      help="Destination path for the output image",
   )
   parser.add_argument(
+      "--size",
+      "--output-size",
       "--target-size",
+      dest="size",
       type=int,
       default=16,
-      help="Width/height of the output image (default: 16)",
+      help="Width/height of the output image in pixels (default: 16)",
+  )
+  parser.add_argument(
+      "--pixel-size",
+      type=int,
+      required=True,
+      help="Size (in source pixels) of one output pixel cell.",
   )
   parser.add_argument(
       "--tolerance",
       type=float,
-      default=0.2,
+      default=0.05,
       help=(
           "RGB distance tolerance in [0,1] for merging similar colors "
-          "(default: 0.2)"
+          "(default: 0.05)"
       ),
+  )
+  parser.add_argument(
+      "--debug-grid",
+      action="store_true",
+      help="If set, writes a debug image with the aligned grid overlay.",
   )
   return parser.parse_args()
 
 
-def sample_centers(image: Image.Image, target_size: int) -> List[Color]:
-  """Sample a grid of centers even if the source size is not an exact multiple."""
-  pixels = image.load()
-  samples: List[Color] = []
+def detect_content_bbox(image: Image.Image) -> BBox:
+  """Detect the bounding box of visible content."""
+  alpha = image.getchannel("A")
+  alpha_min, alpha_max = alpha.getextrema()
 
-  step_x = image.width / float(target_size)
-  step_y = image.height / float(target_size)
+  if alpha_max == 0:
+    raise ValueError("Image contains no visible pixels.")
+
+  if alpha_min < 255:
+    bbox = alpha.getbbox()
+    if bbox is None:
+      raise ValueError("Image contains no visible pixels.")
+    return bbox
+
+  width, height = image.size
+  bg = detect_background_color(image)
+
+  min_x, min_y = width, height
+  max_x, max_y = -1, -1
+
+  for idx, pixel in enumerate(image.getdata()):
+    if not _color_close(pixel, bg, threshold=BACKGROUND_THRESHOLD):
+      x = idx % width
+      y = idx // width
+      if x < min_x:
+        min_x = x
+      if y < min_y:
+        min_y = y
+      if x > max_x:
+        max_x = x
+      if y > max_y:
+        max_y = y
+
+  if max_x == -1:
+    raise ValueError("No content detected; image appears to be a solid color.")
+
+  return (min_x, min_y, max_x + 1, max_y + 1)
+
+
+def expand_to_square(bbox: BBox, image_size: Tuple[int, int]) -> BBox:
+  """Expand a bounding box to the smallest square that fits within the image.
+
+  The expansion is anchored at the top-left to avoid recentering the content.
+  """
+  left, top, right, bottom = bbox
+  width = right - left
+  height = bottom - top
+  side = max(width, height)
+
+  img_w, img_h = image_size
+
+  new_left = left
+  new_top = top
+
+  if new_left + side > img_w:
+    new_left = max(0, img_w - side)
+  if new_top + side > img_h:
+    new_top = max(0, img_h - side)
+
+  return (new_left, new_top, new_left + side, new_top + side)
+
+
+def _color_close(a: Color, b: Color, threshold: int = BACKGROUND_THRESHOLD) -> bool:
+  """Cheap closeness check in RGB space."""
+  return (
+      abs(a[0] - b[0]) <= threshold and
+      abs(a[1] - b[1]) <= threshold and
+      abs(a[2] - b[2]) <= threshold
+  )
+
+
+def detect_background_color(image: Image.Image) -> Color:
+  """Estimate the dominant background color from the border pixels."""
+  width, height = image.size
+  pixels = image.load()
+  bg_candidates = []
+  for x in range(width):
+    bg_candidates.append(pixels[x, 0])
+    bg_candidates.append(pixels[x, height - 1])
+  for y in range(height):
+    bg_candidates.append(pixels[0, y])
+    bg_candidates.append(pixels[width - 1, y])
+
+  if not bg_candidates:
+    return (0, 0, 0, 0)
+
+  rs = sorted(c[0] for c in bg_candidates)
+  gs = sorted(c[1] for c in bg_candidates)
+  bs = sorted(c[2] for c in bg_candidates)
+  mid = len(bg_candidates) // 2
+  if len(bg_candidates) % 2 == 0:
+    r = (rs[mid - 1] + rs[mid]) // 2
+    g = (gs[mid - 1] + gs[mid]) // 2
+    b = (bs[mid - 1] + bs[mid]) // 2
+  else:
+    r = rs[mid]
+    g = gs[mid]
+    b = bs[mid]
+
+  return (int(r), int(g), int(b), 255)
+
+
+def infer_pixel_size(
+    image: Image.Image,
+    bbox: BBox,
+    target_size: int,
+    min_runs: int = 8,
+    background_color: Color | None = None,
+) -> int:
+  """Infer the pixel size by histogramming run-lengths across sampled scanlines."""
+  left, top, right, bottom = bbox
+  width = right - left
+  height = bottom - top
+
+  rows = list(range(top, bottom, max(1, height // 8)))[:16]
+  cols = list(range(left, right, max(1, width // 8)))[:16]
+
+  if not rows:
+    rows = [top + height // 2]
+  if not cols:
+    cols = [left + width // 2]
+
+  pixels = image.load()
+  runs: List[int] = []
+  expected_size = max(1, round(max(width, height) / float(target_size)))
+
+  def collect_run_lengths(line: Sequence[Color]) -> None:
+    if not line:
+      return
+    last = None
+    length = 0
+    last_is_bg = False
+
+    for color in line:
+      is_bg = (
+          background_color is not None and
+          _color_close(color, background_color, BACKGROUND_THRESHOLD)
+      )
+
+      if last is None:
+        last = color
+        last_is_bg = is_bg
+        length = 0 if is_bg else 1
+        continue
+
+      if is_bg:
+        if not last_is_bg and length > 0:
+          runs.append(length)
+        last = color
+        last_is_bg = True
+        length = 0
+        continue
+
+      if last_is_bg:
+        last = color
+        last_is_bg = False
+        length = 1
+        continue
+
+      if _color_close(color, last):
+        length += 1
+      else:
+        runs.append(length)
+        last = color
+        length = 1
+
+    if length > 0 and not last_is_bg:
+      runs.append(length)
+
+  for y in rows:
+    line = [pixels[x, y] for x in range(left, right)]
+    collect_run_lengths(line)
+  for x in cols:
+    line = [pixels[x, y] for y in range(top, bottom)]
+    collect_run_lengths(line)
+
+  lower = max(1, expected_size // 4)
+  upper = expected_size * 4
+  filtered = [r for r in runs if lower <= r <= upper]
+  if len(filtered) < min_runs:
+    return expected_size
+
+  histogram = {}
+  for r in filtered:
+    histogram[r] = histogram.get(r, 0) + 1
+
+  dominant_value, dominant_count = max(
+      histogram.items(),
+      key=lambda kv: (
+          kv[1],
+          -abs(kv[0] - expected_size),
+          -kv[0],
+      ),
+  )
+
+  if abs(dominant_value - expected_size) > expected_size * 0.25:
+    return expected_size
+
+  if dominant_count < min_runs or dominant_count / float(len(filtered)) < 0.1:
+    inferred = expected_size
+  else:
+    inferred = dominant_value
+
+  inferred = max(1, inferred)
+  inferred = min(inferred, max(1, min(width, height)))
+  return inferred
+
+
+def align_sample_region(
+    square: BBox, target_size: int, image_size: Tuple[int, int], pixel_size: int
+) -> Tuple[BBox, int]:
+  """Align a square region to the pixel grid using a fixed pixel size."""
+  left, top, right, bottom = square
+  side = right - left
+  img_w, img_h = image_size
+
+  if pixel_size <= 0:
+    raise ValueError("Pixel size must be positive.")
+
+  sample_size = pixel_size * target_size
+
+  if sample_size > img_w or sample_size > img_h:
+    raise ValueError(
+        "Grid does not fit inside the source image; reduce pixel size or target size."
+    )
+  if left + sample_size > img_w or top + sample_size > img_h:
+    raise ValueError(
+        "Grid anchored at content top/left exceeds image bounds; adjust pixel size or target size."
+    )
+
+  aligned_left = left
+  aligned_top = top
+
+  return ((aligned_left, aligned_top, aligned_left + sample_size,
+           aligned_top + sample_size), pixel_size)
+
+
+def sample_centers(
+    image: Image.Image, region: BBox, target_size: int, pixel_size: int
+) -> List[Color]:
+  pixels = image.load()
+  left, top, _, _ = region
+  samples: List[Color] = []
 
   for y_index in range(target_size):
     for x_index in range(target_size):
-      x = int((x_index + 0.5) * step_x)
-      y = int((y_index + 0.5) * step_y)
+      x = int((x_index + 0.5) * pixel_size) + left
+      y = int((y_index + 0.5) * pixel_size) + top
       x = min(max(x, 0), image.width - 1)
       y = min(max(y, 0), image.height - 1)
       samples.append(pixels[x, y])
@@ -120,19 +375,66 @@ def write_output(path: pathlib.Path, size: int, pixels: Sequence[Color]) -> None
   output.save(path)
 
 
+def write_debug_overlay(
+    image: Image.Image, region: BBox, pixel_size: int, target_size: int, path: pathlib.Path
+) -> None:
+  """Overlay the sampling grid on top of the source image."""
+  overlay = image.copy()
+  draw = ImageDraw.Draw(overlay, "RGBA")
+
+  left, top, right, bottom = region
+  grid_color = (255, 0, 0, 160)
+  border_color = (0, 255, 0, 200)
+
+  for x in range(left, right + 1, pixel_size):
+    draw.line([(x, top), (x, bottom - 1)], fill=grid_color, width=1)
+  for y in range(top, bottom + 1, pixel_size):
+    draw.line([(left, y), (right - 1, y)], fill=grid_color, width=1)
+
+  draw.rectangle([left, top, right - 1, bottom - 1], outline=border_color, width=2)
+  draw.text((left + 4, top + 4), f"{target_size}x{target_size}", fill=border_color)
+  overlay.save(path)
+
+
 def downscale(
-    input_path: pathlib.Path, output_path: pathlib.Path, target_size: int, tolerance: float
+    input_path: pathlib.Path,
+    output_path: pathlib.Path,
+    target_size: int,
+    pixel_size: int,
+    tolerance: float,
+    debug_grid: bool,
 ) -> None:
   image = Image.open(input_path).convert("RGBA")
-  centers = sample_centers(image, target_size)
+
+  alpha_min, alpha_max = image.getchannel("A").getextrema()
+  background_color = None
+  if alpha_min == alpha_max == 255:
+    background_color = detect_background_color(image)
+
+  bbox = detect_content_bbox(image)
+  square = expand_to_square(bbox, image.size)
+  sample_region, aligned_pixel_size = align_sample_region(
+      square, target_size, image.size, pixel_size
+  )
+
+  centers = sample_centers(image, sample_region, target_size, aligned_pixel_size)
   merged = merge_palette(centers, tolerance)
   write_output(output_path, target_size, merged)
+  if debug_grid:
+    debug_path = output_path.with_name(f"{output_path.stem}_debug.png")
+    write_debug_overlay(image, sample_region, aligned_pixel_size, target_size, debug_path)
+    print(f"Wrote debug overlay to {debug_path}")
+  print(f"Input: {image.width}x{image.height}")
+  print(f"Content bbox: {bbox}")
+  print(f"Square region: {square}")
+  print(f"Using pixel size: {aligned_pixel_size}")
+  print(f"Aligned region: {sample_region} (pixel size: {aligned_pixel_size})")
 
 
 def main() -> None:
   args = parse_args()
-  downscale(args.input, args.output, args.target_size, args.tolerance)
-  print(f"Wrote {args.output} ({args.target_size}x{args.target_size})")
+  downscale(args.input, args.output, args.size, args.pixel_size, args.tolerance, args.debug_grid)
+  print(f"Wrote {args.output} ({args.size}x{args.size})")
 
 
 if __name__ == "__main__":

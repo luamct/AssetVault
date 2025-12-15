@@ -92,6 +92,7 @@ struct UIState {
   // Folder tree checkbox states
   std::unordered_map<std::string, bool> folder_checkbox_states;
   std::unordered_map<std::string, std::vector<std::string>> folder_children_cache;
+  bool folder_filters_dirty = true;
 
   // Audio playback settings
   bool auto_play_audio = true;
