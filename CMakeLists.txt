@@ -2,14 +2,14 @@ cmake_minimum_required(VERSION 3.21)
 
 # Enable Objective-C++ for macOS platform features (drag-and-drop, etc.)
 if(APPLE)
-    project(AssetInventory VERSION 1.0.0 LANGUAGES C CXX OBJCXX)
+    project(AssetVault VERSION 1.0.0 LANGUAGES C CXX OBJCXX)
 else()
-    project(AssetInventory VERSION 1.0.0 LANGUAGES C CXX)
+    project(AssetVault VERSION 1.0.0 LANGUAGES C CXX)
 endif()
 
-option(ASSET_INVENTORY_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
+option(ASSET_VAULT_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
 
-if(MSVC AND ASSET_INVENTORY_STATIC_MSVC_RUNTIME)
+if(MSVC AND ASSET_VAULT_STATIC_MSVC_RUNTIME)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
 endif()
 
@@ -209,7 +209,7 @@ endif()
 # ============================================================================
 
 # Core library - shared by main executable and all tests
-add_library(AssetInventoryCore STATIC
+add_library(AssetVaultCore STATIC
     src/asset.cpp
     src/database.cpp
     src/services.cpp
@@ -235,7 +235,7 @@ add_library(AssetInventoryCore STATIC
     ${EMBEDDED_ASSETS_CPP}
 )
 
-target_include_directories(AssetInventoryCore PUBLIC
+target_include_directories(AssetVaultCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/external
     ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
@@ -243,7 +243,7 @@ target_include_directories(AssetInventoryCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/backends
 )
 
-target_link_libraries(AssetInventoryCore PUBLIC
+target_link_libraries(AssetVaultCore PUBLIC
     unofficial::sqlite3::sqlite3
     spdlog::spdlog
     glfw
@@ -255,7 +255,7 @@ target_link_libraries(AssetInventoryCore PUBLIC
 )
 
 if(PLATFORM_WINDOWS)
-    target_compile_definitions(AssetInventoryCore PUBLIC GLFW_STATIC)
+    target_compile_definitions(AssetVaultCore PUBLIC GLFW_STATIC)
 endif()
 
 # Disable warnings for external library files in core
@@ -275,7 +275,7 @@ set(TEST_INCLUDE_DIRS
 )
 
 set(TEST_LIBRARIES
-    AssetInventoryCore
+    AssetVaultCore
     Catch2::Catch2WithMain
 )
 
@@ -283,41 +283,41 @@ set(TEST_LIBRARIES
 # Main Executable
 # ============================================================================
 
-# Main executable - only main.cpp, links to AssetInventoryCore for everything else
-add_executable(AssetInventory
+# Main executable - only main.cpp, links to AssetVaultCore for everything else
+add_executable(AssetVault
     src/main.cpp
 )
 
 # Configure for app bundle on macOS
 if(PLATFORM_MACOS)
-    set_target_properties(AssetInventory PROPERTIES
+    set_target_properties(AssetVault PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
-        MACOSX_BUNDLE_BUNDLE_NAME "Asset Inventory"
-        MACOSX_BUNDLE_DISPLAY_NAME "Asset Inventory"
-        MACOSX_BUNDLE_IDENTIFIER "com.gamedev.assetinventory"
+        MACOSX_BUNDLE_BUNDLE_NAME "Asset Vault"
+        MACOSX_BUNDLE_DISPLAY_NAME "Asset Vault"
+        MACOSX_BUNDLE_IDENTIFIER "com.gamedev.assetvault"
         MACOSX_BUNDLE_VERSION "1.0.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0"
     )
 endif()
 
 # Include directories
-target_include_directories(AssetInventory PRIVATE
+target_include_directories(AssetVault PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
     ${CMAKE_CURRENT_SOURCE_DIR}/external
 )
 
-# Link libraries - AssetInventoryCore provides most dependencies
-target_link_libraries(AssetInventory PRIVATE
-    AssetInventoryCore
+# Link libraries - AssetVaultCore provides most dependencies
+target_link_libraries(AssetVault PRIVATE
+    AssetVaultCore
     OpenGL::GL
 )
 
 # Platform-specific system libraries
 if(PLATFORM_WINDOWS)
-    target_link_libraries(AssetInventory PRIVATE ${WINDOWS_SYSTEM_LIBS})
+    target_link_libraries(AssetVault PRIVATE ${WINDOWS_SYSTEM_LIBS})
 elseif(PLATFORM_MACOS)
     # macOS frameworks
     find_library(COCOA_LIBRARY Cocoa)
@@ -326,7 +326,7 @@ elseif(PLATFORM_MACOS)
     find_library(COREFOUNDATION_LIBRARY CoreFoundation)
     find_library(CORESERVICES_LIBRARY CoreServices)
     
-    target_link_libraries(AssetInventory PRIVATE
+    target_link_libraries(AssetVault PRIVATE
         ${COCOA_LIBRARY}
         ${IOKIT_LIBRARY}
         ${COREVIDEO_LIBRARY}
@@ -420,7 +420,7 @@ target_link_libraries(IntegrationTest PRIVATE ${TEST_LIBRARIES})
 # Define MAX_FRAMES_TESTS for integration testing
 target_compile_definitions(IntegrationTest PRIVATE
     MAX_FRAMES_TESTS=60
-    ASSET_INVENTORY_ENTRYPOINT=AssetInventoryIntegrationMain
+    ASSET_VAULT_ENTRYPOINT=AssetVaultIntegrationMain
 )
 
 # Platform-specific libraries for IntegrationTest
@@ -441,7 +441,7 @@ set_tests_properties(IntegrationTests PROPERTIES WORKING_DIRECTORY $<TARGET_FILE
 
 # Set compiler warnings for our code
 if(MSVC)
-    target_compile_options(AssetInventory PRIVATE
+    target_compile_options(AssetVault PRIVATE
         /W4                    # Enable all warnings for our code
         /wd4456               # Suppress variable name shadowing warnings
         /wd4244               # Suppress conversion warnings from external libraries
@@ -451,7 +451,7 @@ if(MSVC)
         /external:W0          # Disable all warnings for external headers
     )
 elseif(APPLE)
-    target_compile_options(AssetInventory PRIVATE
+    target_compile_options(AssetVault PRIVATE
         -Wall
         -Wextra
         -Wno-unused-parameter
@@ -460,7 +460,7 @@ elseif(APPLE)
 endif()
 
 # Add shaders as sources so CMake tracks them (won't compile them, just track for changes)
-target_sources(AssetInventory PRIVATE ${SHADER_FILES})
+target_sources(AssetVault PRIVATE ${SHADER_FILES})
 set_source_files_properties(${SHADER_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 # ============================================================================
@@ -468,7 +468,7 @@ set_source_files_properties(${SHADER_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 # ============================================================================
 if(PLATFORM_MACOS)
     # Install app bundle
-    install(TARGETS AssetInventory
+    install(TARGETS AssetVault
         BUNDLE DESTINATION .
         RUNTIME DESTINATION bin
     )
@@ -476,12 +476,12 @@ if(PLATFORM_MACOS)
     # Bundle any required dylibs (vcpkg handles most of this automatically)
     install(CODE "
         include(BundleUtilities)
-        fixup_bundle(\"\${CMAKE_INSTALL_PREFIX}/AssetInventory.app\" \"\" \"\")
+        fixup_bundle(\"\${CMAKE_INSTALL_PREFIX}/AssetVault.app\" \"\" \"\")
     ")
 endif()
 
 # Print build configuration summary
-message(STATUS "=== AssetInventory Build Configuration ===")
+message(STATUS "=== AssetVault Build Configuration ===")
 message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")

@@ -23,7 +23,7 @@
     <key>LSMinimumSystemVersion</key>
     <string>10.15</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2024 Asset Inventory. All rights reserved.</string>
+    <string>Copyright © 2024 Asset Vault. All rights reserved.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>

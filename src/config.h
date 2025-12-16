@@ -54,13 +54,13 @@ public:
   #ifdef _WIN32
     const char* localappdata = std::getenv("LOCALAPPDATA");
     if (localappdata) {
-      return std::filesystem::path(localappdata) / "AssetInventory";
+      return std::filesystem::path(localappdata) / "AssetVault";
     }
     return "data";
   #elif __APPLE__
     const char* home = std::getenv("HOME");
     if (home) {
-      return std::filesystem::path(home) / "Library" / "Application Support" / "AssetInventory";
+      return std::filesystem::path(home) / "Library" / "Application Support" / "AssetVault";
     }
     return "data";
   #else

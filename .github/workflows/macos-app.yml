@@ -1,0 +1,52 @@
+name: macOS App
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    name: Build macOS .app
+    runs-on: macos-14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up vcpkg
+        id: vcpkg
+        uses: microsoft/vcpkg-action@v2
+        with:
+          vcpkgJsonGlob: vcpkg.json
+          triplet: arm64-osx
+          vcpkgGitCommitId: 8cce1e1118ea2569d5117f096035671a8490b8f4
+          cachePackages: true
+
+      - name: Configure CMake (macOS preset)
+        run: cmake --preset macos
+        env:
+          VCPKG_ROOT: ${{ steps.vcpkg.outputs.vcpkgRoot }}
+
+      - name: Build
+        run: cmake --build --preset macos
+        env:
+          VCPKG_ROOT: ${{ steps.vcpkg.outputs.vcpkgRoot }}
+
+      - name: Install bundle
+        run: cmake --install build --prefix "${{ runner.temp }}/install"
+        env:
+          VCPKG_ROOT: ${{ steps.vcpkg.outputs.vcpkgRoot }}
+
+      - name: Package .app for download
+        run: |
+          cd "${{ runner.temp }}/install"
+          ditto -c -k --sequesterRsrc --keepParent AssetVault.app AssetVault-macos.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AssetVault-macos-app
+          path: ${{ runner.temp }}/install/AssetVault-macos.zip
+          retention-days: 7

@@ -1,6 +1,6 @@
-# Asset Inventory Dependencies
+# Asset Vault Dependencies
 
-This document lists all the dependencies used in the Asset Inventory project and where to find them.
+This document lists all the dependencies used in the Asset Vault project and where to find them.
 
 ## Core Libraries
 
@@ -97,5 +97,5 @@ cmake -B build -S . -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Debug
 
 # Run
-./build/Debug/AssetInventory.exe
+./build/Debug/AssetVault.exe
 ```

@@ -158,7 +158,7 @@ Similar to macOS, Windows file watcher handles directory operations by:
 1. **FileWatcher** detects filesystem changes via platform API
 2. **Platform-specific logic** maps native events to `FileEvent` objects
 3. **EventProcessor** receives events and processes them in batches
-4. **Database operations** update asset inventory based on events
+4. **Database operations** update the AssetVault catalog based on events
 5. **UI updates** reflect changes in real-time
 
 ### Thread Safety

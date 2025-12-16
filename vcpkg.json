@@ -1,7 +1,7 @@
 {
-  "name": "assetinventory",
+  "name": "assetvault",
   "version": "1.0.0",
-  "description": "Asset Inventory - Game Development Asset Manager",
+  "description": "Asset Vault - Game Development Asset Manager",
   "dependencies": [
     "glfw3",
     "assimp",

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AssetInventory is a C++ desktop application for managing game assets, built with Dear ImGui, OpenGL, and SQLite.
+AssetVault is a C++ desktop application for managing game assets, built with Dear ImGui, OpenGL, and SQLite.
 
 ### Key Features
 - Asset indexing and management with real-time file system monitoring
@@ -73,7 +73,7 @@ cmake --preset windows
 cmake --build build --config Release
 
 # Run application (from project root)
-./build/Release/AssetInventory.exe
+./build/Release/AssetVault.exe
 
 # Run unit tests (from project root)
 ./build/Release/SearchTest.exe
@@ -105,8 +105,8 @@ cmake --preset macos              # or linux-static
 cmake --build build --config Release
 
 # Run application (from project root)
-./build/AssetInventory.app/Contents/MacOS/AssetInventory  # macOS
-./build/AssetInventory                                    # Linux
+./build/AssetVault.app/Contents/MacOS/AssetVault  # macOS
+./build/AssetVault                                    # Linux
 
 # Run unit tests (from project root)
 ./build/SearchTest
@@ -133,8 +133,8 @@ rm -rf build/
 ### Windows Quick Start (Git Bash)
 ```bash
 # Clone the repository
-git clone https://github.com/luamct/AssetInventory.git
-cd AssetInventory
+git clone https://github.com/luamct/AssetVault.git
+cd AssetVault
 
 # Set up vcpkg (one-time setup)
 git clone https://github.com/Microsoft/vcpkg.git /c/vcpkg
@@ -146,14 +146,14 @@ cmake --preset windows
 cmake --build build --config Release
 
 # Run the application
-./build/Release/AssetInventory.exe
+./build/Release/AssetVault.exe
 ```
 
 ### macOS/Linux Quick Start
 ```bash
 # Clone the repository
-git clone https://github.com/luamct/AssetInventory.git
-cd AssetInventory
+git clone https://github.com/luamct/AssetVault.git
+cd AssetVault
 
 # Set up vcpkg (one-time setup)
 export VCPKG_ROOT="$HOME/vcpkg"
@@ -165,8 +165,8 @@ cmake --preset macos  # or linux-static
 cmake --build build --config Release
 
 # Run the application
-./build/AssetInventory.app/Contents/MacOS/AssetInventory  # macOS
-./build/AssetInventory                                    # Linux
+./build/AssetVault.app/Contents/MacOS/AssetVault  # macOS
+./build/AssetVault                                    # Linux
 ```
 
 ### Adding Assets

@@ -107,7 +107,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   bool headless_mode = std::getenv("TESTING") != nullptr;
 
   Logger::initialize(LogLevel::Info);
-  LOG_INFO("AssetInventory application starting {}", headless_mode ? " (headless mode)" : "...");
+  LOG_INFO("AssetVault application starting {}", headless_mode ? " (headless mode)" : "...");
 
   ensure_executable_working_directory();
 
@@ -146,7 +146,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   int window_width = headless_mode ? 1 : WINDOW_WIDTH;
   int window_height = headless_mode ? 1 : WINDOW_HEIGHT;
 
-  GLFWwindow* window = glfwCreateWindow(window_width, window_height, "Asset Inventory", nullptr, nullptr);
+  GLFWwindow* window = glfwCreateWindow(window_width, window_height, "Asset Vault", nullptr, nullptr);
   if (!window) {
     LOG_ERROR("Failed to create GLFW window");
     glfwTerminate();
@@ -337,7 +337,7 @@ int run(std::atomic<bool>* shutdown_requested) {
       ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
       ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
       ImGui::Begin(
-        "Asset Inventory", nullptr,
+        "Asset Vault", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus |
         ImGuiWindowFlags_NoNavFocus);
@@ -437,10 +437,14 @@ int run(std::atomic<bool>* shutdown_requested) {
   return 0;
 }
 
-#ifndef ASSET_INVENTORY_ENTRYPOINT
-#define ASSET_INVENTORY_ENTRYPOINT main
+#if defined(ASSET_INVENTORY_ENTRYPOINT) && !defined(ASSET_VAULT_ENTRYPOINT)
+#define ASSET_VAULT_ENTRYPOINT ASSET_INVENTORY_ENTRYPOINT
 #endif
 
-int ASSET_INVENTORY_ENTRYPOINT() {
+#ifndef ASSET_VAULT_ENTRYPOINT
+#define ASSET_VAULT_ENTRYPOINT main
+#endif
+
+int ASSET_VAULT_ENTRYPOINT() {
   return run(nullptr);
 }

@@ -44,7 +44,7 @@ Tests copy these files to temporary directories to avoid modifying the original 
 
 ## File Types
 
-The test files use extensions that are recognized by the AssetInventory system:
+The test files use extensions that are recognized by the AssetVault system:
 - `.png` files are detected as `AssetType::Texture`
 - `.txt` files are detected as `AssetType::Document`
 
