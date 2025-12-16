@@ -88,7 +88,7 @@ static ImVec4 get_type_tag_color(AssetType type) {
   }
 }
 
-static void render_asset_tags(const Asset& asset, const SpriteAtlas& atlas, const SlicedSprite& frame_def) {
+static void render_asset_tags(const Asset& asset, const SpriteAtlas& atlas, const SlicedSprite& frame_def, float ui_scale) {
   std::string type_text = uppercase_copy(get_asset_type_string(asset.type));
   if (type_text.empty()) {
     type_text = "UNKNOWN";
@@ -103,9 +103,9 @@ static void render_asset_tags(const Asset& asset, const SpriteAtlas& atlas, cons
     extension_text = "NO EXT";
   }
 
-  draw_tag_chip(type_text, get_type_tag_color(asset.type), Theme::TAG_TYPE_TEXT, "TypeTag", atlas, frame_def);
+  draw_tag_chip(type_text, get_type_tag_color(asset.type), Theme::TAG_TYPE_TEXT, "TypeTag", atlas, frame_def, ui_scale);
   ImGui::SameLine(0.0f, 8.0f);
-  draw_tag_chip(extension_text, Theme::TAG_EXTENSION_FILL, Theme::TAG_EXTENSION_TEXT, "ExtTag", atlas, frame_def);
+  draw_tag_chip(extension_text, Theme::TAG_EXTENSION_FILL, Theme::TAG_EXTENSION_TEXT, "ExtTag", atlas, frame_def, ui_scale);
   ImGui::Spacing();
 }
 
@@ -234,7 +234,7 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
 }
 
 // Renders asset attributes aligned into columns, framing each value individually.
-void render_attribute_rows(const std::vector<AttributeRow>& rows, TextureManager& texture_manager) {
+void render_attribute_rows(const std::vector<AttributeRow>& rows, TextureManager& texture_manager, float ui_scale) {
   constexpr float ROW_SPACING = 6.0f;
   constexpr float TAGS_TO_PATH_SPACING = 6.0f;
   constexpr float PATH_LINE_GAP = 8.0f;
@@ -303,7 +303,8 @@ void render_attribute_rows(const std::vector<AttributeRow>& rows, TextureManager
         atlas,
         value_frame,
         frame_min,
-        frame_size);
+        frame_size,
+        ui_scale);
     }
 
     ImGui::SetCursorScreenPos(ImVec2(value_cursor.x + VALUE_PADDING_X, value_cursor.y));
@@ -337,11 +338,11 @@ void append_common_asset_rows(const Asset& asset, UIState& ui_state,
 // Custom slider component for audio seek bar using pixel art track + handle
 bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width,
   const SpriteAtlas& atlas, const SlicedSprite& track_frame,
-  const ImVec2& handle_src, const ImVec2& handle_size, float handle_scale) {
+  const ImVec2& handle_src, const ImVec2& handle_size, float ui_scale, float handle_scale) {
   IM_ASSERT(atlas.is_valid() && "Audio seek bar requires a valid sprite atlas");
 
-  const float track_height = track_frame.source_size.y * track_frame.pixel_scale;
-  ImVec2 handle_draw_size(handle_size.x * handle_scale, handle_size.y * handle_scale);
+  const float track_height = track_frame.source_size.y * track_frame.pixel_scale * ui_scale;
+  ImVec2 handle_draw_size(handle_size.x * handle_scale * ui_scale, handle_size.y * handle_scale * ui_scale);
   const float button_height = std::max(track_height, handle_draw_size.y);
   ImVec2 button_size(width, button_height);
 
@@ -372,7 +373,7 @@ bool audio_seek_bar(const char* id, float* value, float min_value, float max_val
   ImVec2 track_pos(
     button_min.x,
     button_min.y + (button_height - track_height) * 0.5f);
-  draw_nine_slice_image(atlas, track_frame, track_pos, ImVec2(width, track_height));
+  draw_nine_slice_image(atlas, track_frame, track_pos, ImVec2(width, track_height), ui_scale);
 
   // Draw handle
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -418,6 +419,9 @@ static ImVec2 calculate_thumbnail_size(
 
 void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   Model& current_model, Camera3D& camera, float panel_width, float panel_height) {
+  float ui_scale = ui_state.ui_scale;
+  float preview_frame_margin = PREVIEW_FRAME_MARGIN * ui_scale;
+  float preview_internal_padding = PREVIEW_INTERNAL_PADDING * ui_scale;
   SpriteAtlas preview_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite preview_frame_definition = make_16px_frame(1, 3.0f);
   const SlicedSprite tag_frame_definition = make_8px_frame(0, 2, 2.0f);
@@ -425,14 +429,14 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
   ImVec2 frame_size(panel_width, std::max(0.0f, panel_height));
   IM_ASSERT(preview_frame_atlas.is_valid() && "UI elements atlas missing");
-  draw_nine_slice_image(preview_frame_atlas, preview_frame_definition, frame_pos, frame_size);
+  draw_nine_slice_image(preview_frame_atlas, preview_frame_definition, frame_pos, frame_size, ui_scale);
 
   ImVec2 content_pos(
-    frame_pos.x + PREVIEW_FRAME_MARGIN,
-    frame_pos.y + PREVIEW_FRAME_MARGIN);
+    frame_pos.x + preview_frame_margin,
+    frame_pos.y + preview_frame_margin);
   ImVec2 content_size(
-    std::max(0.0f, frame_size.x - PREVIEW_FRAME_MARGIN * 2.0f),
-    std::max(0.0f, frame_size.y - PREVIEW_FRAME_MARGIN * 2.0f));
+    std::max(0.0f, frame_size.x - preview_frame_margin * 2.0f),
+    std::max(0.0f, frame_size.y - preview_frame_margin * 2.0f));
 
   ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::COLOR_TRANSPARENT);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -447,7 +451,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   // Use the smaller axis so the square viewport touches the frame evenly
   ImVec2 content_avail = ImGui::GetContentRegionAvail();
   float avail_side = std::max(0.0f,
-    std::min(content_avail.x, content_avail.y) - PREVIEW_INTERNAL_PADDING);
+    std::min(content_avail.x, content_avail.y) - preview_internal_padding);
   float avail_width = avail_side;
   float avail_height = avail_side;
 
@@ -614,7 +618,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       // Restore cursor for info below
       ImGui::SetCursorScreenPos(container_pos);
       ImGui::Dummy(ImVec2(0, avail_height + 10));
-      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition);
+      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition, ui_scale);
 
       if (current_model_ref.loaded) {
         int vertex_count =
@@ -625,7 +629,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         detail_rows.emplace_back("Faces", std::to_string(face_count));
       }
 
-      render_attribute_rows(detail_rows, texture_manager);
+      render_attribute_rows(detail_rows, texture_manager, ui_scale);
     }
     else if (selected_asset.type == AssetType::Audio && Services::audio_manager().is_initialized()) {
       // Audio handling for sound assets
@@ -670,7 +674,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::SetCursorScreenPos(container_pos);
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
-      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition);
+      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition, ui_scale);
 
       // Audio controls - single row layout
       if (Services::audio_manager().has_audio_loaded()) {
@@ -713,7 +717,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImU32 frame_tint = button_hovered
           ? Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80)
           : Theme::COLOR_WHITE_U32;
-        draw_nine_slice_image(preview_frame_atlas, audio_button_frame, button_min, button_size_vec, frame_tint);
+        draw_nine_slice_image(preview_frame_atlas, audio_button_frame, button_min, button_size_vec, ui_scale, frame_tint);
 
         ImVec2 button_center(
           button_min.x + button_size_vec.x * 0.5f,
@@ -766,7 +770,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         // Use our custom seek bar - vertically centered
         ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - (seek_bar_height * 0.5f));
         bool seek_changed = audio_seek_bar("##CustomSeek", &seek_position, 0.0f, duration, seek_bar_width,
-          preview_frame_atlas, AUDIO_TRACK_FRAME, AUDIO_HANDLE_SRC, AUDIO_HANDLE_SIZE, AUDIO_HANDLE_SCALE);
+          preview_frame_atlas, AUDIO_TRACK_FRAME, AUDIO_HANDLE_SRC, AUDIO_HANDLE_SIZE, ui_scale, AUDIO_HANDLE_SCALE);
 
         if (seek_changed) {
           seeking = true;
@@ -812,7 +816,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - (seek_bar_height * 0.5f));
 
         if (audio_seek_bar("##VolumeBar", &audio_volume, 0.0f, 1.0f, volume_width,
-          preview_frame_atlas, AUDIO_TRACK_FRAME, AUDIO_HANDLE_SRC, AUDIO_HANDLE_SIZE, AUDIO_HANDLE_SCALE)) {
+          preview_frame_atlas, AUDIO_TRACK_FRAME, AUDIO_HANDLE_SRC, AUDIO_HANDLE_SIZE, ui_scale, AUDIO_HANDLE_SCALE)) {
           Services::audio_manager().set_volume(audio_volume);
         }
 
@@ -841,7 +845,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImVec4 auto_tint_vec = auto_active ? ImVec4(0.35f, 0.75f, 0.45f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
         ImU32 auto_tint = Theme::ToImU32(auto_tint_vec);
         static const SlicedSprite auto_button_frame = make_8px_frame(2, 3, 2.0f); // variant 3 frame
-        draw_nine_slice_image(preview_frame_atlas, auto_button_frame, auto_button_min, auto_button_size_vec, auto_tint);
+        draw_nine_slice_image(preview_frame_atlas, auto_button_frame, auto_button_min, auto_button_size_vec, ui_scale, auto_tint);
 
         const float auto_icon_scale = 1.5f; // smaller than main play/pause
         ImVec2 auto_icon_half(icon_src_size.x * auto_icon_scale * 0.5f, icon_src_size.y * auto_icon_scale * 0.5f);
@@ -863,7 +867,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
       }
 
-      render_attribute_rows(detail_rows, texture_manager);
+      render_attribute_rows(detail_rows, texture_manager, ui_scale);
     }
     else if (selected_asset.extension == ".gif") {
       auto now = std::chrono::steady_clock::now();
@@ -922,7 +926,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
 
-      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition);
+      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition, ui_scale);
 
       if (animation) {
         std::string dimensions = std::to_string(animation->width) + "x" + std::to_string(animation->height);
@@ -930,7 +934,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         detail_rows.emplace_back("Frames", std::to_string(animation->frame_count()));
       }
 
-      render_attribute_rows(detail_rows, texture_manager);
+      render_attribute_rows(detail_rows, texture_manager, ui_scale);
     }
     else {
       // 2D Preview for non-GIF assets
@@ -974,7 +978,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::Dummy(ImVec2(0, avail_height + 10));
       }
 
-      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition);
+      render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition, ui_scale);
 
       if (selected_asset.type == AssetType::_2D) {
         int width = 0;
@@ -985,7 +989,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         }
       }
 
-      render_attribute_rows(detail_rows, texture_manager);
+      render_attribute_rows(detail_rows, texture_manager, ui_scale);
     }
   }
   else {

@@ -27,6 +27,7 @@ struct Animation2D;
 struct SpriteAtlas;
 struct SlicedSprite;
 
+
 // Grid zoom levels for the results pane
 enum class ZoomLevel : int {
   Level0 = 0,
@@ -45,6 +46,11 @@ struct UIState {
   char buffer[256] = "";
   std::string last_buffer = "";
   std::string input_tracking = ""; // Track input to detect real changes
+
+  // DPI/UI scale derived from font size
+  float ui_scale = 1.0f;
+  float pending_content_scale = 1.0f;
+  bool content_scale_dirty = false;
 
   // Debouncing state
   TimePoint last_keypress_time;
@@ -142,7 +148,7 @@ void render_common_asset_info(const Asset& asset, UIState& ui_state);
 // Custom audio seek bar widget
 bool audio_seek_bar(const char* id, float* value, float min_value, float max_value, float width,
   const SpriteAtlas& atlas, const SlicedSprite& track_frame,
-  const ImVec2& handle_src, const ImVec2& handle_size, float handle_scale = 1.0f);
+  const ImVec2& handle_src, const ImVec2& handle_size, float ui_scale, float handle_scale = 1.0f);
 
 
 // Main UI panel rendering functions

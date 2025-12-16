@@ -113,6 +113,7 @@ void render_asset_context_menu(const Asset& asset, const std::string& menu_id) {
 void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   SafeAssets& safe_assets, float panel_width, float panel_height) {
   ImGui::BeginChild("AssetGrid", ImVec2(panel_width, panel_height), false);
+  float ui_scale = ui_state.ui_scale;
 
   ensure_grid_zoom_level(ui_state);
   float zoom_multiplier = 1.0f;
@@ -293,9 +294,13 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   };
 
   constexpr float GRID_RIGHT_MARGIN = 24.0f;  // Extra space so the last column stays clear of the scrollbar
-  const float label_height = RESULTS_TEXT_HEIGHT;
-  float available_width = panel_width - 20.0f - GRID_RIGHT_MARGIN; // Account for padding and scrollbar margin
-  available_width = std::max(available_width, thumbnail_size);
+  const float label_height = RESULTS_TEXT_HEIGHT * ui_scale;
+  const float grid_right_margin = GRID_RIGHT_MARGIN * ui_scale;
+  const float grid_spacing = RESULTS_GRID_SPACING * ui_scale;
+  const float thumbnail_target = thumbnail_size * ui_scale;
+  const float corner_radius = RESULTS_THUMBNAIL_CORNER_RADIUS * ui_scale;
+  float available_width = panel_width - 20.0f * ui_scale - grid_right_margin; // Account for padding and scrollbar margin
+  available_width = std::max(available_width, thumbnail_target);
 
   ImVec2 grid_start_pos = ImGui::GetCursorPos();
   ImVec2 grid_screen_start = ImGui::GetCursorScreenPos();
@@ -355,15 +360,15 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       const Asset& asset = ui_state.results[i];
       const TextureCacheEntry& texture_entry = texture_manager.get_asset_texture(asset);
 
-      ImVec2 size(thumbnail_size * Config::ICON_SCALE,
-                  thumbnail_size * Config::ICON_SCALE);
+      ImVec2 size(thumbnail_target * Config::ICON_SCALE,
+                  thumbnail_target * Config::ICON_SCALE);
 
       if (texture_entry.width > 0 && texture_entry.height > 0) {
         float width = static_cast<float>(texture_entry.width);
         float height = static_cast<float>(texture_entry.height);
 
         if (height > 0.0f) {
-          float target_height = thumbnail_size;
+          float target_height = thumbnail_target;
           float scale = target_height / height;
 
           if (asset.type == AssetType::_3D && scale > 1.0f) {
@@ -375,9 +380,9 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
           float target_width = width * scale;
 
-          if (target_height > thumbnail_size) {
-            float clamp_scale = thumbnail_size / target_height;
-            target_height = thumbnail_size;
+          if (target_height > thumbnail_target) {
+            float clamp_scale = thumbnail_target / target_height;
+            target_height = thumbnail_target;
             target_width *= clamp_scale;
           }
 
@@ -405,7 +410,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
           display.y *= scale;
         }
 
-        float spacing = (row_item_count == 0) ? 0.0f : RESULTS_GRID_SPACING;
+        float spacing = (row_item_count == 0) ? 0.0f : grid_spacing;
         if (row_item_count > 0 && row_width + spacing + display.x > available_width) {
           break;
         }
@@ -447,7 +452,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         item_layouts[j].row_height = row_height;
       }
 
-      y_cursor += row_height + RESULTS_GRID_SPACING;
+      y_cursor += row_height + grid_spacing;
     }
   }
 
@@ -535,7 +540,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
           container_pos,
           container_max,
           container_bg_color,
-          RESULTS_THUMBNAIL_CORNER_RADIUS);
+          corner_radius);
       }
 
       if (show_selected) {
@@ -543,7 +548,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
           container_pos,
           container_max,
           Theme::ToImU32(Theme::ACCENT_BLUE_1),
-          RESULTS_THUMBNAIL_CORNER_RADIUS,
+          corner_radius,
           0,
           2.0f);
       }
@@ -636,14 +641,14 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
           ImVec2(0.0f, 0.0f),
           ImVec2(1.0f, 1.0f),
           Theme::COLOR_WHITE_U32,
-          RESULTS_THUMBNAIL_CORNER_RADIUS);
+          corner_radius);
 
         if (is_container_hovered && !ImGui::IsItemActive()) {
           grid_draw_list->AddRectFilled(
             image_pos,
             image_max,
             Theme::ToImU32(Theme::IMAGE_HOVER_OVERLAY),
-            RESULTS_THUMBNAIL_CORNER_RADIUS);
+            corner_radius);
         }
       }
 
@@ -840,7 +845,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   if (scrollbar_atlas.is_valid()) {
     SlicedSprite track_def = make_scrollbar_track_definition(0, scrollbar_style.pixel_scale);
     SlicedSprite thumb_def = make_scrollbar_thumb_definition(scrollbar_style.pixel_scale);
-    draw_scrollbar_overlay(scrollbar_state, scrollbar_atlas, track_def, thumb_def);
+    draw_scrollbar_overlay(scrollbar_state, scrollbar_atlas, track_def, thumb_def, ui_scale);
   }
 
   // Reset drag state when mouse button is released

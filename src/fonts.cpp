@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "theme.h"
 #include "config.h"
 #include "logger.h"
 
@@ -276,6 +277,79 @@ void generate_font_thumbnail(const std::filesystem::path& font_path,
   }
 
   LOG_TRACE("[FONT] Generated thumbnail for '{}' at {}", font_path_str, out_path);
+}
+
+bool load_fonts(ImGuiIO& io, float scale) {
+  ImFontConfig font_config;
+  font_config.FontDataOwnedByAtlas = false;  // Embedded data is owned by the binary
+  font_config.PixelSnapH = true;
+  font_config.OversampleH = 1;
+  font_config.OversampleV = 1;
+
+  // Use default glyph ranges which include Extended Latin for Unicode characters like × (U+00D7)
+  const ImWchar* glyph_ranges = io.Fonts->GetGlyphRangesDefault();
+
+  auto primary_asset = embedded_assets::get(Theme::PRIMARY_FONT_PATH);
+  if (!primary_asset.has_value()) {
+    LOG_ERROR("Embedded font asset not found: {}", Theme::PRIMARY_FONT_PATH);
+    return false;
+  }
+
+  float scaled_primary_size = Theme::PRIMARY_FONT_SIZE * scale;
+  float scaled_primary_large_size = Theme::PRIMARY_FONT_SIZE_LARGE * scale;
+  float scaled_tag_size = Theme::TAG_FONT_SIZE * scale;
+
+  Theme::g_primary_font = io.Fonts->AddFontFromMemoryTTF(
+    const_cast<unsigned char*>(primary_asset->data),
+    static_cast<int>(primary_asset->size),
+    scaled_primary_size,
+    &font_config,
+    glyph_ranges);
+
+  if (!Theme::g_primary_font) {
+    LOG_ERROR("Failed to load primary font from embedded asset: {}", Theme::PRIMARY_FONT_PATH);
+    return false;
+  }
+
+  ImFontConfig large_config = font_config;
+  Theme::g_primary_font_large = io.Fonts->AddFontFromMemoryTTF(
+    const_cast<unsigned char*>(primary_asset->data),
+    static_cast<int>(primary_asset->size),
+    scaled_primary_large_size,
+    &large_config,
+    glyph_ranges);
+
+  if (!Theme::g_primary_font_large) {
+    Theme::g_primary_font_large = Theme::g_primary_font;
+    LOG_WARN("Failed to load enlarged primary font. Falling back to default size.");
+  }
+
+  auto tag_asset = embedded_assets::get(Theme::TAG_FONT_PATH);
+  if (!tag_asset.has_value()) {
+    LOG_ERROR("Embedded tag font asset not found: {}", Theme::TAG_FONT_PATH);
+  } else {
+    ImFontConfig tag_config = font_config;
+
+    Theme::g_tag_font = io.Fonts->AddFontFromMemoryTTF(
+      const_cast<unsigned char*>(tag_asset->data),
+      static_cast<int>(tag_asset->size),
+      scaled_tag_size,
+      &tag_config,
+      glyph_ranges);
+
+    if (!Theme::g_tag_font) {
+      LOG_ERROR("Failed to load tag font from embedded asset: {}", Theme::TAG_FONT_PATH);
+    }
+  }
+
+  if (!Theme::g_tag_font) {
+    Theme::g_tag_font = Theme::g_primary_font;
+    LOG_WARN("Tag font unavailable. Falling back to primary font for pills.");
+  }
+
+  LOG_INFO("Fonts loaded successfully (scale={:.2f}, primary={}, primary_large={}, tag={})",
+    scale, static_cast<void*>(Theme::g_primary_font), static_cast<void*>(Theme::g_primary_font_large), static_cast<void*>(Theme::g_tag_font));
+  return Theme::g_primary_font != nullptr;
 }
 
 }  // namespace Fonts

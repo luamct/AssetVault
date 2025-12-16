@@ -23,9 +23,9 @@ namespace {
   constexpr float TREE_TEXT_OFFSET_Y = -3.0f;
 
   bool draw_folder_checkbox(const char* id, bool& value,
-      const SpriteAtlas& atlas, float pixel_scale) {
+      const SpriteAtlas& atlas, float pixel_scale, float ui_scale) {
     if (atlas.is_valid()) {
-      return draw_pixel_checkbox(id, value, atlas, pixel_scale);
+      return draw_pixel_checkbox(id, value, atlas, ui_scale, pixel_scale);
     }
 
     ImGui::PushID(id);
@@ -235,7 +235,7 @@ namespace {
   // recurses into lazily loaded children.
   void render_folder_tree_node(UIState& ui_state, const fs::path& dir_path,
       const fs::path& root_path, const SpriteAtlas& checkbox_atlas,
-      float checkbox_scale, float label_spacing) {
+      float checkbox_scale, float label_spacing, float ui_scale) {
     std::string path_id = path_key(dir_path);
     bool stored_checked = get_checkbox_state(ui_state, path_id);
 
@@ -248,7 +248,7 @@ namespace {
     bool checkbox_value = stored_checked;
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 3.0f));
     bool checkbox_clicked = draw_folder_checkbox(checkbox_id.c_str(),
-      checkbox_value, checkbox_atlas, checkbox_scale);
+      checkbox_value, checkbox_atlas, checkbox_scale, ui_scale);
     ImGui::PopStyleVar();
     bool right_click_exclusive = ImGui::IsItemClicked(ImGuiMouseButton_Right);
     if (right_click_exclusive) {
@@ -306,7 +306,7 @@ namespace {
       const auto& children = folder_tree_utils::ensure_children_loaded(ui_state, dir_path);
       for (const std::string& child_id : children) {
         render_folder_tree_node(ui_state, fs::path(child_id), root_path,
-          checkbox_atlas, checkbox_scale, label_spacing);
+          checkbox_atlas, checkbox_scale, label_spacing, ui_scale);
       }
     }
 
@@ -318,23 +318,24 @@ namespace {
 
 void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager,
     float panel_width, float panel_height) {
+  float ui_scale = ui_state.ui_scale;
   SpriteAtlas tree_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite tree_frame_definition = make_16px_frame(1, 3.0f);
-  float label_spacing = std::max(0.0f, ImGui::GetTreeNodeToLabelSpacing() - TREE_LABEL_GAP_REDUCTION);
+  float label_spacing = std::max(0.0f, ImGui::GetTreeNodeToLabelSpacing() - TREE_LABEL_GAP_REDUCTION * ui_scale);
   float indent_spacing = ImGui::GetStyle().IndentSpacing * 0.5f;
 
   ImVec2 frame_pos = ImGui::GetCursorScreenPos();
   if (tree_frame_atlas.is_valid()) {
     draw_nine_slice_image(tree_frame_atlas, tree_frame_definition, frame_pos,
-      ImVec2(panel_width, panel_height));
+      ImVec2(panel_width, panel_height), ui_scale);
   }
 
   ImVec2 content_pos(
-    frame_pos.x + TREE_FRAME_MARGIN,
-    frame_pos.y + TREE_FRAME_MARGIN);
+    frame_pos.x + TREE_FRAME_MARGIN * ui_scale,
+    frame_pos.y + TREE_FRAME_MARGIN * ui_scale);
   ImVec2 content_size(
-    std::max(0.0f, panel_width - TREE_FRAME_MARGIN * 2.0f),
-    std::max(0.0f, panel_height - TREE_FRAME_MARGIN * 2.0f));
+    std::max(0.0f, panel_width - TREE_FRAME_MARGIN * 2.0f * ui_scale),
+    std::max(0.0f, panel_height - TREE_FRAME_MARGIN * 2.0f * ui_scale));
 
   ImGuiWindowFlags scroll_flags = ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
   ImGuiWindowFlags container_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
@@ -364,7 +365,7 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   bool root_checkbox_value = root_checked;
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 3.0f));
   bool root_clicked = draw_folder_checkbox("RootFolderCheckbox",
-    root_checkbox_value, tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE);
+    root_checkbox_value, tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE, ui_scale);
   ImGui::PopStyleVar();
   bool root_right_click = ImGui::IsItemClicked(ImGuiMouseButton_Right);
   if (root_right_click) {
@@ -424,7 +425,7 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 1.0f));
   for (const auto& child : root_subdirectories) {
     render_folder_tree_node(ui_state, fs::path(child), root_path,
-      tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE, label_spacing);
+      tree_frame_atlas, TREE_CHECKBOX_PIXEL_SCALE, label_spacing, ui_scale);
   }
   ImGui::PopStyleVar(2);
   ui_state.collapse_tree_requested = false;
@@ -460,7 +461,7 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   if (scrollbar_atlas.is_valid()) {
     SlicedSprite track_def = make_scrollbar_track_definition(0, scrollbar_style.pixel_scale);
     SlicedSprite thumb_def = make_scrollbar_thumb_definition(scrollbar_style.pixel_scale);
-    draw_scrollbar_overlay(scrollbar_state, scrollbar_atlas, track_def, thumb_def);
+    draw_scrollbar_overlay(scrollbar_state, scrollbar_atlas, track_def, thumb_def, ui_scale);
   }
 
   ImGui::EndChild();

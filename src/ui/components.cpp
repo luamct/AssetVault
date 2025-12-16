@@ -132,9 +132,11 @@ bool draw_wrapped_settings_entry_with_frame(const char* id,
     const ImVec4& text_color,
     const SpriteAtlas& atlas,
     const SlicedSprite& frame_def,
-    float padding_x,
-    float padding_y) {
+    float ui_scale,
+    ImVec2 padding) {
   IM_ASSERT(atlas.is_valid() && "Settings frame requires a valid atlas");
+
+  ImVec2 scaled_padding = ImVec2(padding.x * ui_scale, padding.y * ui_scale);
 
   ImGui::PushID(id);
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -158,11 +160,11 @@ bool draw_wrapped_settings_entry_with_frame(const char* id,
   ImVec2 min = ImGui::GetItemRectMin();
   ImVec2 max = ImGui::GetItemRectMax();
   const float VERTICAL_SCALE = 1.2f;
-  ImVec2 frame_min(cursor_screen.x - padding_x, min.y - padding_y * 0.5f);
-  ImVec2 frame_size(column_width + padding_x * 2.0f, ((max.y - min.y) + padding_y) * VERTICAL_SCALE);
+  ImVec2 frame_min(cursor_screen.x - scaled_padding.x, min.y - scaled_padding.y * 0.5f);
+  ImVec2 frame_size(column_width + scaled_padding.x * 2.0f, ((max.y - min.y) + scaled_padding.y) * VERTICAL_SCALE);
   if (frame_size.x > 0.0f && frame_size.y > 0.0f) {
     splitter.SetCurrentChannel(draw_list, 0);
-    draw_nine_slice_image(atlas, frame_def, frame_min, frame_size);
+    draw_nine_slice_image(atlas, frame_def, frame_min, frame_size, ui_scale);
     splitter.SetCurrentChannel(draw_list, 1);
   }
 
@@ -206,7 +208,8 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
     float button_width, float button_height, const ImVec4& active_color,
     const SpriteAtlas& frame_atlas,
     const SlicedSprite& frame_default,
-    const SlicedSprite& frame_selected) {
+    const SlicedSprite& frame_selected,
+    float ui_scale) {
   ImVec2 button_min(x_pos, y_pos);
   ImVec2 button_size(button_width, button_height);
   ImVec2 button_max(button_min.x + button_width, button_min.y + button_height);
@@ -237,7 +240,7 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
       const SlicedSprite& frame_def = (is_hovered || toggle_state)
         ? frame_selected
         : frame_default;
-      draw_nine_slice_image(frame_atlas, frame_def, button_min, button_size);
+      draw_nine_slice_image(frame_atlas, frame_def, button_min, button_size, ui_scale);
     }
     else {
       ImVec4 border_color = toggle_state ? active_color : Theme::TOGGLE_OFF_BORDER;
@@ -262,6 +265,7 @@ void draw_tag_chip(const std::string& text,
     const char* id_suffix,
     const SpriteAtlas& atlas,
     const SlicedSprite& frame_def,
+    float ui_scale,
     ImVec2 padding) {
   std::string label = text;
   label.append("##");
@@ -278,7 +282,7 @@ void draw_tag_chip(const std::string& text,
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   if (draw_list && atlas.is_valid()) {
-    draw_nine_slice_image(atlas, frame_def, pos, frame_size);
+  draw_nine_slice_image(atlas, frame_def, pos, frame_size, ui_scale);
 
     // Frame art has a 1px outline; scale it up to match the chosen pixel scale.
     float border_px = frame_def.pixel_scale;
@@ -303,12 +307,13 @@ void draw_tag_chip(const std::string& text,
 bool draw_pixel_radio_button(const char* id,
     bool selected,
     const SpriteAtlas& atlas,
+    float ui_scale,
     float pixel_scale) {
   if (!atlas.is_valid()) {
     return false;
   }
 
-  float art_size = 8.0f * std::max(1.0f, pixel_scale);
+  float art_size = 8.0f * std::max(1.0f, pixel_scale * ui_scale);
   float button_height = std::max(art_size, ImGui::GetFrameHeight());
   ImVec2 button_size(art_size, button_height);
   ImGui::PushID(id);
@@ -344,12 +349,13 @@ bool draw_pixel_radio_button(const char* id,
 bool draw_pixel_checkbox(const char* id,
     bool& value,
     const SpriteAtlas& atlas,
+    float ui_scale,
     float pixel_scale) {
   if (!atlas.is_valid()) {
     return false;
   }
 
-  float art_size = 8.0f * std::max(1.0f, pixel_scale);
+  float art_size = 8.0f * std::max(1.0f, pixel_scale * ui_scale);
   float button_height = std::max(art_size, ImGui::GetFrameHeight());
   ImVec2 box_size(art_size, button_height);
   ImGui::PushID(id);
@@ -390,6 +396,7 @@ bool draw_small_frame_button(const char* id,
     const char* label,
     const SpriteAtlas& atlas,
     const ImVec2& size,
+    float ui_scale,
     float pixel_scale) {
   if (!atlas.is_valid()) {
     return ImGui::Button(label, size);
@@ -426,7 +433,7 @@ bool draw_small_frame_button(const char* id,
   ImVec2 min = ImGui::GetItemRectMin();
   ImVec2 max = ImGui::GetItemRectMax();
   ImVec2 frame_size(max.x - min.x, max.y - min.y);
-  draw_nine_slice_image(atlas, *current_frame, min, frame_size);
+  draw_nine_slice_image(atlas, *current_frame, min, frame_size, ui_scale);
 
   ImVec2 text_size = ImGui::CalcTextSize(label);
   ImVec2 text_pos(
@@ -440,6 +447,7 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
     const SlicedSprite& definition,
     const ImVec2& dest_pos,
     const ImVec2& dest_size,
+    float ui_scale,
     ImU32 tint) {
   if (!atlas.is_valid()) {
     return;
@@ -449,7 +457,7 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
     return;
   }
 
-  float scale = std::max(1.0f, definition.pixel_scale);
+  float scale = std::max(1.0f, definition.pixel_scale * ui_scale);
   float left_border = std::max(0.0f, definition.border.x * scale);
   float right_border = std::max(0.0f, definition.border.y * scale);
   float top_border = std::max(0.0f, definition.border.z * scale);
@@ -640,7 +648,8 @@ void end_scrollbar_child(ScrollbarState& state) {
 void draw_scrollbar_overlay(const ScrollbarState& state,
     const SpriteAtlas& atlas,
     const SlicedSprite& track_def,
-    const SlicedSprite& thumb_def) {
+    const SlicedSprite& thumb_def,
+    float ui_scale) {
   if (!state.has_metrics) {
     return;
   }
@@ -691,6 +700,6 @@ void draw_scrollbar_overlay(const ScrollbarState& state,
   }
   ImU32 thumb_tint = ImGui::GetColorU32(thumb_tint_vec);
 
-  draw_nine_slice_image(atlas, track_def, bar_min, ImVec2(scrollbar_size, bar_height), Theme::COLOR_WHITE_U32);
-  draw_nine_slice_image(atlas, thumb_def, thumb_pos, thumb_size, thumb_tint);
+  draw_nine_slice_image(atlas, track_def, bar_min, ImVec2(scrollbar_size, bar_height), ui_scale, Theme::COLOR_WHITE_U32);
+  draw_nine_slice_image(atlas, thumb_def, thumb_pos, thumb_size, ui_scale, thumb_tint);
 }

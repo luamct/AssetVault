@@ -1,4 +1,11 @@
 #include <glad/glad.h>
+#ifdef _WIN32
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <windows.h>
+#endif
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
@@ -7,10 +14,6 @@
 #include <filesystem>
 #include <string>
 #include <thread>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -28,6 +31,7 @@
 #include "audio_manager.h"
 #include "search.h"
 #include "logger.h"
+#include "fonts.h"
 #include "ui/ui.h"
 #include "services.h"
 #include "drag_drop.h"
@@ -35,28 +39,47 @@
 namespace fs = std::filesystem;
 
 namespace {
-constexpr int WINDOW_WIDTH = 1960;
-constexpr int WINDOW_HEIGHT = 1080;
-constexpr float SEARCH_PANEL_HEIGHT = 65.0f;
-constexpr int SEARCH_DEBOUNCE_MS = 250;
+  constexpr int WINDOW_WIDTH = 1960;
+  constexpr int WINDOW_HEIGHT = 1080;
+  constexpr float SEARCH_PANEL_HEIGHT = 65.0f;
+  constexpr int SEARCH_DEBOUNCE_MS = 250;
 
-// Side panel vertical spacing (should sum to 100%, considering there are two gaps)
-constexpr float PREVIEW_RATIO = 0.62f;
-constexpr float TREE_RATIO = 0.31f;
-constexpr float PROGRESS_RATIO = 0.05f;
-constexpr float GAP_RATIO = 0.01f;
+  // Side panel vertical spacing (should sum to 100%, considering there are two gaps)
+  constexpr float PREVIEW_RATIO = 0.62f;
+  constexpr float TREE_RATIO = 0.31f;
+  constexpr float PROGRESS_RATIO = 0.05f;
+  constexpr float GAP_RATIO = 0.01f;
 
-// File event callback function (runs on background thread)
-// Queues events for unified processing
-void on_file_event(const FileEvent& event) {
-  LOG_TRACE("[NEW_EVENT] type = {}, asset = {}", FileWatcher::file_event_type_to_string(event.type), event.path);
-  Services::event_processor().queue_event(event);
-}
+  // File event callback function (runs on background thread)
+  // Queues events for unified processing
+  void on_file_event(const FileEvent& event) {
+    LOG_TRACE("[NEW_EVENT] type = {}, asset = {}", FileWatcher::file_event_type_to_string(event.type), event.path);
+    Services::event_processor().queue_event(event);
+  }
+
+  void on_content_scale_changed(GLFWwindow* window, float x_scale, float y_scale) {
+    void* user_ptr = glfwGetWindowUserPointer(window);
+    if (!user_ptr) {
+      return;
+    }
+    UIState* ui_state = static_cast<UIState*>(user_ptr);
+    ui_state->pending_content_scale = std::max(x_scale, y_scale);
+    ui_state->content_scale_dirty = true;
+  }
+
+  void apply_ui_scale(ImGuiIO& io, UIState& ui_state, float scale) {
+    ui_state.ui_scale = std::clamp(scale, 0.5f, 3.0f);
+    io.Fonts->Clear();
+    Fonts::load_fonts(io, ui_state.ui_scale);
+    ImGui::GetStyle() = ImGuiStyle();  // reset to default
+    Theme::setup_light_fun_theme();    // reapply theme colors/spacing
+    ImGui::GetStyle().ScaleAllSizes(ui_state.ui_scale);
+  }
 
 }  // namespace
 
 // Initialize ImGui UI system
-static ImGuiIO* initialize_imgui(GLFWwindow* window) {
+static ImGuiIO* initialize_imgui(GLFWwindow* window, UIState& ui_state) {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
@@ -64,8 +87,14 @@ static ImGuiIO* initialize_imgui(GLFWwindow* window) {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
   io.IniFilename = nullptr;  // Disable imgui.ini file
 
-  Theme::load_fonts(io);
+  float content_scale_x = 1.0f;
+  float content_scale_y = 1.0f;
+  glfwGetWindowContentScale(window, &content_scale_x, &content_scale_y);
+  float font_scale = std::max(content_scale_x, content_scale_y);
+  ui_state.pending_content_scale = font_scale;
+  ui_state.content_scale_dirty = true;
   Theme::setup_light_fun_theme();
+  apply_ui_scale(io, ui_state, font_scale);
 
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init("#version 330");
@@ -97,6 +126,9 @@ int run(std::atomic<bool>* shutdown_requested) {
   SearchIndex search_index;  // Search index for fast lookups
 
   // Initialize GLFW
+#ifdef _WIN32
+  SetProcessDPIAware();
+#endif
   LOG_INFO("Initializing GLFW{}...", headless_mode ? " (headless)" : "");
   if (!glfwInit()) {
     LOG_ERROR("Failed to initialize GLFW");
@@ -120,6 +152,8 @@ int run(std::atomic<bool>* shutdown_requested) {
     glfwTerminate();
     return -1;
   }
+  glfwSetWindowUserPointer(window, &ui_state);
+  glfwSetWindowContentScaleCallback(window, on_content_scale_changed);
 
   glfwMakeContextCurrent(window);
   if (!headless_mode) {
@@ -174,7 +208,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   if (!ui_state.assets_directory.empty()) {
     std::error_code ec;
     if (!std::filesystem::exists(ui_state.assets_directory, ec) ||
-        !std::filesystem::is_directory(ui_state.assets_directory, ec)) {
+      !std::filesystem::is_directory(ui_state.assets_directory, ec)) {
       LOG_WARN("Saved assets directory no longer exists: {}. Resetting to unset state.", ui_state.assets_directory);
       ui_state.assets_directory.clear();
       Config::set_assets_directory("");
@@ -199,7 +233,7 @@ int run(std::atomic<bool>* shutdown_requested) {
   }
   else {
     // Initialize Dear ImGui (skip in headless mode)
-    ImGuiIO* io_ptr = initialize_imgui(window);
+    ImGuiIO* io_ptr = initialize_imgui(window, ui_state);
 
     // UI mode: full rendering loop
     double last_time = glfwGetTime();
@@ -212,150 +246,156 @@ int run(std::atomic<bool>* shutdown_requested) {
       last_time = current_time;
 
       glfwPollEvents();
+      if (ui_state.content_scale_dirty) {
+        ui_state.content_scale_dirty = false;
+        apply_ui_scale(*io_ptr, ui_state, ui_state.pending_content_scale);
+      }
 
-    // Reset folder tree if a processing batch finished
-    if (ui_state.event_batch_finished.exchange(false)) {
-      reset_folder_tree_state(ui_state);
-      ui_state.filters_changed = true;
-    }
+      // Reset folder tree if a processing batch finished
+      if (ui_state.event_batch_finished.exchange(false)) {
+        reset_folder_tree_state(ui_state);
+        ui_state.filters_changed = true;
+      }
 
-    // Apply pending filter changes (tree selections, batch refreshes, etc.)
-    if (ui_state.filters_changed.exchange(false)) {
-      // Re-apply current search filter to include updated assets
-      filter_assets(ui_state, safe_assets);
-
-      // Removes texture cache entries and thumbnails for deleted assets
-      texture_manager.process_cleanup_queue(ui_state.assets_directory);
-    }
-
-    // Process pending debounced search
-    if (ui_state.pending_search) {
-      auto now = std::chrono::steady_clock::now();
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - ui_state.last_keypress_time).count();
-
-      if (elapsed >= SEARCH_DEBOUNCE_MS) {
-        // Execute the search
+      // Apply pending filter changes (tree selections, batch refreshes, etc.)
+      if (ui_state.filters_changed.exchange(false)) {
+        // Re-apply current search filter to include updated assets
         filter_assets(ui_state, safe_assets);
-        ui_state.last_buffer = ui_state.buffer;
-        ui_state.pending_search = false;
-      }
-    }
 
-    // Start the Dear ImGui frame
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-
-    // Handle keyboard input
-    ImGuiIO& input_io = ImGui::GetIO();
-
-    if (ImGui::IsKeyPressed(ImGuiKey_Escape) && !input_io.WantTextInput) {
-      if (ui_state.assets_directory_modal_open) {
-        ui_state.close_assets_directory_modal_requested = true;
+        // Removes texture cache entries and thumbnails for deleted assets
+        texture_manager.process_cleanup_queue(ui_state.assets_directory);
       }
-      else if (ui_state.settings_modal_open) {
-        ui_state.close_settings_modal_requested = true;
-      }
-      else {
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
-      }
-    }
 
-    // Spacebar pause/unpause for audio assets
-    if (ImGui::IsKeyPressed(ImGuiKey_Space) && !input_io.WantTextInput) {
-      if (ui_state.selected_asset.has_value()) {
-        const Asset& sel = *ui_state.selected_asset;
-        if (sel.type == AssetType::Audio && Services::audio_manager().has_audio_loaded()) {
-          if (Services::audio_manager().is_playing()) {
-            Services::audio_manager().pause();
-          } else {
-            Services::audio_manager().play();
+      // Process pending debounced search
+      if (ui_state.pending_search) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          now - ui_state.last_keypress_time).count();
+
+        if (elapsed >= SEARCH_DEBOUNCE_MS) {
+          // Execute the search
+          filter_assets(ui_state, safe_assets);
+          ui_state.last_buffer = ui_state.buffer;
+          ui_state.pending_search = false;
+        }
+      }
+
+      // Start the Dear ImGui frame
+      ImGui_ImplOpenGL3_NewFrame();
+      ImGui_ImplGlfw_NewFrame();
+      ImGui::NewFrame();
+
+      // Handle keyboard input
+      ImGuiIO& input_io = ImGui::GetIO();
+
+      if (ImGui::IsKeyPressed(ImGuiKey_Escape) && !input_io.WantTextInput) {
+        if (ui_state.assets_directory_modal_open) {
+          ui_state.close_assets_directory_modal_requested = true;
+        }
+        else if (ui_state.settings_modal_open) {
+          ui_state.close_settings_modal_requested = true;
+        }
+        else {
+          glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
+      }
+
+      // Spacebar pause/unpause for audio assets
+      if (ImGui::IsKeyPressed(ImGuiKey_Space) && !input_io.WantTextInput) {
+        if (ui_state.selected_asset.has_value()) {
+          const Asset& sel = *ui_state.selected_asset;
+          if (sel.type == AssetType::Audio && Services::audio_manager().has_audio_loaded()) {
+            if (Services::audio_manager().is_playing()) {
+              Services::audio_manager().pause();
+            }
+            else {
+              Services::audio_manager().play();
+            }
           }
         }
       }
-    }
 
-    // P key to print texture cache
-    if (ImGui::IsKeyPressed(ImGuiKey_P) && !input_io.WantTextInput) {
-      texture_manager.print_texture_cache(ui_state.assets_directory);
-      search_index.debug_print_tokens();
-    }
+      // P key to print texture cache
+      if (ImGui::IsKeyPressed(ImGuiKey_P) && !input_io.WantTextInput) {
+        texture_manager.print_texture_cache(ui_state.assets_directory);
+        search_index.debug_print_tokens();
+      }
 
-    // Create main window that fits perfectly to viewport
-    ImGuiViewport* viewport = ImGui::GetMainViewport();
-    const float WINDOW_FRAME_MARGIN = 20.0f;
-    ImVec2 window_pos = ImVec2(
-      viewport->Pos.x + WINDOW_FRAME_MARGIN,
-      viewport->Pos.y + WINDOW_FRAME_MARGIN);
-    ImVec2 window_size = ImVec2(
-      std::max(0.0f, viewport->Size.x - WINDOW_FRAME_MARGIN * 2.0f),
-      std::max(0.0f, viewport->Size.y - WINDOW_FRAME_MARGIN * 2.0f));
-    ImGui::SetNextWindowPos(window_pos);
-    ImGui::SetNextWindowSize(window_size);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin(
-      "Asset Inventory", nullptr,
-      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus |
-      ImGuiWindowFlags_NoNavFocus);
-    ImGui::PopStyleVar(3);
+      // Create main window that fits perfectly to viewport
+      ImGuiViewport* viewport = ImGui::GetMainViewport();
+      const float ui_scale = ui_state.ui_scale;
+      const float WINDOW_FRAME_MARGIN = 20.0f * ui_scale;
+      ImVec2 window_pos = ImVec2(
+        viewport->Pos.x + WINDOW_FRAME_MARGIN,
+        viewport->Pos.y + WINDOW_FRAME_MARGIN);
+      ImVec2 window_size = ImVec2(
+        std::max(0.0f, viewport->Size.x - WINDOW_FRAME_MARGIN * 2.0f),
+        std::max(0.0f, viewport->Size.y - WINDOW_FRAME_MARGIN * 2.0f));
+      ImGui::SetNextWindowPos(window_pos);
+      ImGui::SetNextWindowSize(window_size);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+      ImGui::Begin(
+        "Asset Inventory", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoNavFocus);
+      ImGui::PopStyleVar(3);
 
-    // Calculate panel sizes using actual window content area
-    float content_width = ImGui::GetContentRegionAvail().x;
-    float content_height = ImGui::GetContentRegionAvail().y;
-    float WINDOW_MARGIN = 6.0f;
-    float spacing_y = ImGui::GetStyle().ItemSpacing.y;
-    float left_width = content_width * 0.75f - WINDOW_MARGIN;
-    float right_width = content_width * 0.25f - WINDOW_MARGIN;
-    float top_height = SEARCH_PANEL_HEIGHT;
-    float bottom_height = content_height - top_height - spacing_y;
-    if (bottom_height < 0.0f) {
-      bottom_height = 0.0f;
-    }
+      // Calculate panel sizes using actual window content area
+      float content_width = ImGui::GetContentRegionAvail().x;
+      float content_height = ImGui::GetContentRegionAvail().y;
+      float WINDOW_MARGIN = 6.0f * ui_scale;
+      float spacing_y = ImGui::GetStyle().ItemSpacing.y;
+      float left_width = content_width * 0.75f - WINDOW_MARGIN;
+      float right_width = content_width * 0.25f - WINDOW_MARGIN;
+      float top_height = SEARCH_PANEL_HEIGHT * ui_scale;
+      float bottom_height = content_height - top_height - spacing_y;
+      if (bottom_height < 0.0f) {
+        bottom_height = 0.0f;
+      }
 
-    float clamped_height = std::max(0.0f, content_height);
-    float preview_height = clamped_height * PREVIEW_RATIO;
-    float folder_tree_height = clamped_height * TREE_RATIO;
-    float progress_height = clamped_height * PROGRESS_RATIO;
-    float vertical_gap = clamped_height * GAP_RATIO;
+      float clamped_height = std::max(0.0f, content_height);
+      float preview_height = clamped_height * PREVIEW_RATIO;
+      float folder_tree_height = clamped_height * TREE_RATIO;
+      float progress_height = clamped_height * PROGRESS_RATIO;
+      float vertical_gap = clamped_height * GAP_RATIO;
 
-    // Left column (search + grid)
-    ImGui::BeginGroup();
-    render_search_panel(ui_state, safe_assets, texture_manager, left_width, top_height);
-    render_asset_grid(ui_state, texture_manager, safe_assets, left_width, bottom_height);
-    ImGui::EndGroup();
+      // Left column (search + grid)
+      ImGui::BeginGroup();
+      render_search_panel(ui_state, safe_assets, texture_manager, left_width, top_height);
+      render_asset_grid(ui_state, texture_manager, safe_assets, left_width, bottom_height);
+      ImGui::EndGroup();
 
-    ImGui::SameLine();
+      ImGui::SameLine();
 
-    // Right column (preview + progress)
-    float original_item_spacing_x = ImGui::GetStyle().ItemSpacing.x;
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(original_item_spacing_x, 0.0f));
-    ImGui::BeginGroup();
-    render_preview_panel(ui_state, texture_manager, current_model, camera, right_width, preview_height);
-    ImGui::Dummy(ImVec2(0.0f, vertical_gap));
-    render_folder_tree_panel(ui_state, texture_manager, right_width, folder_tree_height);
-    ImGui::Dummy(ImVec2(0.0f, vertical_gap));
-    render_progress_panel(ui_state, safe_assets, texture_manager, right_width, progress_height);
-    ImGui::EndGroup();
-    ImGui::PopStyleVar();
+      // Right column (preview + progress)
+      float original_item_spacing_x = ImGui::GetStyle().ItemSpacing.x;
+      ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(original_item_spacing_x, 0.0f));
+      ImGui::BeginGroup();
+      render_preview_panel(ui_state, texture_manager, current_model, camera, right_width, preview_height);
+      ImGui::Dummy(ImVec2(0.0f, vertical_gap));
+      render_folder_tree_panel(ui_state, texture_manager, right_width, folder_tree_height);
+      ImGui::Dummy(ImVec2(0.0f, vertical_gap));
+      render_progress_panel(ui_state, safe_assets, texture_manager, right_width, progress_height);
+      ImGui::EndGroup();
+      ImGui::PopStyleVar();
 
-    ImGui::End();
+      ImGui::End();
 
-    // Rendering
-    ImGui::Render();
-    int display_w, display_h;
-    glfwGetFramebufferSize(window, &display_w, &display_h);
-    glViewport(0, 0, display_w, display_h);
-    glClearColor(
-      Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
-      Theme::BACKGROUND_LIGHT_BLUE_1.w);
-    glClear(GL_COLOR_BUFFER_BIT);
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+      // Rendering
+      ImGui::Render();
+      int display_w, display_h;
+      glfwGetFramebufferSize(window, &display_w, &display_h);
+      glViewport(0, 0, display_w, display_h);
+      glClearColor(
+        Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
+        Theme::BACKGROUND_LIGHT_BLUE_1.w);
+      glClear(GL_COLOR_BUFFER_BIT);
+      ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    glfwSwapBuffers(window);
+      glfwSwapBuffers(window);
     }  // End of UI mode main loop
   }  // End of headless/UI conditional
 

@@ -13,6 +13,14 @@
 #include "logger.h"
 #include "services.h"
 #include "drag_drop.h"
+#ifdef _WIN32
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+#include <windows.h>
+#include <shellscalingapi.h>
+extern "C" HRESULT WINAPI SetProcessDpiAwareness(PROCESS_DPI_AWARENESS value);
+#endif
 #include <vector>
 #include <sstream>
 #include <algorithm>
@@ -23,9 +31,9 @@
 #include <filesystem>
 #include <limits>
 
-
 namespace {
   bool render_assets_directory_modal(UIState& ui_state) {
+    float ui_scale = ui_state.ui_scale;
     bool directory_changed = false;
 
     bool popup_style_pushed = false;
@@ -69,9 +77,9 @@ namespace {
         ImVec2 window_pos = ImGui::GetWindowPos();
         ImVec2 window_size = ImGui::GetWindowSize();
 
-        draw_nine_slice_image(modal_atlas, modal_frame, window_pos, window_size);
+        draw_nine_slice_image(modal_atlas, modal_frame, window_pos, window_size, ui_scale);
 
-        float header_height = modal_frame.border.z * modal_frame.pixel_scale;
+        float header_height = modal_frame.border.z * modal_frame.pixel_scale * ui_scale;
         const char* header_text = "Select Assets Directory";
         ImFont* header_font = Theme::get_primary_font_large();
         ImFont* draw_font = header_font ? header_font : ImGui::GetFont();
@@ -121,7 +129,7 @@ namespace {
         ImVec2 list_size(ImGui::GetContentRegionAvail().x, list_height);
         static const SlicedSprite list_frame = make_8px_frame(1, 2, 2.0f);
         if (list_atlas.is_valid() && list_size.x > 0.0f && list_size.y > 0.0f) {
-          draw_nine_slice_image(list_atlas, list_frame, list_pos, list_size);
+          draw_nine_slice_image(list_atlas, list_frame, list_pos, list_size, ui_scale);
         }
         ImVec2 child_pos(
           list_pos.x + LIST_PADDING,
@@ -245,7 +253,7 @@ namespace {
         if (scrollbar_atlas.is_valid()) {
           SlicedSprite track_def = make_scrollbar_track_definition(0, list_scroll_style.pixel_scale);
           SlicedSprite thumb_def = make_scrollbar_thumb_definition(list_scroll_style.pixel_scale);
-          draw_scrollbar_overlay(list_scroll, scrollbar_atlas, track_def, thumb_def);
+          draw_scrollbar_overlay(list_scroll, scrollbar_atlas, track_def, thumb_def, ui_scale);
         }
 
         ImGui::SetCursorScreenPos(ImVec2(list_pos.x, list_pos.y + list_size.y));
@@ -257,7 +265,7 @@ namespace {
       float total_width = action_button_size.x * 2.0f + BUTTON_SPACING;
       float center_offset = std::max(0.0f, (available_width - total_width) * 0.5f);
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center_offset);
-      if (draw_small_frame_button("AssetsSelectButton", "Select", modal_atlas, action_button_size, 3.0f)) {
+      if (draw_small_frame_button("AssetsSelectButton", "Select", modal_atlas, action_button_size, ui_scale, 3.0f)) {
         if (!ui_state.assets_path_selected.empty() && !ui_state.show_drive_roots) {
           LOG_INFO("Assets directory selected: {}", ui_state.assets_path_selected);
           directory_changed = true;
@@ -266,7 +274,7 @@ namespace {
         ImGui::CloseCurrentPopup();
       }
       ImGui::SameLine(0.0f, BUTTON_SPACING);
-      if (draw_small_frame_button("AssetsCancelButton", "Cancel", modal_atlas, action_button_size, 3.0f)) {
+      if (draw_small_frame_button("AssetsCancelButton", "Cancel", modal_atlas, action_button_size, ui_scale, 3.0f)) {
         ui_state.show_drive_roots = false;
         ImGui::CloseCurrentPopup();
       }
@@ -341,6 +349,7 @@ void clear_ui_state(UIState& ui_state) {
 
 void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
   TextureManager& texture_manager, float panel_width, float panel_height) {
+  float ui_scale = ui_state.ui_scale;
   SpriteAtlas progress_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite progress_frame_definition = make_16px_frame(1, 3.0f);
   ImVec2 panel_pos = ImGui::GetCursorScreenPos();
@@ -364,9 +373,9 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
 
     if (progress_frame_atlas.is_valid()) {
       draw_nine_slice_image(progress_frame_atlas, progress_frame_definition,
-        bar_pos, bar_size, Theme::COLOR_WHITE_U32);
+        bar_pos, bar_size, ui_scale, Theme::COLOR_WHITE_U32);
 
-      float frame_border = progress_frame_definition.border.x * progress_frame_definition.pixel_scale;
+      float frame_border = progress_frame_definition.border.x * progress_frame_definition.pixel_scale * ui_scale;
       float fill_inset = std::max(2.0f, frame_border * 0.5f);
       ImVec2 fill_pos(
         bar_pos.x + fill_inset,
@@ -387,7 +396,7 @@ void render_progress_panel(UIState& ui_state, SafeAssets& safe_assets,
     char progress_text[64];
     snprintf(progress_text, sizeof(progress_text), "Processing %zu out of %zu", processed, total);
     ImVec2 text_size = ImGui::CalcTextSize(progress_text);
-    float frame_border = progress_frame_definition.border.x * progress_frame_definition.pixel_scale;
+    float frame_border = progress_frame_definition.border.x * progress_frame_definition.pixel_scale * ui_scale;
     float fill_inset = std::max(2.0f, frame_border * 0.5f);
     ImVec2 inner_pos(
       bar_pos.x + fill_inset,

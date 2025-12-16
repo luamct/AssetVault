@@ -15,6 +15,8 @@ void render_search_panel(UIState& ui_state,
   const SafeAssets& safe_assets,
   TextureManager& texture_manager,
   float panel_width, float panel_height) {
+  float ui_scale = ui_state.ui_scale;
+
   SpriteAtlas search_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite search_frame_definition = make_16px_frame(0, 3.0f);
   const SlicedSprite toggle_frame_definition = make_8px_frame(2, 1, 3.0f);
@@ -23,11 +25,11 @@ void render_search_panel(UIState& ui_state,
 
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), false);
 
-  const float top_padding = 8.0f;
-  const float bottom_padding = 4.0f;
-  const float control_spacing_x = 12.0f;
-  const float toggle_spacing = 10.0f;
-  const float toggle_button_height = 35.0f;
+  const float top_padding = 8.0f * ui_scale;
+  const float bottom_padding = 4.0f * ui_scale;
+  const float control_spacing_x = 12.0f * ui_scale;
+  const float toggle_spacing = 10.0f * ui_scale;
+  const float toggle_button_height = 35.0f * ui_scale;
 
   bool open_settings_modal = false;
   bool request_assets_directory_modal = false;
@@ -37,7 +39,7 @@ void render_search_panel(UIState& ui_state,
   float search_box_width = std::max(0.0f, content_width * 0.5f);
   float settings_button_size = ImGui::GetFrameHeight() * 2.0f;
   unsigned int settings_icon = texture_manager.get_settings_icon();
-  const float frame_padding_y = 16.0f;
+  const float frame_padding_y = 16.0f * ui_scale;
   float frame_height = ImGui::GetFontSize() + frame_padding_y * 2.0f;
   float button_x = std::max(0.0f, content_width - settings_button_size);
 
@@ -71,7 +73,7 @@ void render_search_panel(UIState& ui_state,
   }
 
   bool enter_pressed = fancy_text_input("##Search", ui_state.buffer, sizeof(ui_state.buffer),
-    search_box_width, 20.0f, frame_padding_y, 0.0f);
+    search_box_width, 20.0f * ui_scale, frame_padding_y, 0.0f);
 
   if (can_layer_frame) {
     ImVec2 input_min = ImGui::GetItemRectMin();
@@ -85,11 +87,11 @@ void render_search_panel(UIState& ui_state,
       : search_frame_definition;
 
     draw_list->ChannelsSetCurrent(0);
-    draw_nine_slice_image(search_frame_atlas, frame_def, input_min, input_size);
+    draw_nine_slice_image(search_frame_atlas, frame_def, input_min, input_size, ui_scale);
     draw_list->ChannelsMerge();
   }
   else if (search_frame_atlas.is_valid()) {
-    draw_nine_slice_image(search_frame_atlas, search_frame_definition, frame_pos, frame_size);
+    draw_nine_slice_image(search_frame_atlas, search_frame_definition, frame_pos, frame_size, ui_scale);
   }
 
   std::string current_input(ui_state.buffer);
@@ -119,10 +121,10 @@ void render_search_panel(UIState& ui_state,
 
   float toggles_y = search_y + std::max(0.0f, (frame_height - toggle_button_height) * 0.5f);
 
-  float button_width_2d = 70.0f;
-  float button_width_3d = 70.0f;
-  float button_width_audio = 84.0f;
-  float button_width_font = 72.0f;
+  float button_width_2d = 70.0f * ui_scale;
+  float button_width_3d = 70.0f * ui_scale;
+  float button_width_audio = 84.0f * ui_scale;
+  float button_width_font = 72.0f * ui_scale;
 
   float toggles_width = button_width_2d + button_width_3d + button_width_audio + button_width_font +
     toggle_spacing * 3.0f;
@@ -137,25 +139,25 @@ void render_search_panel(UIState& ui_state,
   any_toggle_changed |= draw_type_toggle_button("2D", ui_state.type_filter_2d,
     content_origin.x + current_x, content_origin.y + toggles_y,
     button_width_2d, toggle_button_height, Theme::TAG_TYPE_2D,
-    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected);
+    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected, ui_scale);
   current_x += button_width_2d + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("3D", ui_state.type_filter_3d,
     content_origin.x + current_x, content_origin.y + toggles_y,
     button_width_3d, toggle_button_height, Theme::TAG_TYPE_3D,
-    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected);
+    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected, ui_scale);
   current_x += button_width_3d + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("Audio", ui_state.type_filter_audio,
     content_origin.x + current_x, content_origin.y + toggles_y,
     button_width_audio, toggle_button_height, Theme::TAG_TYPE_AUDIO,
-    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected);
+    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected, ui_scale);
   current_x += button_width_audio + toggle_spacing;
 
   any_toggle_changed |= draw_type_toggle_button("Font", ui_state.type_filter_font,
     content_origin.x + current_x, content_origin.y + toggles_y,
     button_width_font, toggle_button_height, Theme::TAG_TYPE_FONT,
-    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected);
+    search_frame_atlas, toggle_frame_definition, toggle_frame_definition_selected, ui_scale);
   current_x += button_width_font + toggle_spacing;
 
   if (any_toggle_changed) {
@@ -169,7 +171,7 @@ void render_search_panel(UIState& ui_state,
   const char* SETTINGS_MODAL_ID = "Settings";
   auto configure_settings_modal = [&](bool force_position) {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
-    float modal_width = viewport ? viewport->Size.x * 0.5f : 400.0f;
+    float modal_width = viewport ? viewport->Size.x * 0.5f : 400.0f * ui_scale;
     if (viewport) {
       ImVec2 modal_center(
         viewport->Pos.x + viewport->Size.x * 0.5f,
@@ -228,9 +230,9 @@ void render_search_panel(UIState& ui_state,
       ImVec2 window_pos = ImGui::GetWindowPos();
       ImVec2 window_size = ImGui::GetWindowSize();
 
-      draw_nine_slice_image(modal_atlas, modal_frame, window_pos, window_size);
+      draw_nine_slice_image(modal_atlas, modal_frame, window_pos, window_size, ui_scale);
 
-      float header_height = modal_frame.border.z * modal_frame.pixel_scale;
+      float header_height = modal_frame.border.z * modal_frame.pixel_scale * ui_scale;
       const char* header_text = "Settings";
       ImFont* header_font = Theme::get_primary_font_large();
       ImFont* draw_font = header_font ? header_font : ImGui::GetFont();
@@ -249,7 +251,7 @@ void render_search_panel(UIState& ui_state,
     }
 
     if (ImGui::BeginTable("SettingsTable", 2, ImGuiTableFlags_SizingStretchProp)) {
-      const float SETTINGS_ROW_HEIGHT = 40.0f;
+      const float SETTINGS_ROW_HEIGHT = 40.0f * ui_scale;
       auto next_row = [&]() {
         ImGui::TableNextRow(ImGuiTableRowFlags_None, SETTINGS_ROW_HEIGHT);
       };
@@ -260,14 +262,14 @@ void render_search_panel(UIState& ui_state,
       ImGui::AlignTextToFramePadding();
       ImGui::TextColored(Theme::TEXT_SECONDARY, "Assets directory");
 
-      static const SlicedSprite value_frame = make_8px_frame(0, 0, 1.5f);
+      const SlicedSprite value_frame = make_8px_frame(0, 0, 1.5f);
 
       ImGui::TableSetColumnIndex(1);
       ImGui::AlignTextToFramePadding();
       if (!ui_state.assets_directory.empty()) {
         const std::string display_path = ui_state.assets_directory;
         if (draw_wrapped_settings_entry_with_frame("AssetsDirectoryButton",
-            display_path, Theme::TEXT_LIGHTER, modal_atlas, value_frame, 10.0f, 8.0f)) {
+            display_path, Theme::TEXT_LIGHTER, modal_atlas, value_frame, ui_scale, ImVec2(10.0f, 8.0f))) {
           request_assets_directory_modal = true;
           ImGui::CloseCurrentPopup();
         }
@@ -275,7 +277,7 @@ void render_search_panel(UIState& ui_state,
       else {
         if (draw_wrapped_settings_entry_with_frame("AssetsDirectoryPlaceholder",
             "Select Assets Folder", Theme::TEXT_DISABLED_DARK,
-            modal_atlas, value_frame, 10.0f, 8.0f)) {
+            modal_atlas, value_frame, ui_scale, ImVec2(10.0f, 8.0f))) {
           request_assets_directory_modal = true;
           ImGui::CloseCurrentPopup();
         }
@@ -289,10 +291,10 @@ void render_search_panel(UIState& ui_state,
       ImGui::TableSetColumnIndex(1);
       ImGui::AlignTextToFramePadding();
       bool draw_axes = Config::draw_debug_axes();
-      if (draw_pixel_checkbox("DrawDebugAxesCheckbox", draw_axes, modal_atlas, 2.5f)) {
+      if (draw_pixel_checkbox("DrawDebugAxesCheckbox", draw_axes, modal_atlas, ui_scale, 2.5f)) {
         Config::set_draw_debug_axes(draw_axes);
       }
-      ImGui::SameLine(0.0f, 8.0f);
+      ImGui::SameLine(0.0f, 8.0f * ui_scale);
       ImGui::TextColored(draw_axes ? Theme::TEXT_LIGHTER : Theme::TEXT_SECONDARY, "Show axes overlay");
       if (ImGui::IsItemClicked()) {
         draw_axes = !draw_axes;
@@ -309,7 +311,7 @@ void render_search_panel(UIState& ui_state,
       std::string projection_pref = ui_state.preview_projection;
       bool ortho_selected = projection_pref != Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
       auto draw_projection_option = [&](const char* label, bool selected, const char* id) {
-        bool toggled = draw_pixel_radio_button(id, selected, modal_atlas, 2.5f);
+        bool toggled = draw_pixel_radio_button(id, selected, modal_atlas, ui_scale, 2.5f);
         ImGui::SameLine(0.0f, 6.0f);
         ImGui::TextColored(selected ? Theme::TEXT_LIGHTER : Theme::TEXT_SECONDARY, "%s", label);
         bool text_clicked = ImGui::IsItemClicked();
@@ -320,7 +322,7 @@ void render_search_panel(UIState& ui_state,
         ui_state.preview_projection = projection_pref;
         Config::set_preview_projection(projection_pref);
       }
-      ImGui::SameLine(0.0f, 18.0f);
+      ImGui::SameLine(0.0f, 18.0f * ui_scale);
       bool perspective_selected = projection_pref == Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
       if (draw_projection_option("Perspective", perspective_selected, "ProjectionPerspective")) {
         projection_pref = Config::CONFIG_VALUE_PROJECTION_PERSPECTIVE;
@@ -332,11 +334,11 @@ void render_search_panel(UIState& ui_state,
     }
 
     ImGui::Spacing();
-    ImVec2 close_button_size(200.0f, 40.0f);
+    ImVec2 close_button_size(200.0f * ui_scale, 40.0f * ui_scale);
     float available_width = ImGui::GetContentRegionAvail().x;
     float center_offset = std::max(0.0f, (available_width - close_button_size.x) * 0.5f);
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center_offset);
-    if (draw_small_frame_button("SettingsCloseButton", "Close", modal_atlas, close_button_size, 3.0f)) {
+    if (draw_small_frame_button("SettingsCloseButton", "Close", modal_atlas, close_button_size, ui_scale, 3.0f)) {
       ImGui::CloseCurrentPopup();
     }
 

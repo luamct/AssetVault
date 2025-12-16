@@ -28,6 +28,7 @@ void draw_nine_slice_image(const SpriteAtlas& atlas,
     const SlicedSprite& definition,
     const ImVec2& dest_pos,
     const ImVec2& dest_size,
+    float ui_scale,
     ImU32 tint = Theme::COLOR_WHITE_U32);
 
 // Draw a dashed horizontal separator with pixel-art style segments.
@@ -73,7 +74,8 @@ void end_scrollbar_child(ScrollbarState& state);
 void draw_scrollbar_overlay(const ScrollbarState& state,
     const SpriteAtlas& atlas,
     const SlicedSprite& track_def,
-    const SlicedSprite& thumb_def);
+    const SlicedSprite& thumb_def,
+    float ui_scale);
 
 struct IconButtonColors {
   ImVec4 normal = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -101,8 +103,8 @@ bool draw_wrapped_settings_entry_with_frame(const char* id,
     const ImVec4& text_color,
     const SpriteAtlas& atlas,
     const SlicedSprite& frame_def,
-    float padding_x = 8.0f,
-    float padding_y = 4.0f);
+    float ui_scale,
+    ImVec2 padding = ImVec2(8.0f, 4.0f));
 
 bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float width,
     float padding_x = 20.0f, float padding_y = 16.0f, float corner_radius = 25.0f);
@@ -111,7 +113,8 @@ bool draw_type_toggle_button(const char* label, bool& toggle_state, float x_pos,
     float button_width, float button_height, const ImVec4& active_color,
     const SpriteAtlas& frame_atlas,
     const SlicedSprite& frame_default,
-    const SlicedSprite& frame_selected);
+    const SlicedSprite& frame_selected,
+    float ui_scale);
 
 // Pixel-art tag chip with 8px frame backing.
 void draw_tag_chip(const std::string& text,
@@ -120,22 +123,26 @@ void draw_tag_chip(const std::string& text,
     const char* id_suffix,
     const SpriteAtlas& atlas,
     const SlicedSprite& frame_def,
+    float ui_scale,
     ImVec2 padding = ImVec2(10.0f, 4.0f));
 
 bool draw_pixel_radio_button(const char* id,
     bool selected,
     const SpriteAtlas& atlas,
+    float ui_scale,
     float pixel_scale = 2.0f);
 
 bool draw_pixel_checkbox(const char* id,
     bool& value,
     const SpriteAtlas& atlas,
+    float ui_scale,
     float pixel_scale = 2.0f);
 
 bool draw_small_frame_button(const char* id,
     const char* label,
     const SpriteAtlas& atlas,
     const ImVec2& size,
+    float ui_scale,
     float pixel_scale = 3.0f);
 
 SlicedSprite make_16px_frame(int index, float pixel_scale = 1.0f);

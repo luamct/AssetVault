@@ -14,7 +14,7 @@
 #include <vector>
 
 namespace {
-constexpr bool DEBUG_CLEAN_START = true;
+    constexpr bool DEBUG_CLEAN_START = false;
 }
 
 // Static member initialization
@@ -147,7 +147,8 @@ void Services::stop(SafeAssets* safe_assets) {
         search_index_->clear();
 
         LOG_INFO("Services stopped and data cleared (restart scenario)");
-    } else {
+    }
+    else {
         // Final shutdown - close database connection
         database_->close();
         LOG_INFO("All services stopped (final shutdown)");

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include "imgui.h"
 
 namespace Fonts {
 
@@ -8,5 +9,7 @@ namespace Fonts {
 // Throws std::runtime_error on failure.
 void generate_font_thumbnail(const std::filesystem::path& font_path,
                              const std::filesystem::path& thumbnail_path);
+
+bool load_fonts(ImGuiIO& io, float scale = 1.0f);
 
 }
