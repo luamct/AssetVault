@@ -10,11 +10,14 @@ jobs:
   build-macos:
     name: Build macOS .app
     runs-on: macos-14
-    env:
-      VCPKG_ROOT: ${{ runner.temp }}/vcpkg
-      VCPKG_DEFAULT_TRIPLET: arm64-osx
 
     steps:
+      - name: Set env paths
+        run: |
+          echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_TRIPLET=arm64-osx" >> "$GITHUB_ENV"
+          echo "ARTIFACT_DIR=${RUNNER_TEMP}/install" >> "$GITHUB_ENV"
+
       - name: Check out repository
         uses: actions/checkout@v4
 
@@ -47,16 +50,16 @@ jobs:
         run: cmake --build --preset macos
 
       - name: Install bundle
-        run: cmake --install build --prefix "${{ runner.temp }}/install"
+        run: cmake --install build --prefix "${ARTIFACT_DIR}"
 
       - name: Package .app for download
         run: |
-          cd "${{ runner.temp }}/install"
+          cd "${ARTIFACT_DIR}"
           ditto -c -k --sequesterRsrc --keepParent AssetVault.app AssetVault-macos.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: AssetVault-macos-app
-          path: ${{ runner.temp }}/install/AssetVault-macos.zip
+          path: ${{ env.ARTIFACT_DIR }}/AssetVault-macos.zip
           retention-days: 7
