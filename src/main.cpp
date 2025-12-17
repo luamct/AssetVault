@@ -63,14 +63,29 @@ namespace {
       return;
     }
     UIState* ui_state = static_cast<UIState*>(user_ptr);
-    ui_state->pending_content_scale = std::max(x_scale, y_scale);
-    ui_state->content_scale_dirty = true;
+    ui_state->pending_dpi_scale = std::max(x_scale, y_scale);
+    ui_state->dpi_scale_dirty = true;
   }
 
-  void apply_ui_scale(ImGuiIO& io, UIState& ui_state, float scale) {
-    ui_state.ui_scale = std::clamp(scale, 0.5f, 3.0f);
+  void apply_ui_scale(ImGuiIO& io, UIState& ui_state, float dpi_scale) {
+    ui_state.dpi_scale = std::clamp(dpi_scale, 0.5f, 3.0f);
+    float font_raster_scale = ui_state.dpi_scale;
+
+#ifdef __APPLE__
+    // GLFW reports DisplaySize in points on macOS. Keep logical UI sizing stable, while
+    // rasterizing fonts at higher resolution for crisp rendering.
+    ui_state.ui_scale = 1.0f;
+    io.FontGlobalScale = 1.0f / ui_state.dpi_scale;
+#else
+    // GLFW reports DisplaySize in pixels on most other platforms. Scale UI with DPI.
+    ui_state.ui_scale = ui_state.dpi_scale;
+    io.FontGlobalScale = 1.0f;
+    font_raster_scale = ui_state.ui_scale;
+#endif
+
     io.Fonts->Clear();
-    Fonts::load_fonts(io, ui_state.ui_scale);
+    Fonts::load_fonts(io, font_raster_scale);
+
     ImGui::GetStyle() = ImGuiStyle();  // reset to default
     Theme::setup_light_fun_theme();    // reapply theme colors/spacing
     ImGui::GetStyle().ScaleAllSizes(ui_state.ui_scale);
@@ -90,11 +105,10 @@ static ImGuiIO* initialize_imgui(GLFWwindow* window, UIState& ui_state) {
   float content_scale_x = 1.0f;
   float content_scale_y = 1.0f;
   glfwGetWindowContentScale(window, &content_scale_x, &content_scale_y);
-  float font_scale = std::max(content_scale_x, content_scale_y);
-  ui_state.pending_content_scale = font_scale;
-  ui_state.content_scale_dirty = true;
-  Theme::setup_light_fun_theme();
-  apply_ui_scale(io, ui_state, font_scale);
+  const float dpi_scale = std::max(content_scale_x, content_scale_y);
+  ui_state.pending_dpi_scale = dpi_scale;
+  ui_state.dpi_scale_dirty = false;
+  apply_ui_scale(io, ui_state, dpi_scale);
 
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init("#version 330");
@@ -108,6 +122,7 @@ int run(std::atomic<bool>* shutdown_requested) {
 
   Logger::initialize(LogLevel::Info);
   LOG_INFO("AssetVault application starting {}", headless_mode ? " (headless mode)" : "...");
+  LOG_INFO("Log file: {}", Logger::get_log_file_path().u8string());
 
   ensure_executable_working_directory();
 
@@ -246,9 +261,9 @@ int run(std::atomic<bool>* shutdown_requested) {
       last_time = current_time;
 
       glfwPollEvents();
-      if (ui_state.content_scale_dirty) {
-        ui_state.content_scale_dirty = false;
-        apply_ui_scale(*io_ptr, ui_state, ui_state.pending_content_scale);
+      if (ui_state.dpi_scale_dirty) {
+        ui_state.dpi_scale_dirty = false;
+        apply_ui_scale(*io_ptr, ui_state, ui_state.pending_dpi_scale);
       }
 
       // Reset folder tree if a processing batch finished

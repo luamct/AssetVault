@@ -47,10 +47,12 @@ struct UIState {
   std::string last_buffer = "";
   std::string input_tracking = ""; // Track input to detect real changes
 
-  // DPI/UI scale derived from font size
+  // UI scale used for layout and sizing.
+  // Note: on macOS we keep this at 1.0 and use dpi_scale for font rasterization only.
   float ui_scale = 1.0f;
-  float pending_content_scale = 1.0f;
-  bool content_scale_dirty = false;
+  float dpi_scale = 1.0f;
+  float pending_dpi_scale = 1.0f;
+  bool dpi_scale_dirty = false;
 
   // Debouncing state
   TimePoint last_keypress_time;
