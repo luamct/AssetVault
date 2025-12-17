@@ -10,34 +10,44 @@ jobs:
   build-macos:
     name: Build macOS .app
     runs-on: macos-14
+    env:
+      VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+      VCPKG_DEFAULT_TRIPLET: arm64-osx
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up vcpkg
-        id: vcpkg
-        uses: microsoft/vcpkg-action@v2
+      - name: Cache vcpkg
+        uses: actions/cache@v4
         with:
-          vcpkgJsonGlob: vcpkg.json
-          triplet: arm64-osx
-          vcpkgGitCommitId: 8cce1e1118ea2569d5117f096035671a8490b8f4
-          cachePackages: true
+          path: |
+            ${{ env.VCPKG_ROOT }}/installed
+            ${{ env.VCPKG_ROOT }}/buildtrees
+            ${{ env.VCPKG_ROOT }}/packages
+            ${{ env.VCPKG_ROOT }}/downloads
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d "${VCPKG_ROOT}/.git" ]; then
+            rm -rf "${VCPKG_ROOT}"
+            git clone https://github.com/microsoft/vcpkg "${VCPKG_ROOT}"
+          fi
+          git -C "${VCPKG_ROOT}" fetch --tags
+          git -C "${VCPKG_ROOT}" checkout 8cce1e1118ea2569d5117f096035671a8490b8f4
+          "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Configure CMake (macOS preset)
         run: cmake --preset macos
-        env:
-          VCPKG_ROOT: ${{ steps.vcpkg.outputs.vcpkgRoot }}
 
       - name: Build
         run: cmake --build --preset macos
-        env:
-          VCPKG_ROOT: ${{ steps.vcpkg.outputs.vcpkgRoot }}
 
       - name: Install bundle
         run: cmake --install build --prefix "${{ runner.temp }}/install"
-        env:
-          VCPKG_ROOT: ${{ steps.vcpkg.outputs.vcpkgRoot }}
 
       - name: Package .app for download
         run: |
