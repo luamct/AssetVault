@@ -17,6 +17,7 @@ jobs:
           echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg" >> "$GITHUB_ENV"
           echo "VCPKG_DEFAULT_TRIPLET=arm64-osx" >> "$GITHUB_ENV"
           echo "ARTIFACT_DIR=${RUNNER_TEMP}/install" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN_PATH=${RUNNER_TEMP}/signing.keychain-db" >> "$GITHUB_ENV"
 
       - name: Check out repository
         uses: actions/checkout@v4
@@ -51,6 +52,56 @@ jobs:
 
       - name: Install bundle
         run: cmake --install build --prefix "${ARTIFACT_DIR}"
+
+      - name: Import Apple signing certificate (optional)
+        if: ${{ secrets.MACOS_CERT_P12_BASE64 != '' && secrets.MACOS_CERT_PASSWORD != '' }}
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          CERT_PATH="${RUNNER_TEMP}/cert.p12"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "SIGNING_KEYCHAIN_PASSWORD=${KEYCHAIN_PASSWORD}" >> "$GITHUB_ENV"
+
+          echo "${MACOS_CERT_P12_BASE64}" | base64 --decode > "${CERT_PATH}"
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${SIGNING_KEYCHAIN_PATH}"
+          security set-keychain-settings -lut 21600 "${SIGNING_KEYCHAIN_PATH}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${SIGNING_KEYCHAIN_PATH}"
+          security import "${CERT_PATH}" -P "${MACOS_CERT_PASSWORD}" -A -t cert -f pkcs12 -k "${SIGNING_KEYCHAIN_PATH}"
+          security list-keychain -d user -s "${SIGNING_KEYCHAIN_PATH}"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${KEYCHAIN_PASSWORD}" "${SIGNING_KEYCHAIN_PATH}"
+
+      - name: Codesign app bundle (optional)
+        if: ${{ secrets.MACOS_CODESIGN_IDENTITY != '' }}
+        env:
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          APP_PATH="${ARTIFACT_DIR}/AssetVault.app"
+          codesign --force --deep --options runtime --timestamp --sign "${MACOS_CODESIGN_IDENTITY}" "${APP_PATH}"
+          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+
+      - name: Create zip for notarization
+        run: |
+          cd "${ARTIFACT_DIR}"
+          ditto -c -k --sequesterRsrc --keepParent AssetVault.app "${RUNNER_TEMP}/AssetVault-notary.zip"
+
+      - name: Notarize and staple (optional)
+        if: ${{ secrets.APPLE_NOTARYTOOL_ISSUER_ID != '' && secrets.APPLE_NOTARYTOOL_KEY_ID != '' && secrets.APPLE_NOTARYTOOL_KEY_P8_BASE64 != '' }}
+        env:
+          APPLE_NOTARYTOOL_ISSUER_ID: ${{ secrets.APPLE_NOTARYTOOL_ISSUER_ID }}
+          APPLE_NOTARYTOOL_KEY_ID: ${{ secrets.APPLE_NOTARYTOOL_KEY_ID }}
+          APPLE_NOTARYTOOL_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARYTOOL_KEY_P8_BASE64 }}
+        run: |
+          KEY_PATH="${RUNNER_TEMP}/AuthKey.p8"
+          echo "${APPLE_NOTARYTOOL_KEY_P8_BASE64}" | base64 --decode > "${KEY_PATH}"
+
+          xcrun notarytool submit "${RUNNER_TEMP}/AssetVault-notary.zip" \
+            --key "${KEY_PATH}" \
+            --key-id "${APPLE_NOTARYTOOL_KEY_ID}" \
+            --issuer "${APPLE_NOTARYTOOL_ISSUER_ID}" \
+            --wait
+
+          xcrun stapler staple "${ARTIFACT_DIR}/AssetVault.app"
 
       - name: Package .app for download
         run: |
