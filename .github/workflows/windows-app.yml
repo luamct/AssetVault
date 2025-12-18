@@ -16,7 +16,7 @@ jobs:
         shell: pwsh
         run: |
           "VCPKG_ROOT=$env:RUNNER_TEMP\\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "VCPKG_DEFAULT_TRIPLET=x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VCPKG_DEFAULT_TRIPLET=x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Append
           "ARTIFACT_DIR=$env:RUNNER_TEMP\\install" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Check out repository
@@ -45,18 +45,19 @@ jobs:
           git -C "$env:VCPKG_ROOT" checkout 8cce1e1118ea2569d5117f096035671a8490b8f4
           & "$env:VCPKG_ROOT\\bootstrap-vcpkg.bat" -disableMetrics
 
-      - name: Configure CMake (windows preset)
+      - name: Configure CMake (windows-static preset)
         shell: pwsh
-        run: cmake --preset windows
+        run: cmake --preset windows-static
 
-      - name: Build (Release)
+      - name: Build (Release, static)
         shell: pwsh
-        run: cmake --build --preset windows --config Release
+        run: cmake --build --preset windows-static --config Release
 
       - name: Stage executable and runtime DLLs
         shell: pwsh
         run: |
-          $exeDir = Join-Path $env:GITHUB_WORKSPACE "build\\Release"
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE "build\\windows-static"
+          $exeDir = Join-Path $buildDir "Release"
           $exePath = Join-Path $exeDir "AssetVault.exe"
           if (!(Test-Path $exePath)) {
             throw "Expected executable not found: $exePath"
@@ -71,21 +72,13 @@ jobs:
             Copy-Item $pdbPath -Destination $stageDir -Force
           }
 
-          $installedDir = Join-Path $env:GITHUB_WORKSPACE "build\\vcpkg_installed\\x64-windows"
-          $applocal = Join-Path $env:VCPKG_ROOT "scripts\\buildsystems\\msbuild\\applocal.ps1"
-          if (Test-Path $applocal) {
-            & $applocal -targetBinary (Join-Path $stageDir "AssetVault.exe") -installedDir $installedDir
-          }
-
-          $zipPath = Join-Path $env:RUNNER_TEMP "AssetVault-windows.zip"
-          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-          Compress-Archive -Path (Join-Path $stageDir "*") -DestinationPath $zipPath
-
-          Copy-Item $zipPath -Destination (Join-Path $env:GITHUB_WORKSPACE "AssetVault-windows.zip") -Force
+          Write-Host "Staged files:"
+          Get-ChildItem -Path $stageDir | Format-Table Name, Length
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: AssetVault-windows
-          path: AssetVault-windows.zip
+          path: ${{ runner.temp }}\\AssetVault-windows
+          if-no-files-found: error
           retention-days: 7
