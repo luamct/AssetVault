@@ -457,9 +457,19 @@ int run(std::atomic<bool>* shutdown_requested) {
 #endif
 
 #ifndef ASSET_VAULT_ENTRYPOINT
+#ifdef _WIN32
+#define ASSET_VAULT_ENTRYPOINT wWinMain
+#else
 #define ASSET_VAULT_ENTRYPOINT main
 #endif
+#endif
 
+#ifdef _WIN32
+int APIENTRY ASSET_VAULT_ENTRYPOINT(HINSTANCE, HINSTANCE, PWSTR, int) {
+  return run(nullptr);
+}
+#else
 int ASSET_VAULT_ENTRYPOINT() {
   return run(nullptr);
 }
+#endif

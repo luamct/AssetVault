@@ -284,12 +284,16 @@ set(TEST_LIBRARIES
 # ============================================================================
 
 # Main executable - only main.cpp, links to AssetVaultCore for everything else
-add_executable(AssetVault
-    src/main.cpp
-)
-
 if(PLATFORM_WINDOWS)
-    target_sources(AssetVault PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.rc)
+    # WIN32 suppresses the console window; use a WinMain-style entry point
+    add_executable(AssetVault WIN32
+        src/main.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.rc
+    )
+else()
+    add_executable(AssetVault
+        src/main.cpp
+    )
 endif()
 
 # Configure for app bundle on macOS
