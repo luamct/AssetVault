@@ -288,8 +288,38 @@ add_executable(AssetVault
     src/main.cpp
 )
 
+if(PLATFORM_WINDOWS)
+    target_sources(AssetVault PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.rc)
+endif()
+
 # Configure for app bundle on macOS
 if(PLATFORM_MACOS)
+    set(APP_ICON_PNG ${CMAKE_CURRENT_SOURCE_DIR}/images/vault.png)
+    set(APP_ICONSET_DIR ${CMAKE_CURRENT_BINARY_DIR}/vault.iconset)
+    set(APP_ICON_ICNS ${CMAKE_CURRENT_BINARY_DIR}/vault.icns)
+
+    add_custom_command(
+        OUTPUT ${APP_ICON_ICNS}
+        COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_ICONSET_DIR}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${APP_ICONSET_DIR}
+        COMMAND sips -z 16 16     ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_16x16.png
+        COMMAND sips -z 32 32     ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_16x16@2x.png
+        COMMAND sips -z 32 32     ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_32x32.png
+        COMMAND sips -z 64 64     ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_32x32@2x.png
+        COMMAND sips -z 128 128   ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_128x128.png
+        COMMAND sips -z 256 256   ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_128x128@2x.png
+        COMMAND sips -z 256 256   ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_256x256.png
+        COMMAND sips -z 512 512   ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_256x256@2x.png
+        COMMAND sips -z 512 512   ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_512x512.png
+        COMMAND sips -z 1024 1024 ${APP_ICON_PNG} --out ${APP_ICONSET_DIR}/icon_512x512@2x.png
+        COMMAND iconutil -c icns ${APP_ICONSET_DIR} -o ${APP_ICON_ICNS}
+        DEPENDS ${APP_ICON_PNG}
+        COMMENT "Generating app icon (icns) from ${APP_ICON_PNG}"
+        VERBATIM
+    )
+
+    set_source_files_properties(${APP_ICON_ICNS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+
     set_target_properties(AssetVault PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
@@ -298,6 +328,7 @@ if(PLATFORM_MACOS)
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
         MACOSX_BUNDLE_LONG_VERSION_STRING "1.0.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0"
+        MACOSX_BUNDLE_ICON_FILE "vault.icns"
     )
 endif()
 
@@ -314,6 +345,10 @@ target_link_libraries(AssetVault PRIVATE
     AssetVaultCore
     OpenGL::GL
 )
+
+if(PLATFORM_MACOS)
+    target_sources(AssetVault PRIVATE ${APP_ICON_ICNS})
+endif()
 
 # Platform-specific system libraries
 if(PLATFORM_WINDOWS)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Downscale a rasterized pixel-art image by inferring the pixel grid.
+"""Crop or downscale a rasterized pixel-art image by inferring the pixel grid.
 
 The script:
 1) Finds the content bounding box (alpha-aware, or by background color).
@@ -7,6 +7,9 @@ The script:
 3) Snaps the square to a pixel grid inferred from the desired output size.
 4) Samples the center of each grid cell, optionally merging near colors to
    smooth minor rasterization noise.
+
+Default behavior is `crop`: write out only the detected content bounding box.
+The existing downscale pipeline is kept around for later iterations.
 """
 
 from __future__ import annotations
@@ -25,32 +28,43 @@ except ImportError as exc:  # pragma: no cover - depends on environment
 
 Color = Tuple[int, int, int, int]
 BBox = Tuple[int, int, int, int]
-BACKGROUND_THRESHOLD = 16
+BACKGROUND_THRESHOLD = 24
+RUN_LENGTH_THRESHOLD = 4
 
 
 def parse_args() -> argparse.Namespace:
   parser = argparse.ArgumentParser(
       description=(
-          "Downscale a pixel-art image by aligning to the inferred pixel grid and "
-          "sampling the center of each cell."
+          "Crop or downscale a pixel-art image. Default is `crop`, which writes the "
+          "detected content region to an output file."
       )
   )
   parser.add_argument(
+      "--mode",
+      "-m",
+      choices=("crop", "downscale"),
+      default="crop",
+      help="Operation mode (default: crop).",
+  )
+  parser.add_argument(
       "--input",
+      "-i",
       type=pathlib.Path,
-      default=pathlib.Path("images/headphone_big.png"),
-      help="Path to the source image (default: images/headphone_big.png)",
+      required=True,
+      help="Path to the source image.",
   )
   parser.add_argument(
       "--output",
+      "-o",
       type=pathlib.Path,
-      default=pathlib.Path("images/headphone_downscaled.png"),
-      help="Destination path for the output image",
+      default=None,
+      help="Destination path for the output image (default: derived from input).",
   )
   parser.add_argument(
       "--size",
       "--output-size",
       "--target-size",
+      "-s",
       dest="size",
       type=int,
       default=16,
@@ -58,28 +72,50 @@ def parse_args() -> argparse.Namespace:
   )
   parser.add_argument(
       "--pixel-size",
+      "-p",
       type=int,
-      required=True,
-      help="Size (in source pixels) of one output pixel cell.",
+      default=None,
+      help="Size (in source pixels) of one output pixel cell (required for downscale).",
   )
   parser.add_argument(
       "--tolerance",
+      "-t",
       type=float,
-      default=0.05,
+      default=None,
       help=(
           "RGB distance tolerance in [0,1] for merging similar colors "
-          "(default: 0.05)"
+          "(omit to keep original sampled colors)"
       ),
   )
   parser.add_argument(
       "--debug-grid",
+      "-d",
       action="store_true",
       help="If set, writes a debug image with the aligned grid overlay.",
+  )
+  parser.add_argument(
+      "--bg-threshold",
+      "-b",
+      type=int,
+      default=BACKGROUND_THRESHOLD,
+      help=f"Background RGB threshold for content detection (default: {BACKGROUND_THRESHOLD}).",
+  )
+  parser.add_argument(
+      "--run-threshold",
+      "-r",
+      type=int,
+      default=RUN_LENGTH_THRESHOLD,
+      help=(
+          "RGB closeness threshold for grouping runs during pixel-size inference "
+          f"(default: {RUN_LENGTH_THRESHOLD}; lower values split runs sooner)."
+      ),
   )
   return parser.parse_args()
 
 
-def detect_content_bbox(image: Image.Image) -> BBox:
+def detect_content_bbox(
+    image: Image.Image, background_threshold: int = BACKGROUND_THRESHOLD
+) -> BBox:
   """Detect the bounding box of visible content."""
   alpha = image.getchannel("A")
   alpha_min, alpha_max = alpha.getextrema()
@@ -100,7 +136,7 @@ def detect_content_bbox(image: Image.Image) -> BBox:
   max_x, max_y = -1, -1
 
   for idx, pixel in enumerate(image.getdata()):
-    if not _color_close(pixel, bg, threshold=BACKGROUND_THRESHOLD):
+    if not _color_close(pixel, bg, threshold=background_threshold):
       x = idx % width
       y = idx // width
       if x < min_x:
@@ -162,6 +198,10 @@ def detect_background_color(image: Image.Image) -> Color:
     bg_candidates.append(pixels[0, y])
     bg_candidates.append(pixels[width - 1, y])
 
+  opaque_candidates = [c for c in bg_candidates if len(c) >= 4 and c[3] >= 250]
+  if opaque_candidates:
+    bg_candidates = opaque_candidates
+
   if not bg_candidates:
     return (0, 0, 0, 0)
 
@@ -181,12 +221,34 @@ def detect_background_color(image: Image.Image) -> Color:
   return (int(r), int(g), int(b), 255)
 
 
+def make_background_transparent(
+    image: Image.Image, background_color: Color, threshold: int
+) -> Image.Image:
+  if threshold < 0:
+    raise ValueError("Background threshold must be non-negative.")
+
+  output = image.copy()
+  data = list(output.getdata())
+  new_data: List[Color] = []
+  for pixel in data:
+    if pixel[3] == 0:
+      new_data.append(pixel)
+      continue
+    if _color_close(pixel, background_color, threshold=threshold):
+      new_data.append((pixel[0], pixel[1], pixel[2], 0))
+    else:
+      new_data.append(pixel)
+  output.putdata(new_data)
+  return output
+
+
 def infer_pixel_size(
     image: Image.Image,
     bbox: BBox,
     target_size: int,
-    min_runs: int = 8,
     background_color: Color | None = None,
+    run_threshold: int = RUN_LENGTH_THRESHOLD,
+    background_threshold: int = BACKGROUND_THRESHOLD,
 ) -> int:
   """Infer the pixel size by histogramming run-lengths across sampled scanlines."""
   left, top, right, bottom = bbox
@@ -215,7 +277,7 @@ def infer_pixel_size(
     for color in line:
       is_bg = (
           background_color is not None and
-          _color_close(color, background_color, BACKGROUND_THRESHOLD)
+          _color_close(color, background_color, background_threshold)
       )
 
       if last is None:
@@ -238,7 +300,7 @@ def infer_pixel_size(
         length = 1
         continue
 
-      if _color_close(color, last):
+      if _color_close(color, last, threshold=run_threshold):
         length += 1
       else:
         runs.append(length)
@@ -258,7 +320,7 @@ def infer_pixel_size(
   lower = max(1, expected_size // 4)
   upper = expected_size * 4
   filtered = [r for r in runs if lower <= r <= upper]
-  if len(filtered) < min_runs:
+  if not filtered:
     return expected_size
 
   histogram = {}
@@ -274,13 +336,7 @@ def infer_pixel_size(
       ),
   )
 
-  if abs(dominant_value - expected_size) > expected_size * 0.25:
-    return expected_size
-
-  if dominant_count < min_runs or dominant_count / float(len(filtered)) < 0.1:
-    inferred = expected_size
-  else:
-    inferred = dominant_value
+  inferred = dominant_value
 
   inferred = max(1, inferred)
   inferred = min(inferred, max(1, min(width, height)))
@@ -396,13 +452,69 @@ def write_debug_overlay(
   overlay.save(path)
 
 
+def write_grid_overlay(image: Image.Image, pixel_size: int, path: pathlib.Path) -> None:
+  """Draw a grid over the full image starting at the top-left."""
+  if pixel_size <= 0:
+    raise ValueError("Pixel size must be positive to draw a grid.")
+  overlay = image.copy()
+  draw = ImageDraw.Draw(overlay, "RGBA")
+  grid_color = (255, 0, 0, 160)
+
+  width, height = image.size
+  for x in range(0, width + 1, pixel_size):
+    draw.line([(x, 0), (x, height)], fill=grid_color, width=1)
+  for y in range(0, height + 1, pixel_size):
+    draw.line([(0, y), (width, y)], fill=grid_color, width=1)
+
+  overlay.save(path)
+
+
+def crop_to_content(
+    input_path: pathlib.Path,
+    output_path: pathlib.Path,
+    background_threshold: int,
+    target_size: int,
+    debug_grid: bool,
+    run_threshold: int,
+) -> None:
+  image = Image.open(input_path).convert("RGBA")
+  background_color = detect_background_color(image)
+  bbox = detect_content_bbox(image, background_threshold=background_threshold)
+  cropped = image.crop(bbox)
+
+  cropped = make_background_transparent(
+      cropped, background_color=background_color, threshold=background_threshold
+  )
+
+  inferred_pixel_size = infer_pixel_size(
+      cropped,
+      (0, 0, cropped.width, cropped.height),
+      target_size=target_size,
+      background_color=background_color,
+      run_threshold=run_threshold,
+      background_threshold=background_threshold,
+  )
+
+  cropped.save(output_path)
+  print(f"Input: {image.width}x{image.height}")
+  print(f"Background color: {background_color}")
+  print(f"Content bbox: {bbox}")
+  print(f"Inferred pixel size: {inferred_pixel_size}")
+  if debug_grid:
+    grid_path = grid_overlay_path(output_path)
+    write_grid_overlay(cropped, inferred_pixel_size, grid_path)
+    print(f"Wrote grid overlay to {grid_path}")
+  print(f"Wrote {output_path} ({cropped.width}x{cropped.height})")
+
+
 def downscale(
     input_path: pathlib.Path,
     output_path: pathlib.Path,
     target_size: int,
     pixel_size: int,
-    tolerance: float,
+    tolerance: float | None,
     debug_grid: bool,
+    background_threshold: int = BACKGROUND_THRESHOLD,
 ) -> None:
   image = Image.open(input_path).convert("RGBA")
 
@@ -411,30 +523,87 @@ def downscale(
   if alpha_min == alpha_max == 255:
     background_color = detect_background_color(image)
 
-  bbox = detect_content_bbox(image)
+  bbox = detect_content_bbox(image, background_threshold=background_threshold)
   square = expand_to_square(bbox, image.size)
   sample_region, aligned_pixel_size = align_sample_region(
       square, target_size, image.size, pixel_size
   )
 
   centers = sample_centers(image, sample_region, target_size, aligned_pixel_size)
-  merged = merge_palette(centers, tolerance)
-  write_output(output_path, target_size, merged)
+  if tolerance is None:
+    output_pixels = centers
+  else:
+    output_pixels = merge_palette(centers, tolerance)
+
+  if background_color is not None:
+    output_pixels = [
+        (p[0], p[1], p[2], 0)
+        if p[3] != 0 and _color_close(p, background_color, threshold=background_threshold)
+        else p
+        for p in output_pixels
+    ]
+
+  write_output(output_path, target_size, output_pixels)
   if debug_grid:
     debug_path = output_path.with_name(f"{output_path.stem}_debug.png")
     write_debug_overlay(image, sample_region, aligned_pixel_size, target_size, debug_path)
     print(f"Wrote debug overlay to {debug_path}")
   print(f"Input: {image.width}x{image.height}")
+  if background_color is not None:
+    print(f"Background color: {background_color}")
   print(f"Content bbox: {bbox}")
   print(f"Square region: {square}")
   print(f"Using pixel size: {aligned_pixel_size}")
   print(f"Aligned region: {sample_region} (pixel size: {aligned_pixel_size})")
 
 
+def default_output_path(input_path: pathlib.Path, mode: str) -> pathlib.Path:
+  if mode == "crop":
+    suffix = "_cropped"
+  else:
+    suffix = "_downscaled"
+  return input_path.with_name(f"{input_path.stem}{suffix}{input_path.suffix}")
+
+
+def grid_overlay_path(output_path: pathlib.Path) -> pathlib.Path:
+  stem = output_path.stem
+  for suffix in ("_grid_overlay", "_grid"):
+    if stem.endswith(suffix):
+      stem = stem[: -len(suffix)]
+      break
+  return output_path.with_name(f"{stem}_grid_overlay{output_path.suffix}")
+
+
 def main() -> None:
   args = parse_args()
-  downscale(args.input, args.output, args.size, args.pixel_size, args.tolerance, args.debug_grid)
-  print(f"Wrote {args.output} ({args.size}x{args.size})")
+  output_path = args.output if args.output is not None else default_output_path(
+      args.input, args.mode
+  )
+
+  if args.mode == "crop":
+    crop_to_content(
+        args.input,
+        output_path,
+        args.bg_threshold,
+        target_size=args.size,
+        debug_grid=args.debug_grid,
+        run_threshold=args.run_threshold,
+    )
+    return
+
+  if args.pixel_size is None:
+    raise SystemExit("`--pixel-size` is required when --mode=downscale.")
+
+  downscale(
+      args.input,
+      output_path,
+      args.size,
+      args.pixel_size,
+      args.tolerance,
+      args.debug_grid,
+      background_threshold=args.bg_threshold,
+  )
+  print(f"Wrote {output_path} ({args.size}x{args.size})")
 
 
 if __name__ == "__main__":
