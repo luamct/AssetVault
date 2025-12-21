@@ -89,6 +89,7 @@ jobs:
           if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
           Compress-Archive -Path "$stageDir\*" -DestinationPath $zipPath
           Write-Host "Created release zip at $zipPath"
+          "WINDOWS_ZIP_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -102,4 +103,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ runner.temp }}\\AssetVault-windows.zip
+          files: ${{ env.WINDOWS_ZIP_PATH }}
+          fail_on_unmatched_files: true
