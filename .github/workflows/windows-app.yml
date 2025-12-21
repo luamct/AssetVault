@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -75,6 +80,16 @@ jobs:
           Write-Host "Staged files:"
           Get-ChildItem -Path $stageDir | Format-Table Name, Length
 
+      - name: Zip Windows bundle
+        if: success()
+        shell: pwsh
+        run: |
+          $stageDir = Join-Path $env:RUNNER_TEMP "AssetVault-windows"
+          $zipPath = Join-Path $env:RUNNER_TEMP "AssetVault-windows.zip"
+          if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
+          Compress-Archive -Path "$stageDir\*" -DestinationPath $zipPath
+          Write-Host "Created release zip at $zipPath"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -82,3 +97,9 @@ jobs:
           path: ${{ runner.temp }}\\AssetVault-windows
           if-no-files-found: error
           retention-days: 7
+
+      - name: Attach asset to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ runner.temp }}\\AssetVault-windows.zip
