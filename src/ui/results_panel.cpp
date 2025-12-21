@@ -54,41 +54,6 @@ void ensure_grid_zoom_level(UIState& ui_state) {
   }
 }
 
-// TODO: move to utils.cpp
-// Cross-platform file explorer opening
-void open_file_in_explorer(const std::string& file_path) {
-  // Extract directory path from full path (using forward slashes only)
-  std::string dir_path = file_path;
-  size_t last_slash = dir_path.find_last_of('/');
-  if (last_slash != std::string::npos) {
-    dir_path = dir_path.substr(0, last_slash);
-  }
-  
-  std::string command;
-  #ifdef _WIN32
-    // Windows: Use explorer with /n flag for new window
-    // Convert forward slashes to backslashes for Windows
-    std::string windows_path = dir_path;
-    std::replace(windows_path.begin(), windows_path.end(), '/', '\\');
-    command = "explorer /n,\"" + windows_path + "\"";
-  #elif __APPLE__
-    // macOS: Use open to reveal the containing directory in Finder
-    command = "open \"" + dir_path + "\"";
-  #else
-    // Linux: Use xdg-open to open containing directory
-    command = "xdg-open \"" + dir_path + "\"";
-  #endif
-  
-  // Execute the command
-  int result = system(command.c_str());
-  
-  // Note: Windows Explorer commonly returns exit code 1 even when successful
-  // Only log actual system failures (result == -1)
-  if (result == -1) {
-    LOG_ERROR("Failed to execute file explorer command: {}", command);
-  }
-}
-
 // Render asset context menu
 void render_asset_context_menu(const Asset& asset, const std::string& menu_id) {
   // Push white background color BEFORE BeginPopup

@@ -23,6 +23,10 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <shellapi.h>
+#else
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -195,6 +199,51 @@ void ensure_executable_working_directory() {
   }
 #else
   // Non-Windows platforms already run from a predictable working directory.
+#endif
+}
+
+// Cross-platform file explorer opening without invoking a shell
+bool open_file_in_explorer(const std::string& file_path) {
+  std::filesystem::path dir_path = std::filesystem::u8path(file_path).parent_path();
+  if (dir_path.empty()) {
+    LOG_WARN("open_file_in_explorer called with empty parent: {}", file_path);
+    return false;
+  }
+
+#ifdef _WIN32
+  std::wstring dir_native = dir_path.wstring();
+  HINSTANCE result = ShellExecuteW(nullptr, L"open", dir_native.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+  if ((int) result <= 32) {
+    LOG_ERROR("ShellExecuteW failed for path: {}", file_path);
+    return false;
+  }
+  return true;
+#else
+  std::string dir_utf8 = dir_path.u8string();
+  pid_t pid = fork();
+  if (pid == 0) {
+#ifdef __APPLE__
+    execlp("open", "open", dir_utf8.c_str(), (char*) nullptr);
+#else
+    execlp("xdg-open", "xdg-open", dir_utf8.c_str(), (char*) nullptr);
+#endif
+    _exit(127);  // Only reached on exec failure
+  }
+  if (pid < 0) {
+    LOG_ERROR("fork failed for path: {}", file_path);
+    return false;
+  }
+
+  int status = 0;
+  if (waitpid(pid, &status, 0) == -1) {
+    LOG_ERROR("waitpid failed for path: {}", file_path);
+    return false;
+  }
+  if (status != 0) {
+    LOG_ERROR("Explorer command failed for path: {}", file_path);
+    return false;
+  }
+  return true;
 #endif
 }
 
