@@ -6,7 +6,7 @@
 #include <atomic>
 #include <optional>
 #include <map>
-#include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <optional>
 #include <unordered_set>
@@ -131,14 +131,13 @@ public:
 
     // Index management
     bool build_from_assets(const std::vector<Asset>& assets);
-    bool save_to_database() const;
-
     // Asset operations
     virtual void add_asset(uint32_t asset_id, const Asset& asset);
     virtual void remove_asset(uint32_t asset_id);
     virtual void update_asset(uint32_t asset_id, const Asset& asset);
     
     // Search operations
+    // Not thread-safe; callers must synchronize externally (used primarily in tests)
     std::vector<uint32_t> search_prefix(const std::string& prefix) const;
     std::vector<uint32_t> search_terms(const std::vector<std::string>& terms) const;
     
@@ -149,9 +148,6 @@ public:
     void clear();
     size_t get_token_count() const;
     size_t get_memory_usage() const;
-    
-    // Debug utility to print all tokens (for testing)
-    void debug_print_tokens() const;
     
 private:
     std::vector<TokenEntry> sorted_tokens_;  // Binary searchable
@@ -168,4 +164,6 @@ private:
     bool save_token_to_db(const std::string& token, uint32_t& token_id) const;
     bool save_token_assets_to_db(uint32_t token_id, const std::vector<uint32_t>& asset_ids) const;
     bool clear_database_index() const;
+
+    mutable std::shared_mutex mutex_;
 };

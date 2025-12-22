@@ -14,7 +14,6 @@
 class EventProcessor;
 EventProcessor* g_event_processor = nullptr;
 
-
 TEST_CASE("parse_search_query basic functionality", "[search]") {
     SECTION("Empty query") {
         auto query = parse_search_query("");

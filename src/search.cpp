@@ -8,7 +8,7 @@
 #include <sstream>
 #include <iostream>
 #include <algorithm>
-#include <mutex>
+#include <shared_mutex>
 #include <regex>
 #include <unordered_set>
 #include <cctype>
@@ -573,6 +573,8 @@ std::unordered_set<std::string> SearchIndex::tokenize_asset(const Asset& asset) 
 }
 
 std::vector<uint32_t> SearchIndex::search_prefix(const std::string& prefix) const {
+  // Not thread-safe: intended for single-threaded contexts like unit tests
+  // Callers must hold appropriate locks
   if (prefix.length() <= 2) {
     return {};  // Ignore short queries
   }
@@ -612,6 +614,7 @@ std::vector<uint32_t> SearchIndex::search_prefix(const std::string& prefix) cons
 }
 
 std::vector<uint32_t> SearchIndex::search_terms(const std::vector<std::string>& terms) const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
   if (terms.empty()) {
     return {};
   }
@@ -662,11 +665,13 @@ std::vector<uint32_t> SearchIndex::intersect_results(const std::vector<std::vect
 }
 
 const Asset* SearchIndex::get_asset_by_id(uint32_t asset_id) const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
   auto it = asset_cache_.find(asset_id);
   return (it != asset_cache_.end()) ? &it->second : nullptr;
 }
 
 void SearchIndex::add_asset(uint32_t asset_id, const Asset& asset) {
+  std::unique_lock<std::shared_mutex> lock(mutex_);
   auto tokens = tokenize_asset(asset);
   if (tokens.empty()) {
     return; // Nothing to index
@@ -701,6 +706,7 @@ void SearchIndex::add_asset(uint32_t asset_id, const Asset& asset) {
 }
 
 void SearchIndex::remove_asset(uint32_t asset_id) {
+  std::unique_lock<std::shared_mutex> lock(mutex_);
   // Remove from asset cache
   asset_cache_.erase(asset_id);
 
@@ -729,8 +735,7 @@ void SearchIndex::remove_asset(uint32_t asset_id) {
 void SearchIndex::update_asset(uint32_t asset_id, const Asset& asset) {
   LOG_DEBUG("SearchIndex: Updating asset {} ({})", asset_id, asset.name);
 
-  // For updates, we remove the old asset and add the new one
-  // This ensures that any changed tokens are properly updated
+  // Reuse public helpers; this may briefly unlock between removal and add
   remove_asset(asset_id);
   add_asset(asset_id, asset);
 }
@@ -739,9 +744,12 @@ bool SearchIndex::build_from_assets(const std::vector<Asset>& assets) {
   auto start = std::chrono::high_resolution_clock::now();
   LOG_INFO("Building search index from {} assets...", assets.size());
 
+  std::unique_lock<std::shared_mutex> lock(mutex_);
+
   // Clear existing index
   LOG_DEBUG("Clearing existing search index...");
-  clear();
+  sorted_tokens_.clear();
+  asset_cache_.clear();
   if (assets.empty()) {
     LOG_INFO("No assets found in database");
     return true;
@@ -800,39 +808,23 @@ bool SearchIndex::build_from_assets(const std::vector<Asset>& assets) {
   return true;
 }
 
-bool SearchIndex::save_to_database() const {
-  // For initial implementation, we don't persist the index
-  // TODO: Implement database storage of index
-  LOG_DEBUG("Saving search index to database (not yet implemented)");
-  return true;
-}
-
 void SearchIndex::clear() {
+  std::unique_lock<std::shared_mutex> lock(mutex_);
   sorted_tokens_.clear();
   asset_cache_.clear();
 }
 
 size_t SearchIndex::get_token_count() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
   return sorted_tokens_.size();
 }
 
 size_t SearchIndex::get_memory_usage() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
   size_t total = 0;
   for (const auto& entry : sorted_tokens_) {
     total += entry.token.size();
     total += entry.asset_ids.size() * sizeof(uint32_t);
   }
   return total + sorted_tokens_.size() * sizeof(TokenEntry);
-}
-
-void SearchIndex::debug_print_tokens() const {
-  std::cout << "=== DEBUG: All tokens in index ===\n";
-  for (const auto& entry : sorted_tokens_) {
-    std::cout << "Token: '" << entry.token << "' -> assets: ";
-    for (uint32_t asset_id : entry.asset_ids) {
-      std::cout << asset_id << " ";
-    }
-    std::cout << "\n";
-  }
-  std::cout << "=== End of tokens ===\n";
 }
