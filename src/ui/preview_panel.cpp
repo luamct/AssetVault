@@ -625,8 +625,43 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           static_cast<int>(current_model_ref.vertices.size() / MODEL_VERTEX_FLOAT_STRIDE);
         int face_count = static_cast<int>(current_model_ref.indices.size() / 3); // 3 indices per triangle
 
-        detail_rows.emplace_back("Vertices", std::to_string(vertex_count));
-        detail_rows.emplace_back("Faces", std::to_string(face_count));
+        if (vertex_count > 0) {
+          detail_rows.emplace_back("Vertices", std::to_string(vertex_count));
+        }
+        if (face_count > 0) {
+          detail_rows.emplace_back("Faces", std::to_string(face_count));
+        }
+
+        const bool has_bones = current_model_ref.has_skeleton && !current_model_ref.bones.empty();
+        if (has_bones) {
+          detail_rows.emplace_back("Bones", std::to_string(current_model_ref.bones.size()));
+        }
+
+        if (!current_model_ref.animations.empty()) {
+          size_t clip_index = current_model_ref.active_animation;
+          if (clip_index >= current_model_ref.animations.size()) {
+            clip_index = current_model_ref.animations.size() - 1;
+          }
+          const AnimationClip& clip = current_model_ref.animations[clip_index];
+
+          size_t keyframe_count = 0;
+          for (const AnimationChannel& channel : clip.channels) {
+            keyframe_count += channel.position_keys.size();
+            keyframe_count += channel.rotation_keys.size();
+            keyframe_count += channel.scaling_keys.size();
+          }
+          if (keyframe_count > 0) {
+            detail_rows.emplace_back("Keyframes", std::to_string(keyframe_count));
+          }
+
+          double ticks_per_second = (clip.ticks_per_second > 0.0) ? clip.ticks_per_second : 25.0;
+          double duration_seconds = (ticks_per_second > 0.0) ? (clip.duration / ticks_per_second) : 0.0;
+          if (duration_seconds > 0.0) {
+            std::ostringstream duration_stream;
+            duration_stream << std::fixed << std::setprecision(2) << duration_seconds << "s";
+            detail_rows.emplace_back("Duration", duration_stream.str());
+          }
+        }
       }
 
       render_attribute_rows(detail_rows, texture_manager, ui_scale);
