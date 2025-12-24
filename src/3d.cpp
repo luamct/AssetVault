@@ -56,8 +56,7 @@ unsigned int skeleton_texture_id = 0;
 
 std::unordered_set<std::string> logged_camera_stats;
 
-
-
+constexpr glm::vec3 SKELETON_BONE_COLOR = glm::vec3(1.0f, 0.58f, 0.12f);
 
 constexpr bool SKELETON_HIDE_CTRL_BONES = true;
 constexpr bool SKELETON_HIDE_IK_BONES = true;
@@ -1127,18 +1126,7 @@ void generate_bone_diamond(const glm::vec3& start, const glm::vec3& end, float w
   glm::vec3 right = glm::normalize(glm::cross(dir_normalized, up));
   glm::vec3 forward = glm::normalize(glm::cross(right, dir_normalized));
 
-  // Create 6 vertices: start, end, and 4 corners at base_pos
-  unsigned int base_idx = vertices.size() / 8;
-
-  // Vertex 0: start point (apex of first pyramid)
-  glm::vec3 start_normal = glm::normalize(start - base_pos);
-  vertices.insert(vertices.end(), {start.x, start.y, start.z, start_normal.x, start_normal.y, start_normal.z, 0.0f, 0.0f});
-
-  // Vertex 1: end point (apex of second pyramid)
-  glm::vec3 end_normal = glm::normalize(end - base_pos);
-  vertices.insert(vertices.end(), {end.x, end.y, end.z, end_normal.x, end_normal.y, end_normal.z, 0.0f, 0.0f});
-
-  // Vertices 2-5: four corners of the diamond at base_pos
+  // Four corners of the diamond at base_pos
   glm::vec3 corners[4] = {
     base_pos + right * width + forward * width,   // Corner 0: +X +Z
     base_pos - right * width + forward * width,   // Corner 1: -X +Z
@@ -1146,25 +1134,36 @@ void generate_bone_diamond(const glm::vec3& start, const glm::vec3& end, float w
     base_pos + right * width - forward * width    // Corner 3: +X -Z
   };
 
-  for (int i = 0; i < 4; i++) {
-    glm::vec3 corner_normal = glm::normalize(corners[i] - base_pos);
-    vertices.insert(vertices.end(), {corners[i].x, corners[i].y, corners[i].z,
-                                     corner_normal.x, corner_normal.y, corner_normal.z, 0.0f, 0.0f});
-  }
+  auto add_face = [&](const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) {
+    glm::vec3 face_normal = glm::normalize(glm::cross(p1 - p0, p2 - p0));
+    if (glm::length(face_normal) < 0.0001f) {
+      face_normal = dir_normalized;
+    }
 
-  // Create triangles using the shared vertices
-  // First pyramid: start (0) to each edge of the square base
-  for (int i = 0; i < 4; i++) {
-    indices.push_back(base_idx + 0);           // start
-    indices.push_back(base_idx + 2 + i);       // current corner
-    indices.push_back(base_idx + 2 + (i+1)%4); // next corner
-  }
+    unsigned int face_base = vertices.size() / 8;
+    auto push_vertex = [&](const glm::vec3& pos) {
+      vertices.insert(vertices.end(), {
+        pos.x, pos.y, pos.z,
+        face_normal.x, face_normal.y, face_normal.z,
+        0.0f, 0.0f
+      });
+    };
 
-  // Second pyramid: end (1) to each edge of the square base (reversed winding)
+    push_vertex(p0);
+    push_vertex(p1);
+    push_vertex(p2);
+
+    indices.push_back(face_base + 0);
+    indices.push_back(face_base + 1);
+    indices.push_back(face_base + 2);
+  };
+
+  // Create triangles with per-face normals to enforce flat shading
   for (int i = 0; i < 4; i++) {
-    indices.push_back(base_idx + 1);           // end
-    indices.push_back(base_idx + 2 + (i+1)%4); // next corner
-    indices.push_back(base_idx + 2 + i);       // current corner
+    add_face(start, corners[i], corners[(i + 1) % 4]);
+  }
+  for (int i = 0; i < 4; i++) {
+    add_face(end, corners[(i + 1) % 4], corners[i]);
   }
 }
 
@@ -1176,8 +1175,7 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   // Use dedicated skeleton shader with directional lighting
   glUseProgram(shader_);
 
-  unsigned int skeleton_tex = ensure_color_texture(texture_manager, skeleton_texture_id,
-    glm::vec3(Theme::SKELETON_BONE.x, Theme::SKELETON_BONE.y, Theme::SKELETON_BONE.z));
+  unsigned int skeleton_tex = ensure_color_texture(texture_manager, skeleton_texture_id, SKELETON_BONE_COLOR);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, skeleton_tex);
   GLint diffuse_uniform = glGetUniformLocation(shader_, "diffuseTexture");
@@ -1208,9 +1206,9 @@ void render_skeleton(const Model& model, const Camera3D& camera, TextureManager&
   glUniform3fv(glGetUniformLocation(shader_, "lightDir"), 1, &light_direction[0]);
   glUniform3f(glGetUniformLocation(shader_, "lightColor"), 1.0f, 1.0f, 1.0f);
 
-  // Lighting intensity controls (0.3 ambient, 0.56 diffuse)
-  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.3f);
-  glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 0.56f);
+  // Lighting tuned for clearer face separation on bones
+  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.0f);
+  glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 1.0f);
 
   // Build vertex data for diamond-shaped bones
   std::vector<float> bone_vertices;
@@ -1503,7 +1501,7 @@ void render_debug_axes(TextureManager& texture_manager, float scale, const glm::
   }
 
   // Lighting intensity controls (high ambient to mostly show axis colors)
-  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.8f);
+  glUniform1f(glGetUniformLocation(shader_, "ambientIntensity"), 0.5f);
   glUniform1f(glGetUniformLocation(shader_, "diffuseIntensity"), 0.3f);
 
   glBindVertexArray(axes_vao);

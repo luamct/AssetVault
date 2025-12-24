@@ -108,9 +108,6 @@ namespace Theme {
   constexpr ImVec4 TOGGLE_HOVER_BG = ImVec4(0.212f, 0.239f, 0.290f, 1.00f);      // Hover background for off state
   constexpr ImVec4 SEPARATOR_GRAY = ImVec4(0.2745f, 0.2745f, 0.2745f, 1.00f);     // #464646
 
-  // === 3D PREVIEW COLORS ===
-  constexpr ImVec4 SKELETON_BONE = ImVec4(1.0f, 0.58f, 0.12f, 1.0f); // Warm yellow-orange bones
-
   // === UTILITY COLORS (ImU32) ===
   constexpr ImU32 COLOR_WHITE_U32 = IM_COL32(255, 255, 255, 255);        // Pure white
 
