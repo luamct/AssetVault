@@ -11,6 +11,8 @@
 #include <chrono>
 #include <cfloat>
 
+constexpr float SETTINGS_MODAL_BASE_HEIGHT = 240.0f;
+
 void render_search_panel(UIState& ui_state,
   const SafeAssets& safe_assets,
   TextureManager& texture_manager,
@@ -169,34 +171,34 @@ void render_search_panel(UIState& ui_state,
   ImGui::EndChild();
 
   const char* SETTINGS_MODAL_ID = "Settings";
-  auto configure_settings_modal = [&](bool force_position) {
+  auto apply_settings_modal_placement = [&]() {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
-    float modal_width = viewport ? viewport->Size.x * 0.5f : 400.0f * ui_scale;
-    if (viewport) {
-      ImVec2 modal_center(
-        viewport->Pos.x + viewport->Size.x * 0.5f,
-        viewport->Pos.y + viewport->Size.y * 0.5f);
-      ImGui::SetNextWindowPos(modal_center,
-        force_position ? ImGuiCond_Always : ImGuiCond_Appearing,
-        ImVec2(0.5f, 0.5f));
-    }
-    ImVec2 modal_size(modal_width, 0.0f);
-    ImGui::SetNextWindowSize(modal_size,
-      force_position ? ImGuiCond_Always : ImGuiCond_Appearing);
+    ImVec2 viewport_pos = viewport ? viewport->Pos : ImVec2(0.0f, 0.0f);
+    ImVec2 viewport_size = viewport ? viewport->Size : ImVec2(panel_width, panel_height);
+    float modal_width = viewport ? viewport_size.x * 0.5f : 400.0f * ui_scale;
+    float desired_height = SETTINGS_MODAL_BASE_HEIGHT * ui_scale;
+    ImVec2 modal_center(
+      viewport_pos.x + viewport_size.x * 0.5f,
+      viewport_pos.y + viewport_size.y * 0.5f);
+
+    ImGui::SetNextWindowPos(modal_center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(modal_width, desired_height), ImGuiCond_Appearing);
     ImGui::SetNextWindowSizeConstraints(
       ImVec2(modal_width, 0.0f),
-      ImVec2(modal_width, FLT_MAX));
+      ImVec2(modal_width, viewport_size.y * 0.9f));
   };
 
   bool settings_popup_active = ImGui::IsPopupOpen(SETTINGS_MODAL_ID);
-  bool force_position = open_settings_modal;
   if (open_settings_modal) {
+    apply_settings_modal_placement();
     ImGui::OpenPopup(SETTINGS_MODAL_ID);
     settings_popup_active = true;
   }
 
-  if (settings_popup_active) {
-    configure_settings_modal(force_position);
+  bool settings_modal_just_opened = settings_popup_active && !ui_state.settings_modal_open;
+
+  if (settings_popup_active && (open_settings_modal || settings_modal_just_opened)) {
+    apply_settings_modal_placement();
   }
   ui_state.settings_modal_open = settings_popup_active;
 
@@ -214,7 +216,6 @@ void render_search_panel(UIState& ui_state,
   }
 
   constexpr ImGuiWindowFlags SETTINGS_MODAL_FLAGS =
-    ImGuiWindowFlags_AlwaysAutoResize |
     ImGuiWindowFlags_NoSavedSettings |
     ImGuiWindowFlags_NoTitleBar;
 
@@ -342,6 +343,7 @@ void render_search_panel(UIState& ui_state,
       ImGui::CloseCurrentPopup();
     }
 
+    (void) ImGui::GetWindowSize(); // size unused once modal height is fixed
     ImGui::EndPopup();
   }
 
