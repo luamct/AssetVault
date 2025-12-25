@@ -280,11 +280,8 @@ TEST_CASE("process_deleted_events functionality", "[process_deleted_events]") {
 
     SECTION("Delete existing assets") {
         // Pre-populate assets map with test assets
-        Asset asset1 = create_test_asset("model.fbx", ".fbx", AssetType::_3D,
-                                        (temp_dir / "model.fbx").string(), assets_dir, 1);
-
-        Asset asset2 = create_test_asset("texture.png", ".png", AssetType::_2D,
-                                        (temp_dir / "texture.png").string(), assets_dir, 2);
+        Asset asset1 = create_test_asset((temp_dir / "model.fbx").string(), AssetType::_3D, 1);
+        Asset asset2 = create_test_asset((temp_dir / "texture.png").string(), AssetType::_2D, 2);
 
         {
             auto [lock, assets] = safe_assets.write();

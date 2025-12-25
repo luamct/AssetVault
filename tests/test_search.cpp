@@ -154,14 +154,13 @@ TEST_CASE("parse_search_query edge cases", "[search]") {
 }
 
 TEST_CASE("filter_assets applies text, type, and path filters", "[search][filter]") {
-    const std::string asset_root = "/tmp/test_assets_root";
     std::vector<Asset> assets_vector = {
-        create_test_asset("monster_texture", ".png", AssetType::_2D, asset_root + "/textures/monster.png", asset_root),
-        create_test_asset("robot_texture", ".png", AssetType::_2D, asset_root + "/textures/robot.png", asset_root),
-        create_test_asset("button_texture", ".png", AssetType::_2D, asset_root + "/textures/ui/button.png", asset_root),
-        create_test_asset("monster_model", ".fbx", AssetType::_3D, asset_root + "/models/monster.fbx", asset_root),
-        create_test_asset("explosion_sound", ".wav", AssetType::Audio, asset_root + "/sounds/explosion.wav", asset_root),
-        create_test_asset("background_music", ".mp3", AssetType::Audio, asset_root + "/audio/background_music.mp3", asset_root)
+        create_test_asset("textures/monster_texture.png", AssetType::_2D),
+        create_test_asset("textures/robot_texture.png", AssetType::_2D),
+        create_test_asset("textures/ui/button_texture.png", AssetType::_2D),
+        create_test_asset("models/monster_model.fbx", AssetType::_3D),
+        create_test_asset("sounds/explosion_sound.wav", AssetType::Audio),
+        create_test_asset("audio/background_music.mp3", AssetType::Audio)
     };
 
     // Assign IDs to assets and convert to map
@@ -352,12 +351,11 @@ TEST_CASE("parse_search_query path filtering", "[search]") {
 }
 
 TEST_CASE("filter_assets path filters cover case and spaces", "[search][filter]") {
-    const std::string asset_root = "/tmp/test_assets_root_paths";
     std::vector<Asset> assets_vector = {
-        create_test_asset("monster", ".png", AssetType::_2D, asset_root + "/textures/monster.png", asset_root),
-        create_test_asset("button", ".png", AssetType::_2D, asset_root + "/textures/ui/button.png", asset_root),
-        create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/damage.png", asset_root),
-        create_test_asset("explosion", ".wav", AssetType::Audio, asset_root + "/sounds/explosion.wav", asset_root)
+        create_test_asset("textures/monster.png", AssetType::_2D),
+        create_test_asset("textures/ui/button.png", AssetType::_2D),
+        create_test_asset("simple damage/folder/damage.png", AssetType::_2D),
+        create_test_asset("sounds/explosion.wav", AssetType::Audio)
     };
 
     uint32_t id = 1;
@@ -420,15 +418,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
     SearchIndex index;
 
     SECTION("Tokenization works correctly") {
-        Asset asset;
-        asset.id = 1;
-        asset.name = "MyTexture_diffuse.png";
-        asset.extension = "png";
-        asset.path = "/assets/textures/MyTexture_diffuse.png";
-        asset.relative_path = "textures/MyTexture_diffuse.png";  // Set relative path for tokenization
-        asset.size = 1024;
-        asset.last_modified = std::chrono::system_clock::now();
-        asset.type = AssetType::_2D;
+        Asset asset = create_test_asset("textures/MyTexture_diffuse.png", AssetType::_2D, 1);
 
         // Build index from assets
         std::vector<Asset> assets = {asset};
@@ -458,35 +448,9 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
 
     SECTION("Multi-term search works correctly") {
         // Add multiple assets
-        Asset asset1;
-        asset1.id = 1;
-        asset1.name = "grass_texture.png";
-        asset1.extension = "png";
-        asset1.path = "/assets/nature/grass_texture.png";
-        asset1.relative_path = "nature/grass_texture.png";
-        asset1.size = 1024;
-        asset1.last_modified = std::chrono::system_clock::now();
-        asset1.type = AssetType::_2D;
-
-        Asset asset2;
-        asset2.id = 2;
-        asset2.name = "rock_texture.jpg";
-        asset2.extension = "jpg";
-        asset2.path = "/assets/nature/rock_texture.jpg";
-        asset2.relative_path = "nature/rock_texture.jpg";
-        asset2.size = 2048;
-        asset2.last_modified = std::chrono::system_clock::now();
-        asset2.type = AssetType::_2D;
-
-        Asset asset3;
-        asset3.id = 3;
-        asset3.name = "player_model.fbx";
-        asset3.extension = "fbx";
-        asset3.path = "/assets/models/player_model.fbx";
-        asset3.relative_path = "models/player_model.fbx";
-        asset3.size = 5120;
-        asset3.last_modified = std::chrono::system_clock::now();
-        asset3.type = AssetType::_3D;
+        Asset asset1 = create_test_asset("nature/grass_texture.png", AssetType::_2D, 1);
+        Asset asset2 = create_test_asset("nature/rock_texture.jpg", AssetType::_2D, 2);
+        Asset asset3 = create_test_asset("models/player_model.fbx", AssetType::_3D, 3);
 
         // Build index from all assets
         std::vector<Asset> assets = {asset1, asset2, asset3};
@@ -517,15 +481,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
     }
 
     SECTION("Prefix matching works correctly") {
-        Asset asset;
-        asset.id = 1;
-        asset.name = "awesome_background.png";
-        asset.extension = "png";
-        asset.path = "/assets/ui/awesome_background.png";
-        asset.relative_path = "ui/awesome_background.png";
-        asset.size = 1024;
-        asset.last_modified = std::chrono::system_clock::now();
-        asset.type = AssetType::_2D;
+        Asset asset = create_test_asset("ui/awesome_background.png", AssetType::_2D, 1);
 
         index.add_asset(asset.id, asset);
 
@@ -547,15 +503,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
     }
 
     SECTION("Query splitting with underscores") {
-        Asset asset;
-        asset.id = 1;
-        asset.name = "blaster_A.fbx";
-        asset.extension = "fbx";
-        asset.path = "/assets/weapons/blaster_A.fbx";
-        asset.relative_path = "weapons/blaster_A.fbx";
-        asset.size = 1024;
-        asset.last_modified = std::chrono::system_clock::now();
-        asset.type = AssetType::_3D;
+        Asset asset = create_test_asset("weapons/blaster_A.fbx", AssetType::_3D, 1);
 
         index.add_asset(asset.id, asset);
 
@@ -567,15 +515,7 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
     }
 
     SECTION("Query splitting with slashes") {
-        Asset asset;
-        asset.id = 1;
-        asset.name = "blaster.fbx";
-        asset.extension = "fbx";
-        asset.path = "/assets/models/blaster.fbx";
-        asset.relative_path = "models/blaster.fbx";
-        asset.size = 1024;
-        asset.last_modified = std::chrono::system_clock::now();
-        asset.type = AssetType::_3D;
+        Asset asset = create_test_asset("models/blaster.fbx", AssetType::_3D, 1);
 
         index.add_asset(asset.id, asset);
 
@@ -591,26 +531,10 @@ TEST_CASE("SearchIndex tokenization and search", "[search][index]") {
 
     SECTION("Index statistics work correctly") {
         // Add a few assets
-        Asset asset1;
-        asset1.id = 1;
-        asset1.name = "test1.png";
-        asset1.extension = "png";
-        asset1.path = "/assets/test1.png";
-        asset1.relative_path = "test1.png";
-        asset1.size = 1024;
-        asset1.last_modified = std::chrono::system_clock::now();
-        asset1.type = AssetType::_2D;
+        Asset asset1 = create_test_asset("test1.png", AssetType::_2D, 1);
         index.add_asset(asset1.id, asset1);
 
-        Asset asset2;
-        asset2.id = 2;
-        asset2.name = "test2.jpg";
-        asset2.extension = "jpg";
-        asset2.path = "/assets/images/test2.jpg";
-        asset2.relative_path = "images/test2.jpg";
-        asset2.size = 2048;
-        asset2.last_modified = std::chrono::system_clock::now();
-        asset2.type = AssetType::_2D;
+        Asset asset2 = create_test_asset("images/test2.jpg", AssetType::_2D, 2);
         index.add_asset(asset2.id, asset2);
 
         // Check statistics
@@ -627,12 +551,12 @@ TEST_CASE("filter_assets functionality", "[search]") {
     // Create test assets map
     SafeAssets test_assets;
     auto assets_vector = std::vector<Asset>{
-        create_test_asset("monster_texture", ".png", AssetType::_2D),
-        create_test_asset("robot_texture", ".jpg", AssetType::_2D),
-        create_test_asset("monster_model", ".fbx", AssetType::_3D),
-        create_test_asset("explosion_sound", ".wav", AssetType::Audio),
-        create_test_asset("background_music", ".mp3", AssetType::Audio),
-        create_test_asset("shader", ".hlsl", AssetType::Shader)
+        create_test_asset("monster_texture.png", AssetType::_2D),
+        create_test_asset("robot_texture.jpg", AssetType::_2D),
+        create_test_asset("monster_model.fbx", AssetType::_3D),
+        create_test_asset("explosion_sound.wav", AssetType::Audio),
+        create_test_asset("background_music.mp3", AssetType::Audio),
+        create_test_asset("shader.hlsl", AssetType::Shader)
     };
     
     // Assign IDs to assets and convert to map
@@ -798,13 +722,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
             auto [lock, assets_map] = test_assets.write();
             uint32_t next_id = static_cast<uint32_t>(assets_map.size() + 1);
             for (int i = 0; i < 120; ++i) {
-                auto extra = create_test_asset(
-                    "file_" + std::to_string(i),
-                    ".png",
-                    AssetType::_2D,
-                    "file_" + std::to_string(i) + ".png",
-                    "",
-                    next_id++);
+                auto extra = create_test_asset("file_" + std::to_string(i) + ".png", AssetType::_2D, next_id++);
                 assets_map[extra.path] = extra;
                 search_index.add_asset(extra.id, extra);
             }
@@ -825,13 +743,7 @@ TEST_CASE("filter_assets functionality", "[search]") {
             auto [lock, assets_map] = test_assets.write();
             uint32_t next_id = static_cast<uint32_t>(assets_map.size() + 1);
             for (int i = 0; i < 120; ++i) {
-                auto extra = create_test_asset(
-                    "file_reset_" + std::to_string(i),
-                    ".png",
-                    AssetType::_2D,
-                    "file_reset_" + std::to_string(i) + ".png",
-                    "",
-                    next_id++);
+                auto extra = create_test_asset("file_reset_" + std::to_string(i) + ".png", AssetType::_2D, next_id++);
                 assets_map[extra.path] = extra;
                 search_index.add_asset(extra.id, extra);
             }

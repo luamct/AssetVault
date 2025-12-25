@@ -412,7 +412,7 @@ elseif(WIN32)
 endif()
 
 # Database test executable
-add_executable(DbTest tests/test_db.cpp)
+add_executable(DbTest tests/test_db.cpp tests/test_helpers.cpp)
 target_include_directories(DbTest PRIVATE ${TEST_INCLUDE_DIRS})
 target_link_libraries(DbTest PRIVATE ${TEST_LIBRARIES})
 if(PLATFORM_WINDOWS)

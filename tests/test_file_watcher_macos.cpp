@@ -28,12 +28,10 @@ fs::path get_test_files_dir() {
 
 // Simple helper function for test asset management
 void add_test_asset(SafeAssets& safe_assets, const fs::path& path) {
-    Asset asset;
-    asset.path = path.u8string();
+    Asset asset = create_test_asset(path.generic_u8string());
     asset.name = path.filename().string();
-    asset.type = get_asset_type(path.u8string());
     auto [lock, assets] = safe_assets.write();
-    assets[path.u8string()] = asset;
+    assets[asset.path] = asset;
 }
 
 // Test fixture for file watcher tests

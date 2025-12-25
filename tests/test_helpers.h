@@ -13,13 +13,9 @@
 
 // Test helper functions for creating mock assets and other test utilities
 Asset create_test_asset(
-    const std::string& name,
-    const std::string& extension,
-    AssetType type,
-    const std::string& path = "",
-    const std::string& assets_root = "",
-    uint32_t id = 1
-);
+    const std::string& relative_path,
+    AssetType type = AssetType::Unknown,
+    uint32_t id = 1);
 
 // Helper function to print FileEvents for debugging tests
 void print_file_events(const std::vector<FileEvent>& events, const std::string& label = "Events");

@@ -14,12 +14,12 @@ TEST_CASE("find_assets_under_directory optimization", "[utils][performance]") {
     std::map<std::string, Asset> test_assets;
     
     // Add assets with various paths in sorted order
-    test_assets["/assets/models/character.fbx"] = create_test_asset("character", ".fbx", AssetType::_3D, "/assets/models/character.fbx");
-    test_assets["/assets/models/weapons/sword.obj"] = create_test_asset("sword", ".obj", AssetType::_3D, "/assets/models/weapons/sword.obj");
-    test_assets["/assets/textures/brick.png"] = create_test_asset("brick", ".png", AssetType::_2D, "/assets/textures/brick.png");
-    test_assets["/assets/textures/ui/button.png"] = create_test_asset("button", ".png", AssetType::_2D, "/assets/textures/ui/button.png");
-    test_assets["/assets/textures/ui/icons/health.png"] = create_test_asset("health", ".png", AssetType::_2D, "/assets/textures/ui/icons/health.png");
-    test_assets["/other/sounds/explosion.wav"] = create_test_asset("explosion", ".wav", AssetType::Audio, "/other/sounds/explosion.wav");
+    test_assets["/assets/models/character.fbx"] = create_test_asset("/assets/models/character.fbx", AssetType::_3D);
+    test_assets["/assets/models/weapons/sword.obj"] = create_test_asset("/assets/models/weapons/sword.obj", AssetType::_3D);
+    test_assets["/assets/textures/brick.png"] = create_test_asset("/assets/textures/brick.png", AssetType::_2D);
+    test_assets["/assets/textures/ui/button.png"] = create_test_asset("/assets/textures/ui/button.png", AssetType::_2D);
+    test_assets["/assets/textures/ui/icons/health.png"] = create_test_asset("/assets/textures/ui/icons/health.png", AssetType::_2D);
+    test_assets["/other/sounds/explosion.wav"] = create_test_asset("/other/sounds/explosion.wav", AssetType::Audio);
     
     SECTION("Find assets under specific directory") {
         auto results = find_assets_under_directory(test_assets, fs::path("/assets/textures"));
@@ -79,7 +79,7 @@ TEST_CASE("find_assets_under_directory optimization", "[utils][performance]") {
         // Add 1000 assets with different prefixes  
         for (int i = 0; i < 1000; ++i) {
             std::string path = "/prefix" + std::to_string(i % 10) + "/file" + std::to_string(i) + ".png";
-            large_assets[path] = create_test_asset("file" + std::to_string(i), ".png", AssetType::_2D, path);
+            large_assets[path] = create_test_asset(path, AssetType::_2D);
         }
         
         // Find assets under /prefix5/ - should be fast O(log n + k) where k ~= 100

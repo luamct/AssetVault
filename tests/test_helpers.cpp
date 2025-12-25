@@ -7,23 +7,22 @@
 namespace fs = std::filesystem;
 
 Asset create_test_asset(
-    const std::string& name,
-    const std::string& extension,
+    const std::string& relative_path,
     AssetType type,
-    const std::string& path,
-    const std::string& assets_root,
     uint32_t id) {
     Asset asset;
     asset.id = id;
-    asset.name = name;
-    asset.extension = extension;
-    asset.type = type;
-    asset.path = path.empty() ? (name + extension) : path;
+
+    std::string normalized_path = normalize_path_separators(relative_path);
+    fs::path path_obj = fs::u8path(normalized_path);
+
+    asset.relative_path = normalized_path;
+    asset.path = normalized_path;
+    asset.extension = to_lowercase(path_obj.has_extension() ? path_obj.extension().string() : "");
+    asset.name = path_obj.stem().u8string();
+    asset.type = type == AssetType::Unknown ? get_asset_type(asset.extension) : type;
     asset.size = 1024; // Default size
     asset.last_modified = std::chrono::system_clock::now();
-    asset.relative_path = assets_root.empty()
-        ? asset.path
-        : get_relative_path(asset.path, assets_root);
     return asset;
 }
 

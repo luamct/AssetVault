@@ -5,6 +5,7 @@
 
 #include "database.h"
 #include "asset.h"
+#include "test_helpers.h"
 
 namespace fs = std::filesystem;
 
@@ -20,13 +21,8 @@ TEST_CASE("Database functionality", "[database]") {
     REQUIRE(db.create_tables());
     
     SECTION("Single asset insertion assigns ID") {
-        Asset asset;
+        Asset asset = create_test_asset("/path/to/test.txt", AssetType::Document, 0);
         asset.name = "test.txt";
-        asset.extension = "txt";
-        asset.path = "/path/to/test.txt";
-        asset.size = 1024;
-        asset.last_modified = std::chrono::system_clock::now();
-        asset.type = AssetType::Document;
         
         // ID should be 0 before insertion
         REQUIRE(asset.id == 0);
@@ -47,13 +43,11 @@ TEST_CASE("Database functionality", "[database]") {
         std::vector<Asset> assets;
         
         for (int i = 1; i <= 5; i++) {
-            Asset asset;
+            Asset asset = create_test_asset("/path/to/file" + std::to_string(i) + ".txt",
+                                            AssetType::Document,
+                                            0);
             asset.name = "file" + std::to_string(i) + ".txt";
-            asset.extension = "txt";
-            asset.path = "/path/to/file" + std::to_string(i) + ".txt";
             asset.size = 1024 * i;
-            asset.last_modified = std::chrono::system_clock::now();
-                asset.type = AssetType::Document;
             assets.push_back(asset);
         }
         
@@ -85,13 +79,8 @@ TEST_CASE("Database functionality", "[database]") {
     }
     
     SECTION("Update preserves existing ID") {
-        Asset asset;
+        Asset asset = create_test_asset("/path/to/original.txt", AssetType::Document, 0);
         asset.name = "original.txt";
-        asset.extension = "txt";
-        asset.path = "/path/to/original.txt";
-        asset.size = 1024;
-        asset.last_modified = std::chrono::system_clock::now();
-        asset.type = AssetType::Document;
         
         // Insert the asset
         REQUIRE(db.insert_asset(asset));
@@ -114,25 +103,16 @@ TEST_CASE("Database functionality", "[database]") {
     
     SECTION("IDs are sequential and persistent") {
         // Insert first asset
-        Asset asset1;
+        Asset asset1 = create_test_asset("/path/to/first.txt", AssetType::Document, 0);
         asset1.name = "first.txt";
-        asset1.extension = "txt";
-        asset1.path = "/path/to/first.txt";
-        asset1.size = 1024;
-        asset1.last_modified = std::chrono::system_clock::now();
-        asset1.type = AssetType::Document;
         
         REQUIRE(db.insert_asset(asset1));
         uint32_t id1 = asset1.id;
         
         // Insert second asset
-        Asset asset2;
+        Asset asset2 = create_test_asset("/path/to/second.txt", AssetType::Document, 0);
         asset2.name = "second.txt";
-        asset2.extension = "txt";
-        asset2.path = "/path/to/second.txt";
         asset2.size = 2048;
-        asset2.last_modified = std::chrono::system_clock::now();
-        asset2.type = AssetType::Document;
         
         REQUIRE(db.insert_asset(asset2));
         uint32_t id2 = asset2.id;
@@ -144,13 +124,9 @@ TEST_CASE("Database functionality", "[database]") {
         REQUIRE(db.delete_asset("/path/to/first.txt"));
         
         // Insert third asset - should get next ID, not reuse deleted one
-        Asset asset3;
+        Asset asset3 = create_test_asset("/path/to/third.txt", AssetType::Document, 0);
         asset3.name = "third.txt";
-        asset3.extension = "txt";
-        asset3.path = "/path/to/third.txt";
         asset3.size = 3072;
-        asset3.last_modified = std::chrono::system_clock::now();
-        asset3.type = AssetType::Document;
         
         REQUIRE(db.insert_asset(asset3));
         uint32_t id3 = asset3.id;
