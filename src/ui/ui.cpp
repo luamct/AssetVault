@@ -340,6 +340,8 @@ void clear_ui_state(UIState& ui_state) {
   ui_state.event_batch_finished = false;
   ui_state.assets_directory_modal_open = false;
   ui_state.assets_directory_modal_requested = false;
+  ui_state.preserve_loaded_range = false;
+  ui_state.new_search_finished = false;
   ui_state.current_animation.reset();
   ui_state.current_animation_path.clear();
   ui_state.preview_animation_state.reset();

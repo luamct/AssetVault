@@ -242,6 +242,10 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
     "AssetGridScroll",
     ImVec2(0, 0),
     scrollbar_style);
+  if (ui_state.new_search_finished) {
+    ImGui::SetScrollY(0.0f);
+    ui_state.new_search_finished = false;
+  }
 
   const auto animation_now = std::chrono::steady_clock::now();
 

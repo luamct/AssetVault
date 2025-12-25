@@ -84,6 +84,8 @@ struct UIState {
   static constexpr int LOAD_BATCH_SIZE = 50;
   int loaded_start_index = 0;    // Always 0, never changes
   int loaded_end_index = 0;      // Grows as user scrolls down
+  bool preserve_loaded_range = false; // Keeps current pagination when background refreshes run
+  bool new_search_finished = false;  // Marks that a fresh search completed for UI follow-up (e.g., scroll reset)
 
   // Thumbnail zoom level for results grid
   ZoomLevel grid_zoom_level = ZoomLevel::Level3;

@@ -724,49 +724,54 @@ TEST_CASE("filter_assets functionality", "[search]") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "monster");
         filter_assets(search_state, test_assets);
 
-        REQUIRE(search_state.results.size() == 2);
-        // Check that both monster assets are in results (order may vary with unordered_map)
-        bool has_monster_texture = false;
-        bool has_monster_model = false;
+        std::vector<std::string> names;
         for (const auto& asset : search_state.results) {
-            if (asset.name == "monster_texture") has_monster_texture = true;
-            if (asset.name == "monster_model") has_monster_model = true;
+            names.push_back(asset.name);
         }
-        REQUIRE(has_monster_texture);
-        REQUIRE(has_monster_model);
+        std::vector<std::string> expected = {"monster_model", "monster_texture"};
+        REQUIRE(names == expected);
     }
 
     SECTION("Filter by type") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d");
         filter_assets(search_state, test_assets);
 
-        REQUIRE(search_state.results.size() == 2);
-        REQUIRE(search_state.results[0].type == AssetType::_2D);
-        REQUIRE(search_state.results[1].type == AssetType::_2D);
+        std::vector<std::string> names;
+        for (const auto& asset : search_state.results) {
+            names.push_back(asset.name);
+            REQUIRE(asset.type == AssetType::_2D);
+        }
+        std::vector<std::string> expected = {"monster_texture", "robot_texture"};
+        REQUIRE(names == expected);
     }
 
     SECTION("Filter by multiple types") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d,audio");
         filter_assets(search_state, test_assets);
 
-        REQUIRE(search_state.results.size() == 4);
-        // Should include both 2D textures and both audio files
+        std::vector<std::string> names;
+        for (const auto& asset : search_state.results) {
+            names.push_back(asset.name);
+        }
+        std::vector<std::string> expected = {
+            "background_music",
+            "explosion_sound",
+            "monster_texture",
+            "robot_texture"
+        };
+        REQUIRE(names == expected);
     }
 
     SECTION("Combined type and text filter") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "type=2d texture");
         filter_assets(search_state, test_assets);
 
-        REQUIRE(search_state.results.size() == 2);
-        // Check that both texture assets are in results (order may vary with unordered_map)
-        bool has_monster_texture = false;
-        bool has_robot_texture = false;
+        std::vector<std::string> names;
         for (const auto& asset : search_state.results) {
-            if (asset.name == "monster_texture") has_monster_texture = true;
-            if (asset.name == "robot_texture") has_robot_texture = true;
+            names.push_back(asset.name);
         }
-        REQUIRE(has_monster_texture);
-        REQUIRE(has_robot_texture);
+        std::vector<std::string> expected = {"monster_texture", "robot_texture"};
+        REQUIRE(names == expected);
     }
 
     SECTION("No matches") {
@@ -780,12 +785,19 @@ TEST_CASE("filter_assets functionality", "[search]") {
         safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "");
         filter_assets(search_state, test_assets);
 
-        size_t assets_size;
-        {
-            auto [lock, assets_map] = test_assets.read();
-            assets_size = assets_map.size();
+        std::vector<std::string> names;
+        for (const auto& asset : search_state.results) {
+            names.push_back(asset.name);
         }
-        REQUIRE(search_state.results.size() == assets_size);
+        std::vector<std::string> expected = {
+            "background_music",
+            "explosion_sound",
+            "monster_model",
+            "monster_texture",
+            "robot_texture",
+            "shader"
+        };
+        REQUIRE(names == expected);
     }
 
     SECTION("Folder selection empty returns no results") {
@@ -832,5 +844,60 @@ TEST_CASE("filter_assets functionality", "[search]") {
         // Should find the asset with both "monster" and "model" in its path
         REQUIRE(search_state.results.size() == 1);
         REQUIRE(search_state.results[0].name == "monster_model");
+    }
+
+    SECTION("Preserve loaded range when requested") {
+        // Add enough assets to exceed the default batch size
+        {
+            auto [lock, assets_map] = test_assets.write();
+            uint32_t next_id = static_cast<uint32_t>(assets_map.size() + 1);
+            for (int i = 0; i < 120; ++i) {
+                auto extra = create_test_asset(
+                    "file_" + std::to_string(i),
+                    ".png",
+                    AssetType::_2D,
+                    "file_" + std::to_string(i) + ".png",
+                    "",
+                    next_id++);
+                assets_map[extra.path] = extra;
+                search_index.add_asset(extra.id, extra);
+            }
+        }
+
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "");
+        search_state.loaded_end_index = 80;
+
+        filter_assets(search_state, test_assets, true);
+
+        REQUIRE(search_state.results.size() > UIState::LOAD_BATCH_SIZE);
+        REQUIRE(search_state.loaded_end_index == 80);
+        REQUIRE(search_state.new_search_finished == false);
+    }
+
+    SECTION("Loaded range resets without preserve flag") {
+        {
+            auto [lock, assets_map] = test_assets.write();
+            uint32_t next_id = static_cast<uint32_t>(assets_map.size() + 1);
+            for (int i = 0; i < 120; ++i) {
+                auto extra = create_test_asset(
+                    "file_reset_" + std::to_string(i),
+                    ".png",
+                    AssetType::_2D,
+                    "file_reset_" + std::to_string(i) + ".png",
+                    "",
+                    next_id++);
+                assets_map[extra.path] = extra;
+                search_index.add_asset(extra.id, extra);
+            }
+        }
+
+        safe_strcpy(search_state.buffer, sizeof(search_state.buffer), "");
+        search_state.loaded_end_index = 80;
+
+        filter_assets(search_state, test_assets);
+
+        REQUIRE(search_state.results.size() > UIState::LOAD_BATCH_SIZE);
+        REQUIRE(search_state.loaded_end_index == UIState::LOAD_BATCH_SIZE);
+        REQUIRE(search_state.new_search_finished == true);
     }
 }

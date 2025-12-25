@@ -107,7 +107,8 @@ class AssetDatabase;
 class SearchIndex;
 
 // Function to filter assets based on search query using search index
-void filter_assets(UIState& ui_state, const SafeAssets& safe_assets);
+void filter_assets(UIState& ui_state, const SafeAssets& safe_assets,
+  bool preserve_loaded_range = false);
 
 // Entry in the sorted token index
 struct TokenEntry {

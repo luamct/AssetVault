@@ -416,8 +416,9 @@ bool asset_matches_search(const Asset& asset, const SearchQuery& query) {
   return true;
 }
 
-void filter_assets(UIState& ui_state, const SafeAssets& safe_assets) {
+void filter_assets(UIState& ui_state, const SafeAssets& safe_assets, bool preserve_loaded_range) {
   auto start_time = std::chrono::high_resolution_clock::now();
+  int previous_loaded_end = ui_state.loaded_end_index;
 
   ui_state.results.clear();
   ui_state.results_ids.clear();
@@ -449,7 +450,9 @@ void filter_assets(UIState& ui_state, const SafeAssets& safe_assets) {
   }
 
   if (block_all_results) {
+    ui_state.loaded_start_index = 0;
     ui_state.loaded_end_index = 0;
+    ui_state.new_search_finished = !preserve_loaded_range;
     return;
   }
   SearchQuery query = parse_search_query(ui_state.buffer, ui_type_filters, active_path_filters);
@@ -543,12 +546,22 @@ void filter_assets(UIState& ui_state, const SafeAssets& safe_assets) {
     filtered_count++;
   }
 
+  // Ensure a stable order so new assets append instead of reshuffling visible rows
+  auto stable_sort_predicate = [](const Asset& lhs, const Asset& rhs) {
+    return lhs.relative_path < rhs.relative_path;
+  };
+  std::sort(ui_state.results.begin(), ui_state.results.end(), stable_sort_predicate);
+
   // Initialize loaded range for infinite scroll
   ui_state.loaded_start_index = 0;
+  int desired_loaded_end = preserve_loaded_range
+    ? std::max(previous_loaded_end, UIState::LOAD_BATCH_SIZE)
+    : UIState::LOAD_BATCH_SIZE;
   ui_state.loaded_end_index = std::min(
     static_cast<int>(ui_state.results.size()),
-    UIState::LOAD_BATCH_SIZE
+    desired_loaded_end
   );
+  ui_state.new_search_finished = !preserve_loaded_range;
 
   // Measure and print search time
   auto end_time = std::chrono::high_resolution_clock::now();

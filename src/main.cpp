@@ -13,6 +13,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <thread>
 
 #include "imgui.h"
@@ -270,12 +271,14 @@ int run(std::atomic<bool>* shutdown_requested) {
       if (ui_state.event_batch_finished.exchange(false)) {
         reset_folder_tree_state(ui_state);
         ui_state.filters_changed = true;
+        ui_state.preserve_loaded_range = true;
       }
 
       // Apply pending filter changes (tree selections, batch refreshes, etc.)
       if (ui_state.filters_changed.exchange(false)) {
+        bool preserve_loaded_range = std::exchange(ui_state.preserve_loaded_range, false);
         // Re-apply current search filter to include updated assets
-        filter_assets(ui_state, safe_assets);
+        filter_assets(ui_state, safe_assets, preserve_loaded_range);
 
         // Removes texture cache entries and thumbnails for deleted assets
         texture_manager.process_cleanup_queue(ui_state.assets_directory);
