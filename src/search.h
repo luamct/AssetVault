@@ -99,9 +99,6 @@ SearchQuery parse_search_query(const std::string& search_string,
   const std::vector<AssetType>& ui_type_filters = {},
   const std::vector<std::string>& ui_path_filters = {});
 
-// Function to check if an asset matches the search query
-bool asset_matches_search(const Asset& asset, const SearchQuery& query);
-
 // Forward declarations
 class AssetDatabase;
 class SearchIndex;

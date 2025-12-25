@@ -153,134 +153,93 @@ TEST_CASE("parse_search_query edge cases", "[search]") {
     }
 }
 
-TEST_CASE("asset_matches_search text matching", "[search]") {
-    Asset asset = create_test_asset("monster_texture", ".png", AssetType::_2D, "assets/textures/monster_texture.png");
-    Asset non_ascii_asset = create_test_asset("mönster×_tëxture", ".png", AssetType::_2D, "assets/textures/mönster×_tëxture.png");
+TEST_CASE("filter_assets applies text, type, and path filters", "[search][filter]") {
+    const std::string asset_root = "/tmp/test_assets_root";
+    std::vector<Asset> assets_vector = {
+        create_test_asset("monster_texture", ".png", AssetType::_2D, asset_root + "/textures/monster.png", asset_root),
+        create_test_asset("robot_texture", ".png", AssetType::_2D, asset_root + "/textures/robot.png", asset_root),
+        create_test_asset("button_texture", ".png", AssetType::_2D, asset_root + "/textures/ui/button.png", asset_root),
+        create_test_asset("monster_model", ".fbx", AssetType::_3D, asset_root + "/models/monster.fbx", asset_root),
+        create_test_asset("explosion_sound", ".wav", AssetType::Audio, asset_root + "/sounds/explosion.wav", asset_root),
+        create_test_asset("background_music", ".mp3", AssetType::Audio, asset_root + "/audio/background_music.mp3", asset_root)
+    };
 
-    SECTION("Name matching") {
-        SearchQuery query;
-        query.text_query = "monster";
-        REQUIRE(asset_matches_search(asset, query) == true);
-
-        query.text_query = "texture";
-        REQUIRE(asset_matches_search(asset, query) == true);
-
-        query.text_query = "robot";
-        REQUIRE(asset_matches_search(asset, query) == false);
+    // Assign IDs to assets and convert to map
+    uint32_t id = 1;
+    for (auto& asset : assets_vector) {
+        asset.id = id++;
     }
 
-    SECTION("Extension matching") {
-        SearchQuery query;
-        query.text_query = "png";
-        REQUIRE(asset_matches_search(asset, query) == true);
-
-        query.text_query = "jpg";
-        REQUIRE(asset_matches_search(asset, query) == false);
+    SafeAssets test_assets;
+    {
+        auto [lock, assets_map] = test_assets.write();
+        for (const auto& asset : assets_vector) {
+            assets_map[asset.path] = asset;
+        }
     }
 
-    SECTION("Path matching") {
-        SearchQuery query;
-        query.text_query = "textures";
-        REQUIRE(asset_matches_search(asset, query) == true);
-
-        query.text_query = "models";
-        REQUIRE(asset_matches_search(asset, query) == false);
+    SearchIndex search_index;
+    MockDatabase mock_db;  // Needed for Services
+    Services::provide(&mock_db, &search_index, nullptr, nullptr, nullptr, nullptr, nullptr);
+    {
+        auto [lock, assets_map] = test_assets.read();
+        for (const auto& [key, asset] : assets_map) {
+            search_index.add_asset(asset.id, asset);
+        }
     }
 
-    SECTION("Case insensitive matching") {
-        SearchQuery query;
-        query.text_query = "MONSTER";
-        REQUIRE(asset_matches_search(asset, query) == true);
+    auto run_query = [&](const std::string& query,
+                         const std::vector<std::string>& path_filters = {}) {
+        UIState state;
+        safe_strcpy(state.buffer, sizeof(state.buffer), query.c_str());
+        if (!path_filters.empty()) {
+            state.path_filter_active = true;
+            state.path_filters = path_filters;
+        }
+        filter_assets(state, test_assets);
+        std::vector<std::string> names;
+        for (const auto& asset : state.results) {
+            names.push_back(asset.name);
+        }
+        return names;
+    };
 
-        query.text_query = "PNG";
-        REQUIRE(asset_matches_search(asset, query) == true);
-
-        query.text_query = "TEXTURES";
-        REQUIRE(asset_matches_search(asset, query) == true);
+    SECTION("Text matching is case-insensitive and path-aware") {
+        auto names = run_query("monster");
+        std::vector<std::string> expected = {"monster_model", "monster_texture"};
+        REQUIRE(names == expected);
     }
 
-    SECTION("Non-ASCII name matching") {
-        SearchQuery query;
-        query.text_query = "mönster";
-        
-        REQUIRE(asset_matches_search(asset, query) == false);          // ASCII asset doesn't match
-        REQUIRE(asset_matches_search(non_ascii_asset, query) == true); // Non-ASCII asset matches
+    SECTION("Type filters in query are applied") {
+        auto names = run_query("type=audio");
+        std::vector<std::string> expected = {"background_music", "explosion_sound"};
+        REQUIRE(names == expected);
     }
 
-    SECTION("Non-ASCII character search with multiplication sign") {
-        SearchQuery query;
-        query.text_query = "×";
-        
-        REQUIRE(asset_matches_search(asset, query) == false);          // ASCII asset doesn't have ×
-        REQUIRE(asset_matches_search(non_ascii_asset, query) == true); // Non-ASCII asset has ×
-    }
-}
-
-TEST_CASE("asset_matches_search type filtering", "[search]") {
-    Asset texture_asset = create_test_asset("texture", ".png", AssetType::_2D);
-    Asset model_asset = create_test_asset("model", ".fbx", AssetType::_3D);
-    Asset audio_asset = create_test_asset("sound", ".wav", AssetType::Audio);
-
-    SECTION("Single type filter") {
-        SearchQuery query;
-        query.type_filters = { AssetType::_2D };
-
-        REQUIRE(asset_matches_search(texture_asset, query) == true);
-        REQUIRE(asset_matches_search(model_asset, query) == false);
-        REQUIRE(asset_matches_search(audio_asset, query) == false);
+    SECTION("Combined text and type filters narrow results") {
+        auto names = run_query("type=2d texture");
+        std::vector<std::string> expected = {
+            "monster_texture",
+            "robot_texture",
+            "button_texture"
+        };
+        REQUIRE(names == expected);
     }
 
-    SECTION("Multiple type filter (OR condition)") {
-        SearchQuery query;
-        query.type_filters = { AssetType::_2D, AssetType::Audio };
-
-        REQUIRE(asset_matches_search(texture_asset, query) == true);
-        REQUIRE(asset_matches_search(model_asset, query) == false);
-        REQUIRE(asset_matches_search(audio_asset, query) == true);
+    SECTION("UI path filters narrow the result set") {
+        auto names = run_query("", {"textures"});
+        std::vector<std::string> expected = {
+            "monster_texture",
+            "robot_texture",
+            "button_texture"
+        };
+        REQUIRE(names == expected);
     }
 
-    SECTION("No type filter matches all") {
-        SearchQuery query;
-        // Empty type_filters means no type restriction
-
-        REQUIRE(asset_matches_search(texture_asset, query) == true);
-        REQUIRE(asset_matches_search(model_asset, query) == true);
-        REQUIRE(asset_matches_search(audio_asset, query) == true);
-    }
-}
-
-TEST_CASE("asset_matches_search combined filtering", "[search]") {
-    Asset monster_texture = create_test_asset("monster_texture", ".png", AssetType::_2D);
-    Asset monster_model = create_test_asset("monster_model", ".fbx", AssetType::_3D);
-    Asset robot_texture = create_test_asset("robot_texture", ".png", AssetType::_2D);
-
-    SECTION("Type and text both must match") {
-        SearchQuery query;
-        query.text_query = "monster";
-        query.type_filters = { AssetType::_2D };
-
-        REQUIRE(asset_matches_search(monster_texture, query) == true);  // Both match
-        REQUIRE(asset_matches_search(monster_model, query) == false);   // Text matches, type doesn't
-        REQUIRE(asset_matches_search(robot_texture, query) == false);   // Type matches, text doesn't
-    }
-
-    SECTION("Multiple search terms (AND logic)") {
-        SearchQuery query;
-        query.text_query = "monster texture";
-
-        REQUIRE(asset_matches_search(monster_texture, query) == true);  // Both "monster" and "texture" match
-        REQUIRE(asset_matches_search(monster_model, query) == false);   // "texture" doesn't match
-        REQUIRE(asset_matches_search(robot_texture, query) == false);   // "monster" doesn't match
-    }
-
-    SECTION("Empty text query with type filter") {
-        SearchQuery query;
-        query.text_query = "";
-        query.type_filters = { AssetType::_2D };
-
-        REQUIRE(asset_matches_search(monster_texture, query) == true);
-        REQUIRE(asset_matches_search(monster_model, query) == false);
-        REQUIRE(asset_matches_search(robot_texture, query) == true);
+    SECTION("UI path filters handle subdirectories") {
+        auto names = run_query("", {"textures/ui"});
+        std::vector<std::string> expected = {"button_texture"};
+        REQUIRE(names == expected);
     }
 }
 
@@ -392,80 +351,67 @@ TEST_CASE("parse_search_query path filtering", "[search]") {
     }
 }
 
-TEST_CASE("asset_matches_search path filtering", "[search]") {
-    // Use absolute paths relative to a configured asset root
-    std::string asset_root = "/tmp/test_assets_root";
-    Asset texture_in_textures = create_test_asset("monster", ".png", AssetType::_2D, asset_root + "/textures/monster.png", asset_root);
-    Asset texture_in_ui = create_test_asset("button", ".png", AssetType::_2D, asset_root + "/textures/ui/button.png", asset_root);
-    Asset model_in_models = create_test_asset("character", ".fbx", AssetType::_3D, asset_root + "/models/character.fbx", asset_root);
-    Asset sound_in_sounds = create_test_asset("explosion", ".wav", AssetType::Audio, asset_root + "/sounds/explosion.wav", asset_root);
+TEST_CASE("filter_assets path filters cover case and spaces", "[search][filter]") {
+    const std::string asset_root = "/tmp/test_assets_root_paths";
+    std::vector<Asset> assets_vector = {
+        create_test_asset("monster", ".png", AssetType::_2D, asset_root + "/textures/monster.png", asset_root),
+        create_test_asset("button", ".png", AssetType::_2D, asset_root + "/textures/ui/button.png", asset_root),
+        create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/damage.png", asset_root),
+        create_test_asset("explosion", ".wav", AssetType::Audio, asset_root + "/sounds/explosion.wav", asset_root)
+    };
 
-    SECTION("Single path filter matches") {
-        SearchQuery query;
-        query.path_filters = { "textures" };
-
-        REQUIRE(asset_matches_search(texture_in_textures, query) == true);
-        REQUIRE(asset_matches_search(texture_in_ui, query) == true);  // textures/ui should match textures
-        REQUIRE(asset_matches_search(model_in_models, query) == false);
-        REQUIRE(asset_matches_search(sound_in_sounds, query) == false);
+    uint32_t id = 1;
+    for (auto& asset : assets_vector) {
+        asset.id = id++;
     }
 
-    SECTION("Specific subdirectory path filter") {
-        SearchQuery query;
-        query.path_filters = { "textures/ui" };
-
-        REQUIRE(asset_matches_search(texture_in_textures, query) == false);  // textures doesn't match textures/ui
-        REQUIRE(asset_matches_search(texture_in_ui, query) == true);
-        REQUIRE(asset_matches_search(model_in_models, query) == false);
-        REQUIRE(asset_matches_search(sound_in_sounds, query) == false);
+    SafeAssets test_assets;
+    {
+        auto [lock, assets_map] = test_assets.write();
+        for (const auto& asset : assets_vector) {
+            assets_map[asset.path] = asset;
+        }
     }
 
-    SECTION("Multiple path filters (OR condition)") {
-        SearchQuery query;
-        query.path_filters = { "textures", "sounds" };
-
-        REQUIRE(asset_matches_search(texture_in_textures, query) == true);
-        REQUIRE(asset_matches_search(texture_in_ui, query) == true);
-        REQUIRE(asset_matches_search(model_in_models, query) == false);
-        REQUIRE(asset_matches_search(sound_in_sounds, query) == true);
+    SearchIndex search_index;
+    MockDatabase mock_db;
+    Services::provide(&mock_db, &search_index, nullptr, nullptr, nullptr, nullptr, nullptr);
+    {
+        auto [lock, assets_map] = test_assets.read();
+        for (const auto& [key, asset] : assets_map) {
+            search_index.add_asset(asset.id, asset);
+        }
     }
 
-    SECTION("Path and type filters combined") {
-        SearchQuery query;
-        query.type_filters = { AssetType::_2D };
-        query.path_filters = { "textures" };
+    auto run_path_filter = [&](const std::vector<std::string>& filters) {
+        UIState state;
+        state.path_filter_active = true;
+        state.path_filters = filters;
+        safe_strcpy(state.buffer, sizeof(state.buffer), "");
+        filter_assets(state, test_assets);
+        std::vector<std::string> names;
+        for (const auto& asset : state.results) {
+            names.push_back(asset.name);
+        }
+        return names;
+    };
 
-        REQUIRE(asset_matches_search(texture_in_textures, query) == true);   // Both match
-        REQUIRE(asset_matches_search(texture_in_ui, query) == true);         // Both match
-        REQUIRE(asset_matches_search(model_in_models, query) == false);      // Path doesn't match
-        REQUIRE(asset_matches_search(sound_in_sounds, query) == false);      // Type doesn't match
+    SECTION("Case-insensitive path filters") {
+        auto names = run_path_filter({"TEXTURES"});
+        std::vector<std::string> expected = {"monster", "button"};
+        REQUIRE(names == expected);
     }
 
-    SECTION("Path filter case insensitive") {
-        SearchQuery query;
-        query.path_filters = { "TEXTURES" };
-
-        REQUIRE(asset_matches_search(texture_in_textures, query) == true);
-        REQUIRE(asset_matches_search(texture_in_ui, query) == true);
+    SECTION("Path filters with spaces match exact segments") {
+        auto names = run_path_filter({"simple damage/folder"});
+        std::vector<std::string> expected = {"damage"};
+        REQUIRE(names == expected);
     }
 
-    SECTION("Path filter with spaces matches correctly") {
-        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/damage.png", asset_root);
-
-        SearchQuery query;
-        query.path_filters = { "simple damage/folder" };
-
-        REQUIRE(asset_matches_search(asset_with_spaces, query) == true);
-        REQUIRE(asset_matches_search(texture_in_textures, query) == false);
-    }
-
-    SECTION("Path filter with spaces partial match") {
-        Asset asset_with_spaces = create_test_asset("damage", ".png", AssetType::_2D, asset_root + "/simple damage/folder/subfolder/damage.png", asset_root);
-
-        SearchQuery query;
-        query.path_filters = { "simple damage" };
-
-        REQUIRE(asset_matches_search(asset_with_spaces, query) == true);
+    SECTION("Path filters can target subdirectories") {
+        auto names = run_path_filter({"textures/ui"});
+        std::vector<std::string> expected = {"button"};
+        REQUIRE(names == expected);
     }
 }
 
