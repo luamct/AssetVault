@@ -21,12 +21,14 @@
 namespace {
 // Additional breathing room to apply after the frame margin. Because the
 // frame already contributes 12px on each edge, this only needs to be subtle.
-constexpr float PREVIEW_INTERNAL_PADDING = 0.0f;
 constexpr float PREVIEW_FRAME_MARGIN = 16.0f;
 constexpr float PREVIEW_3D_ZOOM_FACTOR = 1.1f;
 constexpr float PREVIEW_3D_ROTATION_SENSITIVITY = 0.167f;
 constexpr float MAX_PREVIEW_UPSCALE_FACTOR = 20.0f;
 constexpr float PREVIEW_VIEWPORT_ROUNDING = 12.0f;
+constexpr float PREVIEW_TAG_CONTROL_SPACING = 12.0f;
+constexpr float TOOLTIP_ROUNDING = 3.0f;
+constexpr float TOOLTIP_PADDING = 3.0f;
 }
 
 using AttributeRenderer = std::function<void()>;
@@ -50,12 +52,17 @@ static std::string uppercase_copy(std::string text) {
   return text;
 }
 
+static void show_compact_tooltip(const char* text) {
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, TOOLTIP_ROUNDING);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(TOOLTIP_PADDING, TOOLTIP_PADDING));
+  ImGui::BeginTooltip();
+  ImGui::TextUnformatted(text);
+  ImGui::EndTooltip();
+  ImGui::PopStyleVar(2);
+}
+
 // Pixel assets for audio controls (from images/8x8_ui_elements.png)
-static const SlicedSprite AUDIO_TRACK_FRAME(
-  ImVec2(72.0f, 48.0f),   // source pos (second variant, 8px lower)
-  ImVec2(20.0f, 8.0f),    // source size
-  ImVec4(3.0f, 3.0f, 3.0f, 3.0f),
-  2.0f);                  // pixel scale
+static const SlicedSprite AUDIO_TRACK_FRAME = make_8px_frame(1, 3, 2.0f); // small frame index 1, variant 3
 static const ImVec2 AUDIO_HANDLE_SRC(112.0f, 64.0f);
 static const ImVec2 AUDIO_HANDLE_SIZE(16.0f, 16.0f);
 static constexpr float AUDIO_HANDLE_SCALE = 1.75f; // Slightly larger than track for overlap
@@ -368,6 +375,15 @@ bool audio_seek_bar(const char* id, float* value, float min_value, float max_val
   float position_ratio = (max_value > min_value) ? (*value - min_value) / (max_value - min_value) : 0.0f;
   position_ratio = std::clamp(position_ratio, 0.0f, 1.0f);
   float handle_center_x = button_min.x + position_ratio * width;
+  float handle_padding = std::max(0.0f, handle_draw_size.x * 0.5f - 5.0f * ui_scale);
+  float min_handle_center = button_min.x + handle_padding;
+  float max_handle_center = button_min.x + width - handle_padding;
+  if (max_handle_center < min_handle_center) {
+    float midpoint = button_min.x + width * 0.5f;
+    min_handle_center = midpoint;
+    max_handle_center = midpoint;
+  }
+  handle_center_x = std::clamp(handle_center_x, min_handle_center, max_handle_center);
 
   // Draw the track using the atlas frame
   ImVec2 track_pos(
@@ -421,7 +437,6 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   Model& current_model, Camera3D& camera, float panel_width, float panel_height) {
   float ui_scale = ui_state.ui_scale;
   float preview_frame_margin = PREVIEW_FRAME_MARGIN * ui_scale;
-  float preview_internal_padding = PREVIEW_INTERNAL_PADDING * ui_scale;
   SpriteAtlas preview_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite preview_frame_definition = make_16px_frame(1, 3.0f);
   const SlicedSprite tag_frame_definition = make_8px_frame(0, 2, 2.0f);
@@ -450,8 +465,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
   // Use the smaller axis so the square viewport touches the frame evenly
   ImVec2 content_avail = ImGui::GetContentRegionAvail();
-  float avail_side = std::max(0.0f,
-    std::min(content_avail.x, content_avail.y) - preview_internal_padding);
+  float avail_side = std::max(0.0f,std::min(content_avail.x, content_avail.y));
   float avail_width = avail_side;
   float avail_height = avail_side;
 
@@ -677,9 +691,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         LOG_DEBUG("Main: Audio file changed from '{}' to '{}'", current_file, asset_path);
         bool loaded = Services::audio_manager().load_audio(asset_path);
         if (loaded) {
-          // Set initial volume to match our slider default
-          Services::audio_manager().set_volume(0.5f);
-          // Auto-play if enabled
+          Services::audio_manager().set_volume(ui_state.audio_volume);
           if (ui_state.auto_play_audio) {
             Services::audio_manager().play();
           }
@@ -694,28 +706,30 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
       if (audio_entry.get_texture_id() != 0) {
         float icon_dim = Config::ICON_SCALE * std::min(avail_width, avail_height);
         ImVec2 icon_size(icon_dim, icon_dim);
+        float icon_block_height = std::max(icon_size.y, avail_height * 0.75f);
 
         // Center the icon
         ImVec2 container_pos = ImGui::GetCursorScreenPos();
         float image_x_offset = (avail_width - icon_size.x) * 0.5f;
-        float image_y_offset = (avail_height - icon_size.y) * 0.5f;
+        float image_y_offset = (icon_block_height - icon_size.y) * 0.5f;
         ImVec2 image_pos(container_pos.x + image_x_offset, container_pos.y + image_y_offset);
         ImGui::SetCursorScreenPos(image_pos);
 
         ImGui::Image((ImTextureID) (intptr_t) audio_entry.get_texture_id(), icon_size);
 
-
         // Restore cursor for controls below
         ImGui::SetCursorScreenPos(container_pos);
-        ImGui::Dummy(ImVec2(0, avail_height + 10));
+        ImGui::Dummy(ImVec2(0, icon_block_height + 10));
       }
       render_asset_tags(selected_asset, preview_frame_atlas, tag_frame_definition, ui_scale);
+      ImGui::Dummy(ImVec2(0.0f, PREVIEW_TAG_CONTROL_SPACING * ui_scale));
 
       // Audio controls - single row layout
       if (Services::audio_manager().has_audio_loaded()) {
         float duration = Services::audio_manager().get_duration();
         float position = Services::audio_manager().get_position();
         bool is_playing = Services::audio_manager().is_playing();
+        ui_state.audio_volume = std::clamp(Services::audio_manager().get_volume(), 0.0f, 1.0f);
 
         // Format time helper lambda
         auto format_time = [](float seconds) -> std::string {
@@ -734,10 +748,8 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         const ImVec2 icon_src_size(8.0f, 8.0f);
         const ImVec2 play_icon_src(0.0f, 48.0f);
         const ImVec2 pause_icon_src(40.0f, 56.0f);
-        const float icon_scale = 2.25f; // ~25% smaller than default
+        const float icon_scale = 2.25f;
         SpriteAtlas icon_atlas = texture_manager.get_ui_icons_atlas();
-        IM_ASSERT(icon_atlas.is_valid() && "UI icon atlas missing");
-        IM_ASSERT(preview_frame_atlas.is_valid() && "UI elements atlas missing");
         static const SlicedSprite audio_button_frame = make_8px_frame(1, 3, 2.0f); // variant 3 for button frame
 
         // Store the baseline Y position BEFORE drawing the button for proper alignment
@@ -787,7 +799,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImGui::SetCursorPosY(text_center_y);
         ImGui::Text("%s", format_time(position).c_str());
 
-        ImGui::SameLine(0, 16);
+        ImGui::SameLine(0, 10);
 
         // 3. Custom seek bar - thin line with circle handle
         static bool seeking = false;
@@ -817,13 +829,13 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           seeking = false;
         }
 
-        ImGui::SameLine(0, 7);
+        ImGui::SameLine(0, 10);
 
         // 4. Total duration
         ImGui::SetCursorPosY(text_center_y);
         ImGui::Text("%s", format_time(duration).c_str());
 
-        ImGui::SameLine(0, 12);
+        ImGui::SameLine(0, 8);
 
         // 5. Speaker icon - vertically centered
         const float volume_icon_scale = 2.0f;
@@ -842,22 +854,16 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         }
         ImGui::Dummy(volume_icon_size);
 
-        ImGui::SameLine(0, 6);
+        ImGui::SameLine(0, 10);
 
         // 6. Volume slider - custom horizontal seek bar style
-        static float audio_volume = 0.5f; // Start at 50%
         const float volume_width = 60.0f;  // Small horizontal slider
 
         ImGui::SetCursorPosY(baseline_y + button_size * 0.5f - (seek_bar_height * 0.5f));
 
-        if (audio_seek_bar("##VolumeBar", &audio_volume, 0.0f, 1.0f, volume_width,
+        if (audio_seek_bar("##VolumeBar", &ui_state.audio_volume, 0.0f, 1.0f, volume_width,
           preview_frame_atlas, AUDIO_TRACK_FRAME, AUDIO_HANDLE_SRC, AUDIO_HANDLE_SIZE, ui_scale, AUDIO_HANDLE_SCALE)) {
-          Services::audio_manager().set_volume(audio_volume);
-        }
-
-        // Show percentage on hover
-        if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("Volume: %d%%", (int) (audio_volume * 100));
+          Services::audio_manager().set_volume(ui_state.audio_volume);
         }
 
         ImGui::SameLine(0, 10);
@@ -892,6 +898,9 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
           (play_icon_src.y + icon_src_size.y) / icon_atlas.atlas_size.y);
         if (ImDrawList* draw_list_auto = ImGui::GetWindowDrawList()) {
           draw_list_auto->AddImage(icon_atlas.texture_id, auto_icon_min, auto_icon_max, auto_uv_min, auto_uv_max, auto_tint);
+        }
+        if (ImGui::IsItemHovered()) {
+          show_compact_tooltip("Auto-play on preview");
         }
 
         if (auto_clicked) {
