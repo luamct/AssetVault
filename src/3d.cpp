@@ -386,7 +386,7 @@ void load_model_materials(const aiScene* scene, const std::string& model_path, M
 
 // Forward declarations
 void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 parent_transform);
-void process_mesh(aiMesh* mesh, const aiScene* scene, Model& model, glm::mat4 transform);
+void process_mesh(aiMesh* mesh, const aiScene* scene, Model& model, glm::mat4 transform, int node_bone_index);
 unsigned int load_model_texture(const aiScene* scene, const std::string& model_path);
 unsigned int load_embedded_texture(const aiTexture* ai_texture);
 void load_model_skeleton(const aiScene* scene, Model& model);
@@ -419,11 +419,19 @@ void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 pa
   // Calculate this node's transformation
   glm::mat4 node_transform = ai_to_glm_mat4(node->mTransformation);
   glm::mat4 final_transform = parent_transform * node_transform;
+  int node_bone_index = -1;
+  auto node_it = model.skeleton_node_lookup.find(node->mName.C_Str());
+  if (node_it != model.skeleton_node_lookup.end()) {
+    const SkeletonNode& skeleton_node = model.skeleton_nodes[node_it->second];
+    if (skeleton_node.bone_index >= 0) {
+      node_bone_index = skeleton_node.bone_index;
+    }
+  }
 
   // Process all meshes in this node
   for (unsigned int i = 0; i < node->mNumMeshes; i++) {
     aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-    process_mesh(mesh, scene, model, final_transform);
+    process_mesh(mesh, scene, model, final_transform, node_bone_index);
   }
 
   // Process all child nodes
@@ -434,7 +442,7 @@ void process_node(aiNode* node, const aiScene* scene, Model& model, glm::mat4 pa
 
 // Process a single mesh with transformation applied
 // Convert a single Assimp mesh into our interleaved vertex/index buffers.
-void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat4 transform) {
+void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat4 transform, int node_bone_index) {
 
   // Create mesh info
   Mesh mesh_info;
@@ -444,8 +452,9 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
   mesh_info.index_offset = static_cast<unsigned int>(model.indices.size());
 
   const bool has_bones = mesh->HasBones();
-  mesh_info.has_skin = has_bones;
-  if (has_bones) {
+  const bool use_rigid_skin = !has_bones && node_bone_index >= 0 && model.has_skeleton;
+  mesh_info.has_skin = has_bones || use_rigid_skin;
+  if (mesh_info.has_skin) {
     model.has_skinned_meshes = true;
   }
 
@@ -454,7 +463,7 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
 
   std::vector<std::array<int, MODEL_MAX_BONES_PER_VERTEX>> vertex_bone_ids;
   std::vector<std::array<float, MODEL_MAX_BONES_PER_VERTEX>> vertex_bone_weights;
-  if (has_bones) {
+  if (mesh_info.has_skin) {
     vertex_bone_ids.resize(mesh->mNumVertices);
     vertex_bone_weights.resize(mesh->mNumVertices);
 
@@ -463,82 +472,98 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
       vertex_bone_weights[i].fill(0.0f);
     }
 
-    for (unsigned int b = 0; b < mesh->mNumBones; ++b) {
-      const aiBone* ai_bone = mesh->mBones[b];
-      if (!ai_bone) {
-        continue;
-      }
-
-      const std::string raw_name = ai_bone->mName.C_Str();
-      int bone_index = -1;
-
-      auto raw_match = model.bone_lookup_raw.find(raw_name);
-      if (raw_match != model.bone_lookup_raw.end()) {
-        bone_index = raw_match->second;
-      }
-      else {
-        const std::string clean_name = normalize_node_name(raw_name);
-        auto clean_match = model.bone_lookup.find(clean_name);
-        if (clean_match != model.bone_lookup.end()) {
-          bone_index = clean_match->second;
-        }
-      }
-
-      if (bone_index < 0) {
-        LOG_WARN("[SKINNING] Mesh '{}' references unknown bone '{}'", mesh_info.name, raw_name);
-        continue;
-      }
-
-      for (unsigned int w = 0; w < ai_bone->mNumWeights; ++w) {
-        const aiVertexWeight& weight = ai_bone->mWeights[w];
-        if (weight.mVertexId >= mesh->mNumVertices) {
+    if (has_bones) {
+      for (unsigned int b = 0; b < mesh->mNumBones; ++b) {
+        const aiBone* ai_bone = mesh->mBones[b];
+        if (!ai_bone) {
           continue;
         }
 
-        auto& ids = vertex_bone_ids[weight.mVertexId];
-        auto& weights = vertex_bone_weights[weight.mVertexId];
+        const std::string raw_name = ai_bone->mName.C_Str();
+        int bone_index = -1;
 
-        int target_slot = -1;
-        for (int slot = 0; slot < MODEL_MAX_BONES_PER_VERTEX; ++slot) {
-          if (weights[slot] == 0.0f) {
-            target_slot = slot;
-            break;
+        auto raw_match = model.bone_lookup_raw.find(raw_name);
+        if (raw_match != model.bone_lookup_raw.end()) {
+          bone_index = raw_match->second;
+        }
+        else {
+          const std::string clean_name = normalize_node_name(raw_name);
+          auto clean_match = model.bone_lookup.find(clean_name);
+          if (clean_match != model.bone_lookup.end()) {
+            bone_index = clean_match->second;
           }
         }
 
-        if (target_slot == -1) {
-          float min_weight = weights[0];
-          int min_slot = 0;
-          for (int slot = 1; slot < MODEL_MAX_BONES_PER_VERTEX; ++slot) {
-            if (weights[slot] < min_weight) {
-              min_weight = weights[slot];
-              min_slot = slot;
-            }
-          }
+        if (bone_index < 0) {
+          LOG_WARN("[SKINNING] Mesh '{}' references unknown bone '{}'", mesh_info.name, raw_name);
+          continue;
+        }
 
-          if (weight.mWeight <= min_weight) {
+        for (unsigned int w = 0; w < ai_bone->mNumWeights; ++w) {
+          const aiVertexWeight& weight = ai_bone->mWeights[w];
+          if (weight.mVertexId >= mesh->mNumVertices) {
             continue;
           }
 
-          target_slot = min_slot;
-        }
+          auto& ids = vertex_bone_ids[weight.mVertexId];
+          auto& weights = vertex_bone_weights[weight.mVertexId];
 
-        ids[target_slot] = bone_index;
-        weights[target_slot] = weight.mWeight;
+          int target_slot = -1;
+          for (int slot = 0; slot < MODEL_MAX_BONES_PER_VERTEX; ++slot) {
+            if (weights[slot] == 0.0f) {
+              target_slot = slot;
+              break;
+            }
+          }
+
+          if (target_slot == -1) {
+            float min_weight = weights[0];
+            int min_slot = 0;
+            for (int slot = 1; slot < MODEL_MAX_BONES_PER_VERTEX; ++slot) {
+              if (weights[slot] < min_weight) {
+                min_weight = weights[slot];
+                min_slot = slot;
+              }
+            }
+
+            if (weight.mWeight <= min_weight) {
+              continue;
+            }
+
+            target_slot = min_slot;
+          }
+
+          ids[target_slot] = bone_index;
+          weights[target_slot] = weight.mWeight;
+        }
+      }
+
+      for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
+        auto& weights = vertex_bone_weights[i];
+        float weight_sum = weights[0] + weights[1] + weights[2] + weights[3];
+        if (weight_sum > 0.0f) {
+          float inv_sum = 1.0f / weight_sum;
+          for (float& value : weights) {
+            value *= inv_sum;
+          }
+        }
+        else {
+          weights[0] = 1.0f;
+        }
       }
     }
-
-    for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
-      auto& weights = vertex_bone_weights[i];
-      float weight_sum = weights[0] + weights[1] + weights[2] + weights[3];
-      if (weight_sum > 0.0f) {
-        float inv_sum = 1.0f / weight_sum;
-        for (float& value : weights) {
-          value *= inv_sum;
-        }
-      }
-      else {
+    else if (use_rigid_skin) {
+      for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
+        auto& ids = vertex_bone_ids[i];
+        auto& weights = vertex_bone_weights[i];
+        ids[0] = node_bone_index;
+        ids[1] = 0;
+        ids[2] = 0;
+        ids[3] = 0;
         weights[0] = 1.0f;
+        weights[1] = 0.0f;
+        weights[2] = 0.0f;
+        weights[3] = 0.0f;
       }
     }
   }
@@ -555,7 +580,7 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
     model.max_bounds.y = std::max(model.max_bounds.y, world_pos.y);
     model.max_bounds.z = std::max(model.max_bounds.z, world_pos.z);
 
-    glm::vec4 transformed_pos = has_bones ? pos : world_pos;
+    glm::vec4 transformed_pos = mesh_info.has_skin ? pos : world_pos;
 
     model.vertices.push_back(transformed_pos.x);
     model.vertices.push_back(transformed_pos.y);
@@ -564,7 +589,7 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
     // Transform normal
     if (mesh->HasNormals()) {
       glm::vec3 normal(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z);
-      glm::vec3 transformed_normal = has_bones ? normal : normal_matrix * normal;
+      glm::vec3 transformed_normal = mesh_info.has_skin ? normal : normal_matrix * normal;
 
       model.vertices.push_back(transformed_normal.x);
       model.vertices.push_back(transformed_normal.y);
@@ -586,7 +611,7 @@ void process_mesh(aiMesh* mesh, const aiScene* /*scene*/, Model& model, glm::mat
       model.vertices.push_back(0.0f);
     }
 
-    if (has_bones) {
+    if (mesh_info.has_skin) {
       const auto& ids = vertex_bone_ids[i];
       const auto& weights = vertex_bone_weights[i];
       model.vertices.push_back(static_cast<float>(ids[0]));
@@ -642,6 +667,7 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
 
   std::unordered_map<std::string, int> bone_name_to_index;
   std::unordered_map<std::string, int> bone_raw_name_to_index;
+  bool has_mesh_bones = false;
 
   auto register_bone = [&](const std::string& raw_name, const std::string& clean_name, const aiMatrix4x4* offset_matrix) {
     auto it = bone_name_to_index.find(clean_name);
@@ -671,6 +697,7 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
       std::string raw_name = ai_bone->mName.C_Str();
       std::string clean_name = normalize_node_name(raw_name);
       register_bone(raw_name, clean_name, &ai_bone->mOffsetMatrix);
+      has_mesh_bones = true;
     }
   }
 
@@ -688,6 +715,26 @@ void load_model_skeleton(const aiScene* scene, Model& model) {
     for (const std::string& name : bone_names) {
       register_bone(name, name, nullptr);
     }
+  }
+
+  if (!has_mesh_bones && scene->mNumAnimations > 0) {
+    std::function<void(aiNode*)> register_mesh_nodes = [&](aiNode* node) {
+      if (!node) {
+        return;
+      }
+
+      if (node->mNumMeshes > 0) {
+        std::string raw_name = node->mName.C_Str();
+        std::string clean_name = normalize_node_name(raw_name);
+        register_bone(raw_name, clean_name, nullptr);
+      }
+
+      for (unsigned int i = 0; i < node->mNumChildren; ++i) {
+        register_mesh_nodes(node->mChildren[i]);
+      }
+    };
+
+    register_mesh_nodes(scene->mRootNode);
   }
 
   if (model.bones.empty()) {
@@ -1528,6 +1575,9 @@ void render_3d_preview(int width, int height, Model& model, TextureManager& text
   if (!texture_manager.is_preview_initialized()) {
     return;
   }
+
+  setup_3d_rendering_state();
+  glDepthMask(GL_TRUE);
 
   // Update framebuffer size if needed
   static int last_fb_width = 0, last_fb_height = 0;
