@@ -78,9 +78,8 @@ void render_search_panel(UIState& ui_state,
     search_box_width, 20.0f * ui_scale, frame_padding_y, 0.0f);
 
   if (can_layer_frame) {
-    ImVec2 input_min = ImGui::GetItemRectMin();
-    ImVec2 input_max = ImGui::GetItemRectMax();
-    ImVec2 input_size(input_max.x - input_min.x, input_max.y - input_min.y);
+    ImVec2 input_min = frame_pos;
+    ImVec2 input_size = frame_size;
     bool input_hovered = ImGui::IsItemHovered();
     bool input_active = ImGui::IsItemActive();
 

@@ -187,16 +187,23 @@ bool draw_wrapped_settings_entry_with_frame(const char* id,
 
 bool fancy_text_input(const char* label, char* buffer, size_t buffer_size, float width,
     float padding_x, float padding_y, float corner_radius) {
-  ImGui::PushItemWidth(width);
+  float inner_width = std::max(1.0f, width - padding_x * 2.0f);
+  ImVec2 cursor_pos = ImGui::GetCursorPos();
+  // Inset the input horizontally while keeping the full frame height.
+  ImGui::SetCursorPos(ImVec2(cursor_pos.x + padding_x, cursor_pos.y));
+  ImGui::PushItemWidth(inner_width);
 
   ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, corner_radius);
-  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padding_x, padding_y));
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, padding_y));
   ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
   ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
   ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
   ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
 
   bool result = ImGui::InputText(label, buffer, buffer_size, ImGuiInputTextFlags_EnterReturnsTrue);
+
+  ImVec2 after_pos = ImGui::GetCursorPos();
+  ImGui::SetCursorPos(ImVec2(cursor_pos.x, after_pos.y));
 
   ImGui::PopStyleColor(3);
   ImGui::PopStyleVar(3);
