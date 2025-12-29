@@ -143,14 +143,6 @@ public:
     should_stop = true;
     timer_should_stop = true;
 
-    // Stop the FSEventStream if it's running
-    if (stream) {
-      FSEventStreamStop(stream);
-      FSEventStreamInvalidate(stream);
-      FSEventStreamRelease(stream);
-      stream = nullptr;
-    }
-
     // Wait for threads to finish
     if (watch_thread.joinable()) {
       watch_thread.join();
@@ -374,13 +366,16 @@ private:
     }
 
     // Cleanup
-    FSEventStreamStop(stream);
+    if (stream) {
+      FSEventStreamStop(stream);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    FSEventStreamUnscheduleFromRunLoop(stream, run_loop, kCFRunLoopDefaultMode);
+      FSEventStreamUnscheduleFromRunLoop(stream, run_loop, kCFRunLoopDefaultMode);
 #pragma clang diagnostic pop
-    FSEventStreamRelease(stream);
-    stream = nullptr;
+      FSEventStreamInvalidate(stream);
+      FSEventStreamRelease(stream);
+      stream = nullptr;
+    }
 
     CFRelease(paths_to_watch);
     CFRelease(path_cfstr);

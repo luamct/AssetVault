@@ -479,24 +479,49 @@ add_test(NAME IntegrationTests COMMAND IntegrationTest)
 set_tests_properties(IntegrationTests PROPERTIES WORKING_DIRECTORY $<TARGET_FILE_DIR:IntegrationTest>)
 
 # Set compiler warnings for our code
-if(MSVC)
-    target_compile_options(AssetVault PRIVATE
-        /W4                    # Enable all warnings for our code
-        /wd4456               # Suppress variable name shadowing warnings
-        /wd4244               # Suppress conversion warnings from external libraries
-        /wd4996               # Suppress deprecated function warnings
-        /wd4702               # Suppress unreachable code warnings from external libs
-        /external:I ${CMAKE_CURRENT_SOURCE_DIR}/external
-        /external:W0          # Disable all warnings for external headers
-    )
-elseif(APPLE)
-    target_compile_options(AssetVault PRIVATE
-        -Wall
-        -Wextra
-        -Wno-unused-parameter
-        -Wno-missing-field-initializers
-    )
-endif()
+function(assetvault_enable_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE
+            /W4                    # Enable all warnings for our code
+            /wd4456               # Suppress variable name shadowing warnings
+            /wd4244               # Suppress conversion warnings from external libraries
+            /wd4996               # Suppress deprecated function warnings
+            /wd4702               # Suppress unreachable code warnings from external libs
+            /external:I ${CMAKE_CURRENT_SOURCE_DIR}/external
+            /external:W0          # Disable all warnings for external headers
+        )
+    elseif(APPLE)
+        target_compile_options(${target} PRIVATE
+            -Wall
+            -Wextra
+            -Wno-unused-parameter
+            -Wno-missing-field-initializers
+        )
+    elseif(UNIX AND NOT APPLE)
+        target_compile_options(${target} PRIVATE
+            -Wall
+            -Wextra
+            -Wno-unused-parameter
+        )
+    endif()
+endfunction()
+
+foreach(target
+    AssetVaultCore
+    AssetVault
+    SearchTest
+    FileWatcherMacOSTest
+    FileWatcherWindowsTest
+    DbTest
+    EventProcessorTest
+    UtilsTest
+    UITest
+    IntegrationTest
+)
+    if(TARGET ${target})
+        assetvault_enable_warnings(${target})
+    endif()
+endforeach()
 
 # Add shaders as sources so CMake tracks them (won't compile them, just track for changes)
 target_sources(AssetVault PRIVATE ${SHADER_FILES})

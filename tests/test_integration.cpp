@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <system_error>
 #include <set>
+#include <functional>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -29,6 +30,78 @@
 #include "test_helpers.h"
 
 namespace fs = std::filesystem;
+
+namespace {
+constexpr auto kAssetTimeout = std::chrono::seconds(6);
+constexpr auto kThumbnailTimeout = std::chrono::seconds(8);
+constexpr auto kWaitInterval = std::chrono::milliseconds(50);
+
+bool wait_for_condition(const std::function<bool()>& predicate,
+                         std::chrono::milliseconds timeout,
+                         std::chrono::milliseconds interval = kWaitInterval) {
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (predicate()) {
+            return true;
+        }
+        std::this_thread::sleep_for(interval);
+    }
+    return predicate();
+}
+
+std::vector<Asset> read_assets(const std::string& db_path) {
+    AssetDatabase verify_db;
+    if (!verify_db.initialize(db_path)) {
+        return {};
+    }
+    auto assets = verify_db.get_all_assets();
+    verify_db.close();
+    return assets;
+}
+
+bool wait_for_assets_count(const std::string& db_path, size_t expected, std::vector<Asset>& assets) {
+    return wait_for_condition([&]{
+        assets = read_assets(db_path);
+        return assets.size() == expected;
+    }, kAssetTimeout);
+}
+
+bool wait_for_assets_nonempty(const std::string& db_path, std::vector<Asset>& assets) {
+    return wait_for_condition([&]{
+        assets = read_assets(db_path);
+        return !assets.empty();
+    }, kAssetTimeout);
+}
+
+void initialize_test_database(const std::string& db_path, const std::string& assets_directory) {
+    AssetDatabase setup_db;
+    REQUIRE(setup_db.initialize(db_path));
+    REQUIRE(setup_db.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, assets_directory));
+    setup_db.close();
+}
+
+struct ScopedTestEnvironment {
+    ScopedTestEnvironment() {
+        setenv("TESTING", "1", 1);
+        data_dir = Config::get_data_directory();
+        test_db = data_dir / "assets.db";
+        if (fs::exists(test_db)) {
+            fs::remove(test_db);
+        }
+        fs::create_directories(data_dir);
+    }
+
+    ~ScopedTestEnvironment() {
+        unsetenv("TESTING");
+        if (fs::exists(data_dir)) {
+            fs::remove_all(data_dir);
+        }
+    }
+
+    fs::path data_dir;
+    fs::path test_db;
+};
+}  // namespace
 
 struct ScopedFileRemoval {
     explicit ScopedFileRemoval(fs::path target) : path(std::move(target)) {}
@@ -63,11 +136,23 @@ struct GLFWGuard {
     }
 };
 
-TEST_CASE("Integration: Real application execution", "[integration]") {
-    // NOTE: These integration tests are designed to run IN ORDER and depend on each other.
-    // Each test builds on the state left by the previous test to minimize setup overhead.
-    // DO NOT run tests in isolation or in random order.
+template <typename StepFn>
+void run_headless_step(StepFn&& step) {
+    GLFWGuard glfw_guard;
+    std::atomic<bool> shutdown_requested(false);
+    bool test_passed = false;
 
+    std::thread test_thread([&]{
+        step(shutdown_requested, test_passed);
+    });
+
+    int result = run(&shutdown_requested);
+    test_thread.join();
+    REQUIRE(result == 0);
+    REQUIRE(test_passed);
+}
+
+TEST_CASE("Integration: Real application execution", "[integration]") {
     // Find test assets directory using source file location
     // __FILE__ can be absolute or relative depending on compiler/platform
     fs::path source_file_path = fs::path(__FILE__);
@@ -83,395 +168,275 @@ TEST_CASE("Integration: Real application execution", "[integration]") {
     fs::path test_assets_source = source_file_path.parent_path() / "files" / "assets";
     REQUIRE(fs::exists(test_assets_source));
 
-    // One-time setup: Enable headless mode and configure database
-    setenv("TESTING", "1", 1);
-
-    fs::path data_dir = Config::get_data_directory();
-    fs::path test_db = data_dir / "assets.db";
-    if (fs::exists(test_db)) {
-        fs::remove(test_db);
-    }
-    fs::create_directories(data_dir);
+    ScopedTestEnvironment test_env;
 
     std::string db_path_str = Config::get_database_path().string();
     std::string assets_directory = test_assets_source.string();
     fs::path assets_dir(assets_directory);
+    initialize_test_database(db_path_str, assets_directory);
 
-    {
-        AssetDatabase setup_db;
-        REQUIRE(setup_db.initialize(db_path_str));
-        REQUIRE(setup_db.upsert_config_value(Config::CONFIG_KEY_ASSETS_DIRECTORY, assets_directory));
-        setup_db.close();
-    }
+    run_headless_step([&](std::atomic<bool>& shutdown_requested, bool& test_passed) {
+        std::vector<Asset> assets;
+        bool ready = wait_for_assets_count(db_path_str, 5, assets);
 
-    SECTION("Processes files already in folder at start") {
-        GLFWGuard glfw_guard;  // Ensures cleanup even if test fails
-        std::atomic<bool> shutdown_requested(false);
-        bool test_passed = false;
+        LOG_INFO("[TEST] Found {} assets in database", assets.size());
 
-        std::thread test_thread([&]{
-            // Wait for app initialization and initial scan
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-            // Verify all existing files were found and processed
-            AssetDatabase verify_db;
-            if (!verify_db.initialize(db_path_str)) {
-                LOG_ERROR("[TEST] Failed to initialize database");
-                shutdown_requested = true;
-                return;
-            }
-
-            auto assets = verify_db.get_all_assets();
-            LOG_INFO("[TEST] Found {} assets in database", assets.size());
-
-            if (assets.size() != 5) {  // racer.fbx, racer.glb, racer.obj, racer.png, zombie.svg
-                LOG_ERROR("[TEST] Expected 5 assets, got {}", assets.size());
-                for (const auto& asset : assets) {
-                    LOG_ERROR("[TEST] Unexpected asset entry: {} ({})", asset.name, asset.path);
-                }
-                shutdown_requested = true;
-                return;
-            }
-
-            // Verify we found expected asset types
-            bool found_fbx = false, found_glb = false, found_obj = false;
-            bool found_png = false, found_svg = false;
-
+        if (!ready) {  // racer.fbx, racer.glb, racer.obj, racer.png, zombie.svg
+            LOG_ERROR("[TEST] Expected 5 assets, got {}", assets.size());
             for (const auto& asset : assets) {
-                if (asset.extension == ".fbx") found_fbx = true;
-                if (asset.extension == ".glb") found_glb = true;
-                if (asset.extension == ".obj") found_obj = true;
-                if (asset.extension == ".png") found_png = true;
-                if (asset.extension == ".svg") found_svg = true;
+                LOG_ERROR("[TEST] Unexpected asset entry: {} ({})", asset.name, asset.path);
             }
-
-            if (!found_fbx || !found_glb || !found_obj || !found_png || !found_svg) {
-                LOG_ERROR("[TEST] Missing expected asset types");
-                shutdown_requested = true;
-                return;
-            }
-
-            verify_db.close();
-
-            LOG_INFO("[TEST] ✓ All existing files processed successfully");
-            test_passed = true;
             shutdown_requested = true;
-        });
+            return;
+        }
 
-        int result = run(&shutdown_requested);
-        test_thread.join();
-
-        // Now safe to use REQUIRE in main thread
-        REQUIRE(result == 0);
-        REQUIRE(test_passed);
-    }
-
-    SECTION("Loads database which already contains assets") {
-        GLFWGuard glfw_guard;
-        std::atomic<bool> shutdown_requested(false);
-        bool test_passed = false;
-
-        std::thread test_thread([&]{
-            std::this_thread::sleep_for(std::chrono::milliseconds(300));
-
-            // Verify it loaded the existing database
-            AssetDatabase verify_db;
-            if (!verify_db.initialize(db_path_str)) {
-                LOG_ERROR("[TEST] Failed to initialize database");
+        // Verify we found expected asset types
+        std::set<std::string> expected_extensions = {".fbx", ".glb", ".obj", ".png", ".svg"};
+        std::set<std::string> found_extensions;
+        for (const auto& asset : assets) {
+            found_extensions.insert(asset.extension);
+        }
+        for (const auto& expected : expected_extensions) {
+            if (found_extensions.count(expected) == 0) {
+                LOG_ERROR("[TEST] Missing expected asset type: {}", expected);
                 shutdown_requested = true;
                 return;
             }
+        }
 
-            auto assets = verify_db.get_all_assets();
-            LOG_INFO("[TEST] Database loaded with {} existing assets", assets.size());
+        LOG_INFO("[TEST] ✓ All existing files processed successfully");
+        test_passed = true;
+        shutdown_requested = true;
+    });
 
-            if (assets.size() == 0) {
-                LOG_ERROR("[TEST] Expected assets in database, got 0");
-                shutdown_requested = true;
-                return;
-            }
+    run_headless_step([&](std::atomic<bool>& shutdown_requested, bool& test_passed) {
+        std::vector<Asset> assets;
+        bool ready = wait_for_assets_nonempty(db_path_str, assets);
 
-            verify_db.close();
+        LOG_INFO("[TEST] Database loaded with {} existing assets", assets.size());
 
-            LOG_INFO("[TEST] ✓ Successfully loaded existing database");
-            test_passed = true;
+        if (!ready) {
+            LOG_ERROR("[TEST] Expected assets in database, got 0");
             shutdown_requested = true;
-        });
+            return;
+        }
 
-        int result = run(&shutdown_requested);
-        test_thread.join();
-        REQUIRE(result == 0);
-        REQUIRE(test_passed);
-    }
+        LOG_INFO("[TEST] ✓ Successfully loaded existing database");
+        test_passed = true;
+        shutdown_requested = true;
+    });
 
-    SECTION("Adds assets added during execution") {
-        GLFWGuard glfw_guard;
-        std::atomic<bool> shutdown_requested(false);
-        bool test_passed = false;
+    run_headless_step([&](std::atomic<bool>& shutdown_requested, bool& test_passed) {
+        std::vector<Asset> assets;
+        bool ready = wait_for_assets_count(db_path_str, 5, assets);
 
-        std::thread test_thread([&]{
-            // Wait for app initialization
-            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        if (!ready) {
+            LOG_ERROR("[TEST] Expected 5 assets before add, got {}", assets.size());
+            shutdown_requested = true;
+            return;
+        }
 
-            AssetDatabase verify_db;
-            if (!verify_db.initialize(db_path_str)) {
-                LOG_ERROR("[TEST] Failed to initialize database");
-                shutdown_requested = true;
-                return;
-            }
-            size_t initial_count = verify_db.get_all_assets().size();
-            verify_db.close();
+        size_t initial_count = assets.size();
 
-            // Copy an existing asset to create a "new" file
-            LOG_INFO("[TEST] Adding new asset file...");
-            fs::path source_file = assets_dir / "racer.obj";
-            fs::path test_file = assets_dir / "racer_copy.obj";
-            ScopedFileRemoval ensure_cleanup(test_file);
+        // Copy an existing asset to create a "new" file
+        LOG_INFO("[TEST] Adding new asset file...");
+        fs::path source_file = assets_dir / "racer.obj";
+        fs::path test_file = assets_dir / "racer_copy.obj";
+        ScopedFileRemoval ensure_cleanup(test_file);
 
-            if (fs::exists(test_file)) {
-                std::error_code ec;
-                fs::remove(test_file, ec);
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
+        if (fs::exists(test_file)) {
+            std::error_code ec;
+            fs::remove(test_file, ec);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
 
-            fs::copy_file(source_file, test_file);
+        fs::copy_file(source_file, test_file);
 
-            // Wait for FileWatcher and EventProcessor
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        bool added = wait_for_assets_count(db_path_str, initial_count + 1, assets);
 
-            // Verify asset was added
-            if (!verify_db.initialize(db_path_str)) {
-                LOG_ERROR("[TEST] Failed to initialize database");
-                shutdown_requested = true;
-                return;
-            }
+        LOG_INFO("[TEST] Database now contains {} assets (expected {})", assets.size(), initial_count + 1);
 
-            auto assets = verify_db.get_all_assets();
-            LOG_INFO("[TEST] Database now contains {} assets (expected {})", assets.size(), initial_count + 1);
+        if (!added) {
+            LOG_ERROR("[TEST] Asset count mismatch");
+            shutdown_requested = true;
+            return;
+        }
 
-            if (assets.size() != initial_count + 1) {
-                LOG_ERROR("[TEST] Asset count mismatch");
-                shutdown_requested = true;
-                return;
-            }
-
-            bool found = false;
-            for (const auto& asset : assets) {
-                if (asset.name == "racer_copy.obj") {
-                    found = true;
-                    if (asset.type != AssetType::_3D) {
-                        LOG_ERROR("[TEST] Asset type mismatch");
-                        shutdown_requested = true;
-                        return;
-                    }
-                    break;
+        bool found = false;
+        for (const auto& asset : assets) {
+            if (asset.name == "racer_copy.obj") {
+                found = true;
+                if (asset.type != AssetType::_3D) {
+                    LOG_ERROR("[TEST] Asset type mismatch");
+                    shutdown_requested = true;
+                    return;
                 }
+                break;
             }
+        }
 
-            if (!found) {
-                LOG_ERROR("[TEST] racer_copy.obj not found in database");
-                shutdown_requested = true;
-                return;
-            }
-
-            verify_db.close();
-
-            // Cleanup test file
-            fs::remove(test_file);
-            ensure_cleanup.dismiss();
-
-            LOG_INFO("[TEST] ✓ Asset added successfully during execution");
-            test_passed = true;
+        if (!found) {
+            LOG_ERROR("[TEST] racer_copy.obj not found in database");
             shutdown_requested = true;
-        });
+            return;
+        }
 
-        int result = run(&shutdown_requested);
-        test_thread.join();
-        REQUIRE(result == 0);
-        REQUIRE(test_passed);
-    }
+        // Cleanup test file
+        fs::remove(test_file);
+        ensure_cleanup.dismiss();
 
-    SECTION("Removes assets deleted during execution") {
-        GLFWGuard glfw_guard;
-        std::atomic<bool> shutdown_requested(false);
-        bool test_passed = false;
+        LOG_INFO("[TEST] ✓ Asset added successfully during execution");
+        test_passed = true;
+        shutdown_requested = true;
+    });
 
-        std::thread test_thread([&]{
-            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    run_headless_step([&](std::atomic<bool>& shutdown_requested, bool& test_passed) {
+        std::vector<Asset> assets;
+        bool ready = wait_for_assets_nonempty(db_path_str, assets);
 
-            // Create a temporary file first
-            fs::path test_file = assets_dir / "temp_delete_test.obj";
-            ScopedFileRemoval ensure_cleanup(test_file);
-            if (fs::exists(test_file)) {
-                std::error_code ec;
-                fs::remove(test_file, ec);
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-
-            fs::copy_file(assets_dir / "racer.obj", test_file);
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-            AssetDatabase verify_db;
-            if (!verify_db.initialize(db_path_str)) {
-                LOG_ERROR("[TEST] Failed to initialize database");
-                shutdown_requested = true;
-                return;
-            }
-            size_t count_with_file = verify_db.get_all_assets().size();
-            verify_db.close();
-
-            // Delete the file
-            LOG_INFO("[TEST] Deleting asset file...");
-            fs::remove(test_file);
-            ensure_cleanup.dismiss();
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-            // Verify it was removed from database
-            if (!verify_db.initialize(db_path_str)) {
-                LOG_ERROR("[TEST] Failed to initialize database");
-                shutdown_requested = true;
-                return;
-            }
-
-            auto assets = verify_db.get_all_assets();
-            LOG_INFO("[TEST] Database now contains {} assets (expected {})", assets.size(), count_with_file - 1);
-
-            if (assets.size() != count_with_file - 1) {
-                LOG_ERROR("[TEST] Asset count mismatch after deletion");
-                shutdown_requested = true;
-                return;
-            }
-
-            bool still_exists = false;
-            for (const auto& asset : assets) {
-                if (asset.name == "temp_delete_test.obj") {
-                    still_exists = true;
-                    break;
-                }
-            }
-
-            if (still_exists) {
-                LOG_ERROR("[TEST] temp_delete_test.obj still exists in database");
-                shutdown_requested = true;
-                return;
-            }
-
-            verify_db.close();
-
-            LOG_INFO("[TEST] ✓ Asset removed successfully from database");
-            test_passed = true;
+        if (!ready) {
+            LOG_ERROR("[TEST] Expected assets before delete, got {}", assets.size());
             shutdown_requested = true;
-        });
+            return;
+        }
 
-        int result = run(&shutdown_requested);
-        test_thread.join();
-        REQUIRE(result == 0);
-        REQUIRE(test_passed);
-    }
+        size_t base_count = assets.size();
 
-    SECTION("Creates thumbnails for 3D models") {
-        GLFWGuard glfw_guard;
-        std::atomic<bool> shutdown_requested(false);
-        bool test_passed = false;
+        // Create a temporary file first
+        fs::path test_file = assets_dir / "temp_delete_test.obj";
+        ScopedFileRemoval ensure_cleanup(test_file);
+        if (fs::exists(test_file)) {
+            std::error_code ec;
+            fs::remove(test_file, ec);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
 
-        std::thread test_thread([&]{
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        fs::copy_file(assets_dir / "racer.obj", test_file);
 
-            // Check that 3D model thumbnails were created
-            fs::path thumbnail_dir = Config::get_thumbnail_directory();
+        bool created = wait_for_assets_count(db_path_str, base_count + 1, assets);
+
+        if (!created) {
+            LOG_ERROR("[TEST] Expected asset count to increase, got {}", assets.size());
+            shutdown_requested = true;
+            return;
+        }
+
+        // Delete the file
+        LOG_INFO("[TEST] Deleting asset file...");
+        fs::remove(test_file);
+        ensure_cleanup.dismiss();
+        bool removed = wait_for_assets_count(db_path_str, base_count, assets);
+
+        LOG_INFO("[TEST] Database now contains {} assets (expected {})", assets.size(), base_count);
+
+        if (!removed) {
+            LOG_ERROR("[TEST] Asset count mismatch after deletion");
+            shutdown_requested = true;
+            return;
+        }
+
+        bool still_exists = false;
+        for (const auto& asset : assets) {
+            if (asset.name == "temp_delete_test.obj") {
+                still_exists = true;
+                break;
+            }
+        }
+
+        if (still_exists) {
+            LOG_ERROR("[TEST] temp_delete_test.obj still exists in database");
+            shutdown_requested = true;
+            return;
+        }
+
+        LOG_INFO("[TEST] ✓ Asset removed successfully from database");
+        test_passed = true;
+        shutdown_requested = true;
+    });
+
+    run_headless_step([&](std::atomic<bool>& shutdown_requested, bool& test_passed) {
+        fs::path thumbnail_dir = Config::get_thumbnail_directory();
+        std::set<std::string> expected_thumbnails = {"racer.obj.png", "racer.fbx.png", "racer.glb.png"};
+        std::set<std::string> found_thumbnails;
+        bool ready = wait_for_condition([&]{
             if (!fs::exists(thumbnail_dir)) {
-                LOG_ERROR("[TEST] Thumbnail directory doesn't exist");
-                shutdown_requested = true;
-                return;
+                return false;
             }
 
-            std::set<std::string> expected_thumbnails = {"racer.obj.png", "racer.fbx.png", "racer.glb.png"};
-            std::set<std::string> found_thumbnails;
-            LOG_INFO("[TEST] Checking thumbnails in: {}", thumbnail_dir.string());
-
+            found_thumbnails.clear();
             for (const auto& entry : fs::directory_iterator(thumbnail_dir)) {
                 std::string filename = entry.path().filename().string();
-                LOG_INFO("[TEST]   Found thumbnail: {}", filename);
-
                 if (expected_thumbnails.count(filename) > 0) {
                     if (fs::file_size(entry.path()) == 0) {
-                        LOG_ERROR("[TEST] {} thumbnail is empty", filename);
-                        shutdown_requested = true;
-                        return;
+                        return false;
                     }
                     found_thumbnails.insert(filename);
                 }
             }
+            return found_thumbnails == expected_thumbnails;
+        }, kThumbnailTimeout);
 
-            if (found_thumbnails != expected_thumbnails) {
+        LOG_INFO("[TEST] Checking thumbnails in: {}", thumbnail_dir.string());
+        for (const auto& filename : found_thumbnails) {
+            LOG_INFO("[TEST]   Found thumbnail: {}", filename);
+        }
+
+        if (!ready) {
+            if (!fs::exists(thumbnail_dir)) {
+                LOG_ERROR("[TEST] Thumbnail directory doesn't exist");
+            } else {
                 for (const auto& expected : expected_thumbnails) {
                     if (found_thumbnails.count(expected) == 0) {
                         LOG_ERROR("[TEST] {} thumbnail not found", expected);
                     }
                 }
-                shutdown_requested = true;
-                return;
             }
-
-            LOG_INFO("[TEST] ✓ 3D model thumbnails created successfully");
-            test_passed = true;
             shutdown_requested = true;
-        });
+            return;
+        }
 
-        int result = run(&shutdown_requested);
-        test_thread.join();
-        REQUIRE(result == 0);
-        REQUIRE(test_passed);
-    }
+        LOG_INFO("[TEST] ✓ 3D model thumbnails created successfully");
+        test_passed = true;
+        shutdown_requested = true;
+    });
 
-    SECTION("Creates thumbnails for SVG files") {
-        GLFWGuard glfw_guard;
-        std::atomic<bool> shutdown_requested(false);
-        bool test_passed = false;
-
-        std::thread test_thread([&]{
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-            // Check that SVG thumbnail was created
-            fs::path thumbnail_dir = Config::get_thumbnail_directory();
+    run_headless_step([&](std::atomic<bool>& shutdown_requested, bool& test_passed) {
+        fs::path thumbnail_dir = Config::get_thumbnail_directory();
+        bool found_svg_thumb = false;
+        std::string found_name;
+        bool ready = wait_for_condition([&]{
             if (!fs::exists(thumbnail_dir)) {
-                LOG_ERROR("[TEST] Thumbnail directory doesn't exist");
-                shutdown_requested = true;
-                return;
+                return false;
             }
-
-            bool found_svg_thumb = false;
 
             for (const auto& entry : fs::directory_iterator(thumbnail_dir)) {
                 std::string filename = entry.path().filename().string();
-                LOG_INFO("[TEST] Checking file: {}", filename);
-                // SVG thumbnails are rasterized to PNG
-                if (filename.find("zombie") != std::string::npos && filename.find(".png") != std::string::npos) {
+                if (filename.find("zombie") != std::string::npos &&
+                    filename.find(".png") != std::string::npos) {
                     found_svg_thumb = true;
-                    LOG_INFO("[TEST] ✓ Found SVG thumbnail: {}", filename);
+                    found_name = filename;
+                    return true;
                 }
             }
+            return false;
+        }, kThumbnailTimeout);
 
-            if (!found_svg_thumb) {
+        if (!ready) {
+            if (!fs::exists(thumbnail_dir)) {
+                LOG_ERROR("[TEST] Thumbnail directory doesn't exist");
+            } else {
                 LOG_ERROR("[TEST] SVG thumbnail (zombie*.png) not found");
-                shutdown_requested = true;
-                return;
             }
-
-            LOG_INFO("[TEST] ✓ SVG thumbnail created successfully");
-            test_passed = true;
             shutdown_requested = true;
-        });
+            return;
+        }
 
-        int result = run(&shutdown_requested);
-        test_thread.join();
-        REQUIRE(result == 0);
-        REQUIRE(test_passed);
-    }
+        LOG_INFO("[TEST] Checking file: {}", found_name);
+        LOG_INFO("[TEST] ✓ Found SVG thumbnail: {}", found_name);
 
-    // One-time teardown: Clean up test environment
-    unsetenv("TESTING");
-    if (fs::exists(data_dir)) {
-        fs::remove_all(data_dir);
-    }
+        LOG_INFO("[TEST] ✓ SVG thumbnail created successfully");
+        test_passed = true;
+        shutdown_requested = true;
+    });
+
 }
