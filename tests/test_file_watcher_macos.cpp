@@ -8,10 +8,13 @@
 #include <chrono>
 #include <algorithm>
 #include <set>
+#include <condition_variable>
+#include <mutex>
 
 #include "file_watcher.h"
 #include "asset.h"
 #include "database.h"
+#include "config.h"
 #include "test_helpers.h"
 
 // macOS-specific file watcher tests using FSEvents
@@ -37,9 +40,15 @@ void add_test_asset(SafeAssets& safe_assets, const fs::path& path) {
 // Test fixture for file watcher tests
 class FileWatcherTestFixture {
 public:
+    struct EventStore {
+        std::vector<FileEvent> events;
+        std::mutex mutex;
+        std::condition_variable condition;
+    };
+
     fs::path test_dir;
     SafeAssets safe_assets;
-    std::shared_ptr<std::vector<FileEvent>> shared_events;  // Thread-safe events storage
+    std::shared_ptr<EventStore> shared_events;
     std::unique_ptr<FileWatcher> watcher;
 
     FileWatcherTestFixture() {
@@ -58,20 +67,19 @@ public:
         // Clean up - ensure file watcher is completely stopped before destruction
         if (watcher) {
             watcher->stop();
-            // Give time for all callbacks to complete and threads to shut down
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         fs::remove_all(test_dir);
     }
 
     void start() {
-        // Create a thread-safe callback using a shared pointer to the events vector
-        // This ensures the callback data stays alive even if the test fixture is destroyed
-        auto events_ptr = std::make_shared<std::vector<FileEvent>>();
-
+        auto events_ptr = std::make_shared<EventStore>();
         auto event_callback = [events_ptr](const FileEvent& event) {
-            events_ptr->push_back(event);
-            };
+            {
+                std::lock_guard<std::mutex> lock(events_ptr->mutex);
+                events_ptr->events.push_back(event);
+            }
+            events_ptr->condition.notify_all();
+        };
 
         watcher->start(test_dir.string(), event_callback, &safe_assets);
 
@@ -83,35 +91,44 @@ public:
     }
 
     void wait_for_events(size_t expected_count = 1, int timeout_ms = 500) {
-        auto start = std::chrono::steady_clock::now();
-        while (get_events().size() < expected_count) {
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - start).count();
-            if (elapsed > timeout_ms) {
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (!shared_events) {
+            return;
         }
+
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        std::unique_lock<std::mutex> lock(shared_events->mutex);
+        shared_events->condition.wait_until(lock, deadline, [&]{
+            return shared_events->events.size() >= expected_count;
+        });
+        lock.unlock();
         // Additional wait for debouncing to complete
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (expected_count > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(Config::FILE_WATCHER_DEBOUNCE_MS));
+        }
     }
 
     void clear_events() {
         if (shared_events) {
-            shared_events->clear();
+            std::lock_guard<std::mutex> lock(shared_events->mutex);
+            shared_events->events.clear();
         }
     }
 
-    const std::vector<FileEvent>& get_events() const {
-        static std::vector<FileEvent> empty_events;
-        return shared_events ? *shared_events : empty_events;
+    std::vector<FileEvent> get_events() const {
+        if (!shared_events) {
+            return {};
+        }
+
+        std::lock_guard<std::mutex> lock(shared_events->mutex);
+        return shared_events->events;
     }
 
     // Helper to find events for a specific file
     std::vector<FileEvent> get_events_for_file(const fs::path& file_path) {
         std::vector<FileEvent> matching_events;
 
-        for (const auto& event : get_events()) {
+        auto events = get_events();
+        for (const auto& event : events) {
             if (event.path == file_path) {
                 matching_events.push_back(event);
             }
@@ -203,8 +220,9 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         // Count events
         int file_creation_count = 0;
 
-        std::cout << "Directory move-in test - captured " << fixture.get_events().size() << " events:" << std::endl;
-        for (const auto& event : fixture.get_events()) {
+        auto events = fixture.get_events();
+        std::cout << "Directory move-in test - captured " << events.size() << " events:" << std::endl;
+        for (const auto& event : events) {
             if (event.type == FileEventType::Created) {
                 file_creation_count++;
                 std::cout << "  Created: " << event.path << std::endl;
@@ -303,7 +321,7 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         // Wait for events
         fixture.wait_for_events(1, 1000);
 
-        const auto& events = fixture.get_events();
+        auto events = fixture.get_events();
 
         std::set<fs::path> deleted_paths;
         for (const auto& event : events) {
@@ -423,8 +441,9 @@ TEST_CASE("Files and directories moved or renamed within watched directory", "[f
         int file_deletion_count = 0;
         int file_creation_count = 0;
 
-        std::cout << "Directory rename test - captured " << fixture.get_events().size() << " events:" << std::endl;
-        for (const auto& event : fixture.get_events()) {
+        auto events = fixture.get_events();
+        std::cout << "Directory rename test - captured " << events.size() << " events:" << std::endl;
+        for (const auto& event : events) {
             std::string event_type_str;
             switch (event.type) {
             case FileEventType::Created:
@@ -531,8 +550,9 @@ TEST_CASE("[MacOS] Files and directories copied into watched directory", "[file_
         // Count creation events
         int file_creation_count = 0;
 
-        std::cout << "Directory copy test - captured " << fixture.get_events().size() << " events:" << std::endl;
-        for (const auto& event : fixture.get_events()) {
+        auto events = fixture.get_events();
+        std::cout << "Directory copy test - captured " << events.size() << " events:" << std::endl;
+        for (const auto& event : events) {
             if (event.type == FileEventType::Created) {
                 file_creation_count++;
                 std::cout << "  Created: " << event.path << std::endl;
@@ -542,7 +562,7 @@ TEST_CASE("[MacOS] Files and directories copied into watched directory", "[file_
             }
         }
 
-        print_file_events(fixture.get_events(), "Directory copy events:");
+        print_file_events(events, "Directory copy events:");
 
         // Assert: Should get individual creation events (FSEvents may report duplicates)
         REQUIRE(file_creation_count >= 4);  // At least one for each file (may have duplicates)
@@ -585,13 +605,13 @@ TEST_CASE("[MacOS] FSEvents directory move operations", "[file_watcher_macos]") 
 
         // Assert: Should have detected the file deletion
 
-        print_file_events(fixture.get_events(), "File deleted");
+        auto events = fixture.get_events();
+        print_file_events(events, "File deleted");
 
         // Check if file no longer exists
         REQUIRE(!fs::exists(file));
 
         // We should have at least one Delete event
-        auto events = fixture.get_events();
         REQUIRE(events.size() >= 1);
 
         bool found_delete = false;
@@ -647,7 +667,7 @@ TEST_CASE("[MacOS] FSEvents directory move operations", "[file_watcher_macos]") 
         fixture.wait_for_events(1, 200);  // Wait up to 200ms second
 
         // Verify events - emit_deletion_events_for_directory should generate events for all tracked files
-        const auto& events = fixture.get_events();
+        auto events = fixture.get_events();
 
         std::set<fs::path> deleted_paths;
         for (const auto& event : events) {
@@ -703,10 +723,10 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         // Wait for events
         fixture.wait_for_events(1);
 
-        print_file_events(fixture.get_events(), "File modified");
+        auto events = fixture.get_events();
+        print_file_events(events, "File modified");
 
         // We should have at least one Modified or Created event (FSEvents inconsistency)
-        auto events = fixture.get_events();
         REQUIRE(events.size() >= 1);
 
         bool found_modification_event = false;
@@ -756,10 +776,10 @@ TEST_CASE("Files modified or overwritten within watched directory", "[file_watch
         // Wait for events - expecting both Delete and Create events
         fixture.wait_for_events(1, 500);
 
-        print_file_events(fixture.get_events(), "File overwritten");
+        auto events = fixture.get_events();
+        print_file_events(events, "File overwritten");
 
         // We should have both Delete and Create events for the same file path
-        auto events = fixture.get_events();
         REQUIRE(events.size() >= 1);
 
         bool found_create_event = false;
