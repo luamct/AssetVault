@@ -8,6 +8,7 @@ else()
 endif()
 
 option(ASSET_VAULT_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
+set(ASSET_VAULT_SANITIZERS "" CACHE STRING "Enable sanitizers: address, undefined, leak, thread")
 
 if(MSVC AND ASSET_VAULT_STATIC_MSVC_RUNTIME)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
@@ -478,6 +479,10 @@ endif()
 add_test(NAME IntegrationTests COMMAND IntegrationTest)
 set_tests_properties(IntegrationTests PROPERTIES WORKING_DIRECTORY $<TARGET_FILE_DIR:IntegrationTest>)
 
+# Assimp import probe (manual execution for diagnostics)
+add_executable(AssimpImportProbe tests/assimp_import_probe.cpp)
+target_link_libraries(AssimpImportProbe PRIVATE assimp::assimp)
+
 # Set compiler warnings for our code
 function(assetvault_enable_warnings target)
     if(MSVC)
@@ -506,6 +511,32 @@ function(assetvault_enable_warnings target)
     endif()
 endfunction()
 
+function(assetvault_enable_sanitizers target)
+    if(ASSET_VAULT_SANITIZERS STREQUAL "")
+        return()
+    endif()
+
+    if(MSVC)
+        list(FIND ASSET_VAULT_SANITIZERS "address" ASAN_INDEX)
+        if(ASAN_INDEX GREATER -1)
+            target_compile_options(${target} PRIVATE /fsanitize=address)
+            target_link_options(${target} PRIVATE /fsanitize=address)
+        else()
+            message(WARNING "MSVC only supports address sanitizer; ignoring unsupported sanitizers.")
+        endif()
+    else()
+        set(sanitizer_list ${ASSET_VAULT_SANITIZERS})
+        if(APPLE)
+            list(REMOVE_ITEM sanitizer_list thread)
+        endif()
+        if(sanitizer_list)
+            list(JOIN sanitizer_list "," sanitizer_flags)
+            target_compile_options(${target} PRIVATE -fsanitize=${sanitizer_flags} -fno-omit-frame-pointer -g)
+            target_link_options(${target} PRIVATE -fsanitize=${sanitizer_flags})
+        endif()
+    endif()
+endfunction()
+
 foreach(target
     AssetVaultCore
     AssetVault
@@ -517,9 +548,11 @@ foreach(target
     UtilsTest
     UITest
     IntegrationTest
+    AssimpImportProbe
 )
     if(TARGET ${target})
         assetvault_enable_warnings(${target})
+        assetvault_enable_sanitizers(${target})
     endif()
 endforeach()
 

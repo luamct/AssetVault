@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <mutex>
 #include <system_error>
 #include <vector>
 
@@ -25,6 +26,11 @@ enum class LogLevel {
 // Logger utility class
 class Logger {
 public:
+    static std::shared_ptr<spdlog::logger>& instance() {
+        static std::shared_ptr<spdlog::logger> logger_instance;
+        return logger_instance;
+    }
+
     static std::filesystem::path get_log_file_path() {
 #ifdef __APPLE__
         if (const char* home = std::getenv("HOME")) {
@@ -50,6 +56,19 @@ public:
     }
 
     static void initialize(LogLevel level = LogLevel::Info) {
+        // Guard against initialize being called from test + app threads in integration tests.
+        static std::mutex init_mutex;
+        std::lock_guard<std::mutex> lock(init_mutex);
+
+        auto& existing = instance();
+        if (existing) {
+            existing->set_level(static_cast<spdlog::level::level_enum>(level));
+            spdlog::set_default_logger(existing);
+            spdlog::flush_every(std::chrono::seconds(1));
+            spdlog::cfg::load_env_levels();
+            return;
+        }
+
         // Load log level from SPDLOG_LEVEL environment variable if set
         spdlog::cfg::load_env_levels();
         
@@ -80,8 +99,9 @@ public:
         logger->set_pattern("[%H:%M:%S] [%^%l%$] %v");
         logger->set_level(static_cast<spdlog::level::level_enum>(level));
         
-        // Register as default logger
-        spdlog::set_default_logger(logger);
+        // Register as default logger and keep it alive for the process lifetime.
+        existing = logger;
+        spdlog::set_default_logger(existing);
         spdlog::flush_every(std::chrono::seconds(1));
         
         // Load environment levels again to override the programmatic level if SPDLOG_LEVEL is set

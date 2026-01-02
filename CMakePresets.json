@@ -19,6 +19,21 @@
       }
     },
     {
+      "name": "windows-asan",
+      "displayName": "Windows ASan Build",
+      "description": "Windows build with address sanitizer",
+      "inherits": "windows",
+      "binaryDir": "build/windows-asan",
+      "cacheVariables": {
+        "ASSET_VAULT_SANITIZERS": "address"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
       "name": "windows-static",
       "displayName": "Windows Static Build",
       "description": "Windows build with static runtime and libraries",
@@ -54,6 +69,22 @@
       }
     },
     {
+      "name": "macos-asan",
+      "displayName": "macOS ASan Build",
+      "description": "macOS build with address and undefined sanitizers",
+      "inherits": "macos",
+      "binaryDir": "build/macos-asan",
+      "cacheVariables": {
+        "ASSET_VAULT_SANITIZERS": "address;undefined",
+        "CMAKE_BUILD_TYPE": "Debug"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
       "name": "linux-static",
       "displayName": "Linux Static Build",
       "description": "Linux build with static linking for AppImage",
@@ -78,6 +109,11 @@
       "configuration": "Release"
     },
     {
+      "name": "windows-asan",
+      "configurePreset": "windows-asan",
+      "configuration": "Debug"
+    },
+    {
       "name": "windows-static",
       "configurePreset": "windows-static",
       "configuration": "Release"
@@ -85,6 +121,10 @@
     {
       "name": "macos",
       "configurePreset": "macos"
+    },
+    {
+      "name": "macos-asan",
+      "configurePreset": "macos-asan"
     },
     {
       "name": "linux-static",
@@ -96,6 +136,21 @@
       "name": "windows",
       "configurePreset": "windows",
       "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "windows-asan",
+      "configurePreset": "windows-asan",
+      "configuration": "Debug",
+      "environment": {
+        "ASAN_OPTIONS": "detect_container_overflow=0"
+      },
       "output": {
         "outputOnFailure": true
       },
@@ -119,6 +174,20 @@
     {
       "name": "macos",
       "configurePreset": "macos",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "macos-asan",
+      "configurePreset": "macos-asan",
+      "environment": {
+        "ASAN_OPTIONS": "detect_container_overflow=0"
+      },
       "output": {
         "outputOnFailure": true
       },
