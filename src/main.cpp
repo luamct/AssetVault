@@ -45,9 +45,8 @@ namespace {
   constexpr float SEARCH_PANEL_HEIGHT = 65.0f;
   constexpr int SEARCH_DEBOUNCE_MS = 250;
 
-  // Side panel vertical spacing (should sum to 100%, considering there are two gaps)
-  constexpr float PREVIEW_RATIO = 0.62f;
-  constexpr float TREE_RATIO = 0.31f;
+  // Side panel vertical sizing
+  constexpr float PREVIEW_RATIO = 0.62f;  // Initial guess until the preview panel measures its content.
   constexpr float PROGRESS_RATIO = 0.05f;
   constexpr float GAP_RATIO = 0.01f;
 
@@ -374,10 +373,15 @@ int run(std::atomic<bool>* shutdown_requested) {
       }
 
       float clamped_height = std::max(0.0f, content_height);
-      float preview_height = clamped_height * PREVIEW_RATIO;
-      float folder_tree_height = clamped_height * TREE_RATIO;
       float progress_height = clamped_height * PROGRESS_RATIO;
       float vertical_gap = clamped_height * GAP_RATIO;
+      float preview_height = (ui_state.preview_panel_height > 0.0f)
+        ? ui_state.preview_panel_height
+        : clamped_height * PREVIEW_RATIO;
+      if (!ui_state.selected_asset.has_value()) {
+        preview_height = std::max(preview_height, clamped_height * 0.5f);
+      }
+      float folder_tree_height = std::max(0.0f, clamped_height - preview_height - progress_height - vertical_gap * 2.0f);
 
       // Left column (search + grid)
       ImGui::BeginGroup();

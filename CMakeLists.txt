@@ -479,9 +479,6 @@ endif()
 add_test(NAME IntegrationTests COMMAND IntegrationTest)
 set_tests_properties(IntegrationTests PROPERTIES WORKING_DIRECTORY $<TARGET_FILE_DIR:IntegrationTest>)
 
-# Assimp import probe (manual execution for diagnostics)
-add_executable(AssimpImportProbe tests/assimp_import_probe.cpp)
-target_link_libraries(AssimpImportProbe PRIVATE assimp::assimp)
 
 # Set compiler warnings for our code
 function(assetvault_enable_warnings target)
@@ -548,7 +545,6 @@ foreach(target
     UtilsTest
     UITest
     IntegrationTest
-    AssimpImportProbe
 )
     if(TARGET ${target})
         assetvault_enable_warnings(${target})

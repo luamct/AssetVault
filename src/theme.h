@@ -210,9 +210,9 @@ namespace Theme {
 
   // Font loading function
   inline constexpr const char* PRIMARY_FONT_PATH = "external/fonts/m5x7.ttf";
-  inline constexpr float PRIMARY_FONT_SIZE = 18.0f;
+  inline constexpr float PRIMARY_FONT_SIZE = 20.0f;
   inline constexpr float PRIMARY_FONT_SIZE_LARGE = PRIMARY_FONT_SIZE + 2.0f;
   inline constexpr const char* TAG_FONT_PATH = PRIMARY_FONT_PATH;
-  inline constexpr float TAG_FONT_SIZE = 18.0f;
+  inline constexpr float TAG_FONT_SIZE = 20.0f;
 
 } // namespace Theme

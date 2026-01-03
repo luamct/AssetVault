@@ -53,6 +53,8 @@ struct UIState {
   float dpi_scale = 1.0f;
   float pending_dpi_scale = 1.0f;
   bool dpi_scale_dirty = false;
+  // Cached height to keep the preview panel sized to its content.
+  float preview_panel_height = 0.0f;
 
   // Debouncing state
   TimePoint last_keypress_time;

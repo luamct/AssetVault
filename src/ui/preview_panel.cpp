@@ -464,8 +464,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
 
 
   // Use the smaller axis so the square viewport touches the frame evenly
-  ImVec2 content_avail = ImGui::GetContentRegionAvail();
-  float avail_side = std::max(0.0f,std::min(content_avail.x, content_avail.y));
+  float avail_side = std::max(0.0f, content_size.x);
   float avail_width = avail_side;
   float avail_height = avail_side;
 
@@ -1039,6 +1038,9 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
   else {
     ImGui::TextColored(Theme::TEXT_DISABLED_DARK, "Click on an asset to preview it");
   }
+
+  float content_height = ImGui::GetCursorPosY();
+  ui_state.preview_panel_height = content_height + preview_frame_margin * 2.0f;
 
   ImGui::EndChild();
   ImGui::PopStyleVar();
