@@ -57,7 +57,7 @@ void ensure_grid_zoom_level(UIState& ui_state) {
 // Render asset context menu
 void render_asset_context_menu(const Asset& asset, const std::string& menu_id) {
   // Push white background color BEFORE BeginPopup
-  ImGui::PushStyleColor(ImGuiCol_PopupBg, Theme::BACKGROUND_WHITE);
+  ImGui::PushStyleColor(ImGuiCol_PopupBg, Theme::BACKGROUND_SLATE_1);
   
   if (ImGui::BeginPopup(menu_id.c_str())) {
     if (ImGui::MenuItem("Show in Explorer")) {
@@ -150,7 +150,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   const bool has_assets_directory = !ui_state.assets_directory.empty();
   if (!has_assets_directory) {
     const char* prompt = "Select an assets folder to index";
-    ImGui::TextColored(Theme::ACCENT_BLUE_1, "%s", prompt);
+    ImGui::TextColored(Theme::ACCENT_SLATE_1, "%s", prompt);
 
     ImVec2 prompt_size = ImGui::GetItemRectSize();
     float folder_button_size = button_size * 0.8f;
@@ -199,7 +199,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   minus_button.icon_texture = zoom_out_icon;
   minus_button.fallback_label = "-";
   minus_button.enabled = can_zoom_out;
-  minus_button.highlight_color = Theme::ACCENT_BLUE_1_ALPHA_80;
+  minus_button.highlight_color = Theme::ACCENT_SLATE_1_ALPHA_80;
   if (draw_icon_button(minus_button)) {
     apply_zoom_delta_and_log(-1, "decreased");
   }
@@ -237,7 +237,6 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // Create an inner scrolling region so the header above stays visible
   ScrollbarStyle scrollbar_style;
   scrollbar_style.pixel_scale = 2.0f;
-  ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::BACKGROUND_LIGHT_BLUE_1);
   ScrollbarState scrollbar_state = begin_scrollbar_child(
     "AssetGridScroll",
     ImVec2(0, 0),
@@ -504,7 +503,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
       }
 
       if (show_selected) {
-        ImU32 container_bg_color = Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_35);
+        ImU32 container_bg_color = Theme::ToImU32(Theme::ACCENT_SLATE_1_ALPHA_35);
         grid_draw_list->AddRectFilled(
           container_pos,
           container_max,
@@ -516,7 +515,7 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         grid_draw_list->AddRect(
           container_pos,
           container_max,
-          Theme::ToImU32(Theme::ACCENT_BLUE_1),
+          Theme::ToImU32(Theme::ACCENT_SLATE_1),
           corner_radius,
           0,
           2.0f);
@@ -687,10 +686,10 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
         ImVec2 text_pos(text_x, text_y);
 
         ImU32 background_color = Theme::ToImU32(
-          show_selected ? Theme::ACCENT_BLUE_1_ALPHA_95 : Theme::FRAME_LIGHT_BLUE_5
+          show_selected ? Theme::ACCENT_SLATE_1_ALPHA_95 : Theme::FRAME_SLATE_5
         );
         ImU32 border_color = Theme::ToImU32(
-          show_selected ? Theme::ACCENT_BLUE_1 : Theme::BORDER_LIGHT_BLUE_1
+          show_selected ? Theme::ACCENT_SLATE_1 : Theme::BORDER_SLATE_1
         );
         ImU32 text_color = show_selected ? Theme::COLOR_WHITE_U32 : Theme::ToImU32(Theme::TEXT_DARK);
 
@@ -754,8 +753,8 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
 
     // Draw filled rectangle with transparency
     grid_draw_list->ChannelsSetCurrent(1);
-    ImU32 selection_fill = Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_35);
-    ImU32 selection_border = Theme::ToImU32(Theme::ACCENT_BLUE_1);
+    ImU32 selection_fill = Theme::ToImU32(Theme::ACCENT_SLATE_1_ALPHA_35);
+    ImU32 selection_border = Theme::ToImU32(Theme::ACCENT_SLATE_1);
     grid_draw_list->AddRectFilled(rect_min, rect_max, selection_fill, 3.0f);
 
     // Draw border
@@ -807,7 +806,6 @@ void render_asset_grid(UIState& ui_state, TextureManager& texture_manager,
   // End inner scrolling region (grid)
   grid_draw_list->ChannelsMerge();
   end_scrollbar_child(scrollbar_state);
-  ImGui::PopStyleColor();
 
   // Overlay custom vertical scrollbar art while keeping ImGui hit-testing intact
   SpriteAtlas scrollbar_atlas = texture_manager.get_ui_elements_atlas();

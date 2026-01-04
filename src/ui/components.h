@@ -37,7 +37,7 @@ void draw_dashed_separator(const ImVec2& start,
     float thickness = 3.0f,
     float dash_length = 6.0f,
     float gap_length = 4.0f,
-    ImU32 color = Theme::ToImU32(Theme::BACKGROUND_WHITE));
+    ImU32 color = Theme::ToImU32(Theme::BACKGROUND_SLATE_1));
 
 // Draw a solid horizontal separator.
 void draw_solid_separator(const ImVec2& start,

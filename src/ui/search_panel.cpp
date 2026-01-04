@@ -21,9 +21,9 @@ void render_search_panel(UIState& ui_state,
 
   SpriteAtlas search_frame_atlas = texture_manager.get_ui_elements_atlas();
   const SlicedSprite search_frame_definition = make_16px_frame(0, 3.0f);
-  const SlicedSprite toggle_frame_definition = make_8px_frame(2, 1, 3.0f);
-  const SlicedSprite toggle_frame_definition_selected = make_8px_frame(2, 2, 3.0f);
-  const SlicedSprite& search_frame_definition_selected = search_frame_definition;
+  const SlicedSprite toggle_frame_definition = make_8px_frame(5, 2, 3.0f);
+  const SlicedSprite toggle_frame_definition_selected = make_8px_frame(5, 4, 3.0f);
+  const SlicedSprite search_frame_definition_selected = make_16px_frame(2, 3.0f);
 
   ImGui::BeginChild("SearchRegion", ImVec2(panel_width, panel_height), false);
 
@@ -54,7 +54,7 @@ void render_search_panel(UIState& ui_state,
     settings_button.cursor_pos = button_pos;
     settings_button.size = settings_button_size;
     settings_button.icon_texture = settings_icon;
-    settings_button.highlight_color = Theme::ACCENT_BLUE_1_ALPHA_80;
+    settings_button.highlight_color = Theme::ACCENT_SLATE_1_ALPHA_80;
     open_settings_modal = draw_icon_button(settings_button);
     ImGui::SetCursorPos(original_cursor);
   }

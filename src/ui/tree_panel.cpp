@@ -33,7 +33,7 @@ namespace {
     ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::COLOR_TRANSPARENT);
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::COLOR_TRANSPARENT);
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::COLOR_TRANSPARENT);
-    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_LIGHT_BLUE_1));
+    ImGui::PushStyleColor(ImGuiCol_Border, Theme::ToImU32(Theme::BORDER_SLATE_1));
     bool clicked = ImGui::Checkbox("", &value);
     ImGui::PopStyleColor(4);
     ImGui::PopStyleVar();
@@ -340,8 +340,8 @@ void render_folder_tree_panel(UIState& ui_state, TextureManager& texture_manager
   ImGuiWindowFlags scroll_flags = ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
   ImGuiWindowFlags container_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
   ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::COLOR_TRANSPARENT);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::FRAME_LIGHT_BLUE_3);
-  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::FRAME_LIGHT_BLUE_4);
+  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Theme::FRAME_SLATE_3);
+  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Theme::FRAME_SLATE_4);
   ImGui::SetCursorScreenPos(content_pos);
   ImGui::BeginChild("FolderTreeRegion", content_size, false, container_flags);
 

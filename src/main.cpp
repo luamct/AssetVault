@@ -411,8 +411,8 @@ int run(std::atomic<bool>* shutdown_requested) {
       glfwGetFramebufferSize(window, &display_w, &display_h);
       glViewport(0, 0, display_w, display_h);
       glClearColor(
-        Theme::BACKGROUND_LIGHT_BLUE_1.x, Theme::BACKGROUND_LIGHT_BLUE_1.y, Theme::BACKGROUND_LIGHT_BLUE_1.z,
-        Theme::BACKGROUND_LIGHT_BLUE_1.w);
+        Theme::BACKGROUND_CHARCOAL.x, Theme::BACKGROUND_CHARCOAL.y, Theme::BACKGROUND_CHARCOAL.z,
+        Theme::BACKGROUND_CHARCOAL.w);
       glClear(GL_COLOR_BUFFER_BIT);
       ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

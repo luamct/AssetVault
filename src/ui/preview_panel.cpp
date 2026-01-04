@@ -192,7 +192,7 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
         path_to_segment) != ui_state.path_filters.end();
 
       // Choose color based on active state
-      ImVec4 link_color = is_active ? Theme::ACCENT_BLUE_2 : Theme::TEXT_PATH;
+      ImVec4 link_color = is_active ? Theme::ACCENT_SLATE_2 : Theme::TEXT_PATH;
 
       // Render as clickable text link
       ImGui::PushStyleColor(ImGuiCol_Text, link_color);
@@ -207,14 +207,14 @@ void render_clickable_path(const Asset& asset, UIState& ui_state) {
       // Draw underline on hover
       if (!is_active && is_hovered) {
         ImGui::GetWindowDrawList()->AddText(text_min,
-          Theme::ToImU32(Theme::ACCENT_BLUE_1), display_segment.c_str());
+          Theme::ToImU32(Theme::ACCENT_SLATE_1), display_segment.c_str());
       }
 
       if (is_hovered) {
         ImGui::GetWindowDrawList()->AddLine(
           ImVec2(text_min.x, text_max.y - 1.0f),
           ImVec2(text_max.x, text_max.y - 1.0f),
-          ImGui::GetColorU32(is_active ? Theme::ACCENT_BLUE_2 : Theme::ACCENT_BLUE_1),
+          ImGui::GetColorU32(is_active ? Theme::ACCENT_SLATE_2 : Theme::ACCENT_SLATE_1),
           1.0f
         );
 
@@ -761,7 +761,7 @@ void render_preview_panel(UIState& ui_state, TextureManager& texture_manager,
         ImVec2 button_min = ImGui::GetItemRectMin();
 
         ImU32 frame_tint = button_hovered
-          ? Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80)
+          ? Theme::ToImU32(Theme::ACCENT_SLATE_1_ALPHA_80)
           : Theme::COLOR_WHITE_U32;
         draw_nine_slice_image(preview_frame_atlas, audio_button_frame, button_min, button_size_vec, ui_scale, frame_tint);
 

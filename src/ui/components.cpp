@@ -347,7 +347,7 @@ bool draw_pixel_radio_button(const char* id,
   draw_list->AddImage(atlas.texture_id, image_min, image_max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
 
   if (hovered) {
-    draw_list->AddRect(image_min, image_max, Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80), 2.0f, 0, 1.0f);
+    draw_list->AddRect(image_min, image_max, Theme::ToImU32(Theme::ACCENT_SLATE_1_ALPHA_80), 2.0f, 0, 1.0f);
   }
 
   return clicked;
@@ -389,7 +389,7 @@ bool draw_pixel_checkbox(const char* id,
   draw_list->AddImage(atlas.texture_id, image_min, image_max, uv_min, uv_max, Theme::COLOR_WHITE_U32);
 
   if (hovered) {
-    draw_list->AddRect(image_min, image_max, Theme::ToImU32(Theme::ACCENT_BLUE_1_ALPHA_80), 2.0f, 0, 1.0f);
+    draw_list->AddRect(image_min, image_max, Theme::ToImU32(Theme::ACCENT_SLATE_1_ALPHA_80), 2.0f, 0, 1.0f);
   }
 
   if (clicked) {
